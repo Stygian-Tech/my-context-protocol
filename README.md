@@ -1,36 +1,104 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MyContextProtocol Frontend
+
+Dashboard for [MyContextProtocol](https://www.notion.so/MyContextProtocol-325f6c1638ed80568b93dc8e6abba384)—a hosted MCP endpoint that syncs SKILL.md files from Git repositories.
+
+## Tech Stack
+
+- **Runtime:** Bun
+- **Framework:** Next.js 15 (App Router)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS
+- **Components:** Shadcn UI
+- **Data fetching:** TanStack Query
+- **Forms:** React Hook Form + Zod
+
+## Prerequisites
+
+- [Bun](https://bun.sh) (v1.0+)
+- Node.js 20+ (if not using Bun)
 
 ## Getting Started
 
-First, run the development server:
+1. Install dependencies:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+   ```bash
+   bun install
+   ```
+
+2. Copy the example environment file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Set `NEXT_PUBLIC_API_URL` in `.env` to your backend API base URL (e.g. `http://localhost:8080`).
+
+4. Start the development server:
+
+   ```bash
+   bun run dev
+   ```
+
+5. Open [http://localhost:3000](http://localhost:3000).
+
+## Environment Variables
+
+| Variable               | Description                          |
+| ---------------------- | ------------------------------------ |
+| `NEXT_PUBLIC_API_URL`  | Backend API base URL (Vapor server) |
+
+## Project Structure
+
+```
+├── app/
+│   ├── (dashboard)/       # Protected dashboard routes
+│   │   ├── page.tsx       # Overview
+│   │   ├── projects/     # Projects list & detail
+│   │   └── layout.tsx     # Sidebar + header layout
+│   ├── login/            # Login page
+│   ├── layout.tsx         # Root layout
+│   ├── error.tsx         # Error boundary
+│   └── global-error.tsx  # Global error boundary
+├── components/
+│   ├── ui/               # Shadcn components
+│   ├── layout/            # App sidebar, header
+│   └── dashboard/        # Project card, releases, API keys, logs
+├── contexts/              # Auth context
+├── lib/
+│   ├── api.ts            # API client
+│   ├── auth.ts           # Auth helpers
+│   ├── types.ts          # Shared types
+│   └── projects-api.ts   # Project API calls
+└── hooks/
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Backend Integration
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+This frontend is designed to work with the MyContextProtocol Vapor backend. The backend must expose these REST endpoints:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `POST /auth/login` — Email + password → session/JWT
+- `POST /auth/logout` — Invalidate session
+- `GET /auth/me` — Current user (optional, for session check)
+- `GET /projects` — List projects
+- `GET /projects/:id` — Project detail
+- `POST /projects` — Create project
+- `GET /projects/:id/repo-connection` — Repo connection status
+- `POST /projects/:id/connect-repo` — Connect GitHub repo
+- `POST /projects/:id/sync` — Trigger sync
+- `GET /projects/:id/releases` — Release history
+- `POST /projects/:id/releases/:releaseId/activate` — Activate release
+- `GET /projects/:id/api-keys` — List API keys
+- `POST /projects/:id/api-keys` — Create API key
+- `GET /projects/:id/request-logs` — Request logs
 
-## Learn More
+Configure CORS on the backend to allow the frontend origin.
 
-To learn more about Next.js, take a look at the following resources:
+## Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Command        | Description              |
+| -------------- | ------------------------ |
+| `bun run dev`  | Start dev server          |
+| `bun run build`| Production build         |
+| `bun run start`| Start production server  |
+| `bun run lint` | Run ESLint               |
+| `bun run typecheck` | TypeScript check   |
