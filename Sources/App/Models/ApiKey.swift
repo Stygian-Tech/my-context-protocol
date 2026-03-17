@@ -41,3 +41,5 @@ final class ApiKey: Model, Content {
         self.status = status
     }
 }
+
+extension ApiKey: @unchecked Sendable {}

@@ -53,3 +53,5 @@ final class RequestLog: Model, Content {
         self.errorCode = errorCode
     }
 }
+
+extension RequestLog: @unchecked Sendable {}

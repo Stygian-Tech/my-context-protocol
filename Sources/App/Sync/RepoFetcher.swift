@@ -4,7 +4,7 @@ import Vapor
 struct RepoFetcher {
     let app: Application
 
-    func fetch(owner: String, repo: String, ref: String) async throws -> URL {
+    func fetch(owner: String, repo: String, ref: String, token: String? = nil) async throws -> URL {
         let urlString = "https://api.github.com/repos/\(owner)/\(repo)/tarball/\(ref)"
         guard let url = URL(string: urlString) else {
             throw RepoFetcherError.invalidURL
@@ -12,8 +12,9 @@ struct RepoFetcher {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        if let token = Environment.get("GITHUB_TOKEN") {
-            request.setValue("token \(token)", forHTTPHeaderField: "Authorization")
+        let authToken = token ?? Environment.get("GITHUB_TOKEN")
+        if let authToken = authToken {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         }
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
 

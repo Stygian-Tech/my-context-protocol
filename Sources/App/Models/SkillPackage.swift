@@ -51,3 +51,5 @@ final class SkillPackage: Model, Content {
         self.validationStatus = validationStatus
     }
 }
+
+extension SkillPackage: @unchecked Sendable {}

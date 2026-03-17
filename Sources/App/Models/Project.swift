@@ -55,3 +55,5 @@ final class Project: Model, Content {
         self.activeReleaseId = activeReleaseId
     }
 }
+
+extension Project: @unchecked Sendable {}

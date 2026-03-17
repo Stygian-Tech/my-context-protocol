@@ -41,3 +41,5 @@ final class Release: Model, Content {
         self.errorSummary = errorSummary
     }
 }
+
+extension Release: @unchecked Sendable {}

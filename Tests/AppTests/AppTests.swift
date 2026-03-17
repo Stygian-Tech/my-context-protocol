@@ -1,15 +1,16 @@
-import XCTVapor
 @testable import App
+import Testing
+import VaporTesting
 
-final class AppTests: XCTestCase {
-    func testHealth() async throws {
-        let app = Application(.testing)
-        defer { app.shutdown() }
-        try configure(app)
-
-        try app.test(.GET, "health") { res in
-            XCTAssertEqual(res.status, .ok)
-            XCTAssertEqual(res.body.string, "ok")
+@Suite("App Tests")
+struct AppTests {
+    @Test("Health endpoint returns ok")
+    func health() async throws {
+        try await withApp(configure: configure) { app in
+            try await app.testing().test(.GET, "health") { res async in
+                #expect(res.status == .ok)
+                #expect(res.body.string == "ok")
+            }
         }
     }
 }

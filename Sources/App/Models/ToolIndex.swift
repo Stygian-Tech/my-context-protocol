@@ -38,3 +38,5 @@ final class ToolIndex: Model, Content {
         self.handlerType = handlerType
     }
 }
+
+extension ToolIndex: @unchecked Sendable {}

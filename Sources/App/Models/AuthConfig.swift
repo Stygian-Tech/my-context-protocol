@@ -33,3 +33,5 @@ final class AuthConfig: Model, Content {
         self.settingsJson = settingsJson
     }
 }
+
+extension AuthConfig: @unchecked Sendable {}
