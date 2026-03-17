@@ -31,6 +31,12 @@ final class RepoConnection: Model, Content {
     @OptionalField(key: "webhook_id")
     var webhookId: String?
 
+    @OptionalField(key: "webhook_secret")
+    var webhookSecret: String?
+
+    @OptionalField(key: "token_encrypted")
+    var tokenEncrypted: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -45,7 +51,9 @@ final class RepoConnection: Model, Content {
         defaultBranch: String = "main",
         authType: String = "pat",
         tokenRef: String? = nil,
-        webhookId: String? = nil
+        webhookId: String? = nil,
+        webhookSecret: String? = nil,
+        tokenEncrypted: String? = nil
     ) {
         self.id = id
         self.$project.id = projectId
@@ -56,5 +64,9 @@ final class RepoConnection: Model, Content {
         self.authType = authType
         self.tokenRef = tokenRef
         self.webhookId = webhookId
+        self.webhookSecret = webhookSecret
+        self.tokenEncrypted = tokenEncrypted
     }
 }
+
+extension RepoConnection: @unchecked Sendable {}

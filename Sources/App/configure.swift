@@ -4,18 +4,27 @@ import FluentSQLiteDriver
 import Vapor
 
 public func configure(_ app: Application) throws {
+    let corsOrigin = Environment.get("CORS_ORIGIN") ?? "http://localhost:3000"
+    let corsConfig = CORSMiddleware.Configuration(
+        allowedOrigin: .custom(corsOrigin),
+        allowedMethods: [.GET, .POST, .PUT, .OPTIONS, .DELETE, .PATCH],
+        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith],
+        allowCredentials: true
+    )
+    app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
+
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
     app.routes.defaultMaxBodySize = "10mb"
 
     app.sessions.use(.memory)
     app.middleware.use(app.sessions.middleware)
 
-    if app.environment == .testing {
-        try app.databases.use(.sqlite(.memory), as: .sqlite)
-    } else if let databaseURL = Environment.get("DATABASE_URL") {
+    if let databaseURL = Environment.get("DATABASE_URL"), !databaseURL.isEmpty {
         try app.databases.use(.postgres(url: databaseURL), as: .psql)
-    } else if app.environment != .testing, let url = Environment.get("SUPABASE_DB_URL") {
+    } else if let url = Environment.get("SUPABASE_DB_URL") {
         try app.databases.use(.postgres(url: url), as: .psql)
+    } else if app.environment == .testing {
+        try app.databases.use(.sqlite(.memory), as: .sqlite)
     } else {
         let hostname = Environment.get("DATABASE_HOST") ?? "localhost"
         let username = Environment.get("DATABASE_USERNAME") ?? "vapor_username"
@@ -45,6 +54,8 @@ public func configure(_ app: Application) throws {
     app.migrations.add(CreateApiKeys())
     app.migrations.add(CreateRequestLogs())
     app.migrations.add(SeedPersonalUse())
+    app.migrations.add(AlterAccountsForOAuth())
+    app.migrations.add(AddSaaSFields())
 
     try app.autoMigrate().wait()
 

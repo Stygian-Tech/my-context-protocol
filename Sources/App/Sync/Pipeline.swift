@@ -21,6 +21,17 @@ struct SyncPipeline {
             throw PipelineError.noRepoConnection
         }
 
+        var token: String?
+        if let encrypted = connection.tokenEncrypted {
+            token = try? TokenEncryption.decrypt(encrypted)
+        }
+        if token == nil {
+            try await project.$account.load(on: db)
+            if let encrypted = project.account.githubTokenEncrypted {
+                token = try? TokenEncryption.decrypt(encrypted)
+            }
+        }
+
         let release = Release(
             projectId: projectId,
             commitSha: "pending",
@@ -39,7 +50,8 @@ struct SyncPipeline {
             let extractPath = try await fetcher.fetch(
                 owner: connection.repoOwner,
                 repo: connection.repoName,
-                ref: connection.defaultBranch
+                ref: connection.defaultBranch,
+                token: token
             )
             tempExtractPath = extractPath
 

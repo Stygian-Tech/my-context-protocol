@@ -22,14 +22,16 @@ let package = Package(
                 .product(name: "FluentPostgresDriver", package: "fluent-postgres-driver"),
                 .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
                 .product(name: "Yams", package: "Yams"),
-            ]
+            ],
+            swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
         ),
         .testTarget(
             name: "AppTests",
             dependencies: [
                 .target(name: "App"),
-                .product(name: "XCTVapor", package: "vapor"),
-            ]
+                .product(name: "VaporTesting", package: "vapor"),
+            ],
+            swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
         ),
     ]
 )
