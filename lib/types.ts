@@ -61,5 +61,7 @@ export interface RequestLog {
 
 export interface User {
   id: string;
-  email: string;
+  email?: string;
+  login?: string;
+  avatar_url?: string;
 }

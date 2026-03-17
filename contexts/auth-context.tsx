@@ -8,13 +8,13 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser, login as apiLogin, logout as apiLogout } from "@/lib/auth";
+import { getCurrentUser, getGitHubLoginUrl, logout as apiLogout } from "@/lib/auth";
 import type { User } from "@/lib/types";
 
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  loginWithGitHub: (returnTo?: string) => void;
   logout: () => Promise<void>;
 }
 
@@ -40,14 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadUser();
   }, [loadUser]);
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const u = await apiLogin({ email, password });
-      setUser(u);
-      router.push("/");
-    },
-    [router]
-  );
+  const loginWithGitHub = useCallback((returnTo = "/") => {
+    window.location.href = getGitHubLoginUrl(returnTo);
+  }, []);
 
   const logout = useCallback(async () => {
     await apiLogout();
@@ -56,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, loginWithGitHub, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -18,9 +18,11 @@ import { Separator } from "@/components/ui/separator";
 export function Header() {
   const { user, logout } = useAuth();
 
-  const initials = user?.email
-    ? user.email.slice(0, 2).toUpperCase()
-    : "?";
+  const initials = user?.login
+    ? user.login.slice(0, 2).toUpperCase()
+    : user?.email
+      ? user.email.slice(0, 2).toUpperCase()
+      : "?";
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
@@ -41,7 +43,7 @@ export function Header() {
               <div className="flex flex-col">
                 <span className="font-medium">Account</span>
                 <span className="text-muted-foreground text-sm">
-                  {user?.email}
+                  {user?.login ?? user?.email ?? "Signed in"}
                 </span>
               </div>
             </DropdownMenuLabel>

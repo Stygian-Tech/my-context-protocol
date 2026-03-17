@@ -43,9 +43,10 @@ Dashboard for [MyContextProtocol](https://www.notion.so/MyContextProtocol-325f6c
 
 ## Environment Variables
 
-| Variable               | Description                          |
-| ---------------------- | ------------------------------------ |
-| `NEXT_PUBLIC_API_URL`  | Backend API base URL (Vapor server) |
+| Variable               | Description                                                |
+| ---------------------- | ---------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`  | Backend API base URL (Vapor server)                        |
+| `NEXT_PUBLIC_APP_URL`  | Frontend URL for OAuth return (optional, defaults to origin) |
 
 ## Project Structure
 
@@ -74,11 +75,15 @@ Dashboard for [MyContextProtocol](https://www.notion.so/MyContextProtocol-325f6c
 
 ## Backend Integration
 
-This frontend is designed to work with the MyContextProtocol Vapor backend. The backend must expose these REST endpoints:
+This frontend is designed to work with the MyContextProtocol Vapor backend. Authentication uses **GitHub OAuth** (no local email/password). The backend must expose:
 
-- `POST /auth/login` — Email + password → session/JWT
+**Auth (GitHub OAuth):**
+- `GET /auth/github?return_to=<url>` — Redirects to GitHub OAuth; after success, redirects to `return_to` with session cookie
+- `GET /auth/github/callback` — GitHub OAuth callback (receives `code`, exchanges for token, creates session)
 - `POST /auth/logout` — Invalidate session
-- `GET /auth/me` — Current user (optional, for session check)
+- `GET /auth/me` — Current user (for session check)
+
+**Other REST endpoints:**
 - `GET /projects` — List projects
 - `GET /projects/:id` — Project detail
 - `POST /projects` — Create project
@@ -92,6 +97,8 @@ This frontend is designed to work with the MyContextProtocol Vapor backend. The 
 - `GET /projects/:id/request-logs` — Request logs
 
 Configure CORS on the backend to allow the frontend origin.
+
+For a full API contract to hand off to backend implementers, see [docs/BACKEND_API_CONTRACT.md](docs/BACKEND_API_CONTRACT.md).
 
 ## Scripts
 
