@@ -31,6 +31,9 @@ final class SkillPackage: Model, Content {
     @Children(for: \.$skillPackage)
     var toolsIndex: [ToolIndex]
 
+    @Children(for: \.$skillPackage)
+    var compiledSkills: [CompiledSkill]
+
     init() {}
 
     init(

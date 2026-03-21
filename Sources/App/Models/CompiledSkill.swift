@@ -1,0 +1,73 @@
+import Fluent
+import Vapor
+
+final class CompiledSkill: Model, Content {
+    static let schema = "compiled_skills"
+
+    @ID(key: .id)
+    var id: UUID?
+
+    @Parent(key: "release_id")
+    var release: Release
+
+    @Parent(key: "skill_package_id")
+    var skillPackage: SkillPackage
+
+    @Field(key: "path")
+    var path: String
+
+    @Field(key: "name")
+    var name: String
+
+    @OptionalField(key: "summary")
+    var summary: String?
+
+    @Field(key: "exposure_type")
+    var exposureType: String
+
+    @Field(key: "risk_level")
+    var riskLevel: String
+
+    @Field(key: "repo_specific")
+    var repoSpecific: Bool
+
+    @Field(key: "status")
+    var status: String
+
+    @Timestamp(key: "created_at", on: .create)
+    var createdAt: Date?
+
+    @Children(for: \.$compiledSkill)
+    var routingRules: [RoutingRule]
+
+    @Children(for: \.$compiledSkill)
+    var capabilityDefs: [CapabilityDef]
+
+    init() {}
+
+    init(
+        id: UUID? = nil,
+        releaseId: UUID,
+        skillPackageId: UUID,
+        path: String,
+        name: String,
+        summary: String? = nil,
+        exposureType: String,
+        riskLevel: String,
+        repoSpecific: Bool,
+        status: String
+    ) {
+        self.id = id
+        self.$release.id = releaseId
+        self.$skillPackage.id = skillPackageId
+        self.path = path
+        self.name = name
+        self.summary = summary
+        self.exposureType = exposureType
+        self.riskLevel = riskLevel
+        self.repoSpecific = repoSpecific
+        self.status = status
+    }
+}
+
+extension CompiledSkill: @unchecked Sendable {}

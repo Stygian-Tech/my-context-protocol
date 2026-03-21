@@ -25,6 +25,12 @@ final class Release: Model, Content {
     @Children(for: \.$release)
     var skillPackages: [SkillPackage]
 
+    @Children(for: \.$release)
+    var compiledSkills: [CompiledSkill]
+
+    @Children(for: \.$release)
+    var validationReportRecords: [ValidationReportRecord]
+
     init() {}
 
     init(

@@ -1,0 +1,12 @@
+.build
+.git
+.gitignore
+.cursor
+*.md
+Docs
+Tests
+.dockerignore
+Dockerfile
+docker-compose.yml
+.env
+.env.*

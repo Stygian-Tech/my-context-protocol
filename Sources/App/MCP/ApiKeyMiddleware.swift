@@ -30,6 +30,13 @@ struct ApiKeyMiddleware: AsyncMiddleware {
             return Response(status: .unauthorized, body: .init(string: "Invalid API key"))
         }
 
+        if let hostProject = request.storage[ResolvedHostProjectKey.self],
+           let hostPid = hostProject.id {
+            guard apiKey.$project.id == hostPid else {
+                return Response(status: .forbidden, body: .init(string: "API key does not match host"))
+            }
+        }
+
         apiKey.lastUsedAt = Date()
         try await apiKey.save(on: request.db)
 

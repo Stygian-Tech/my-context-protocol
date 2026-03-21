@@ -75,23 +75,24 @@ struct MCPController {
             return try await ToolsListPayload(id: id, result: ToolsListResult(tools: [])).encodeResponse(for: req)
         }
 
-        let skillPackages = try await SkillPackage.query(on: req.db)
+        let compiledSkillIds = try await CompiledSkill.query(on: req.db)
             .filter(\.$release.$id == releaseId)
-            .filter(\.$validationStatus == "valid")
+            .filter(\.$status == "ready")
             .all()
+            .compactMap(\.id)
 
-        let skillPackageIds = skillPackages.compactMap(\.id)
-        if skillPackageIds.isEmpty {
+        guard !compiledSkillIds.isEmpty else {
             return try await ToolsListPayload(id: id, result: ToolsListResult(tools: [])).encodeResponse(for: req)
         }
 
-        let toolIndices = try await ToolIndex.query(on: req.db)
-            .filter(\.$skillPackage.$id ~~ skillPackageIds)
+        let capabilityDefs = try await CapabilityDef.query(on: req.db)
+            .filter(\.$compiledSkill.$id ~~ compiledSkillIds)
+            .filter(\.$type == "tool")
             .all()
 
-        let tools = toolIndices.map { ti in
+        let tools = capabilityDefs.map { cap in
             MCPTool(
-                name: ti.toolName,
+                name: cap.capabilityName,
                 description: nil,
                 inputSchema: InputSchema(properties: nil)
             )

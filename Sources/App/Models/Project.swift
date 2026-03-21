@@ -19,6 +19,15 @@ final class Project: Model, Content {
     @OptionalField(key: "subdomain")
     var subdomain: String?
 
+    @OptionalField(key: "custom_domain")
+    var customDomain: String?
+
+    @OptionalField(key: "custom_domain_verified_at")
+    var customDomainVerifiedAt: Date?
+
+    @OptionalField(key: "custom_domain_verification_token")
+    var customDomainVerificationToken: String?
+
     @OptionalField(key: "active_release_id")
     var activeReleaseId: UUID?
 
@@ -45,6 +54,9 @@ final class Project: Model, Content {
         name: String,
         slug: String,
         subdomain: String? = nil,
+        customDomain: String? = nil,
+        customDomainVerifiedAt: Date? = nil,
+        customDomainVerificationToken: String? = nil,
         activeReleaseId: UUID? = nil
     ) {
         self.id = id
@@ -52,6 +64,9 @@ final class Project: Model, Content {
         self.name = name
         self.slug = slug
         self.subdomain = subdomain
+        self.customDomain = customDomain
+        self.customDomainVerifiedAt = customDomainVerifiedAt
+        self.customDomainVerificationToken = customDomainVerificationToken
         self.activeReleaseId = activeReleaseId
     }
 }
