@@ -1,5 +1,12 @@
 import { api } from "./api";
-import type { Project, RepoConnection, Release, ApiKey, RequestLog } from "./types";
+import type {
+  Project,
+  RepoConnection,
+  Release,
+  ApiKey,
+  RequestLog,
+  GithubRepoListItem,
+} from "./types";
 
 export async function fetchProjects(): Promise<Project[]> {
   const response = await api.get<Project[] | { projects: Project[] }>("/projects");
@@ -14,9 +21,30 @@ export async function fetchProject(id: string): Promise<Project> {
 export async function createProject(data: {
   name: string;
   slug: string;
-  subdomain: string;
 }): Promise<Project> {
   return api.post<Project>("/projects", data);
+}
+
+export interface CustomDomainStatus {
+  hostname: string | null;
+  verified: boolean;
+  verification_token?: string | null;
+  instructions?: string | null;
+}
+
+export async function fetchCustomDomain(projectId: string): Promise<CustomDomainStatus> {
+  return api.get<CustomDomainStatus>(`/projects/${projectId}/custom-domain`);
+}
+
+export async function setProjectCustomDomain(
+  projectId: string,
+  hostname: string
+): Promise<CustomDomainStatus> {
+  return api.post<CustomDomainStatus>(`/projects/${projectId}/custom-domain`, { hostname });
+}
+
+export async function verifyProjectCustomDomain(projectId: string): Promise<CustomDomainStatus> {
+  return api.post<CustomDomainStatus>(`/projects/${projectId}/custom-domain/verify`);
 }
 
 export async function fetchRepoConnection(projectId: string): Promise<RepoConnection | null> {
@@ -25,6 +53,10 @@ export async function fetchRepoConnection(projectId: string): Promise<RepoConnec
   } catch {
     return null;
   }
+}
+
+export async function fetchUserGithubRepos(): Promise<GithubRepoListItem[]> {
+  return api.get<GithubRepoListItem[]>("/github/repos");
 }
 
 export async function connectRepo(

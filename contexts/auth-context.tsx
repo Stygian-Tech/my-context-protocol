@@ -8,7 +8,11 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser, getGitHubLoginUrl, logout as apiLogout } from "@/lib/auth";
+import {
+  getCurrentUser,
+  getGitHubLoginUrl,
+  logout as apiLogout,
+} from "@/lib/auth";
 import type { User } from "@/lib/types";
 
 interface AuthContextValue {
@@ -20,6 +24,16 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// Module-level guard: prevents multiple confirmAuth calls when React Strict Mode remounts.
+// The token is one-time use; a second call would get 401 and consume it before the first succeeds.
+const confirmingTokens = new Set<string>();
+
+declare global {
+  interface Window {
+    __confirmingAuthToken?: string;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,17 +42,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUser = useCallback(async () => {
     try {
       const u = await getCurrentUser();
-      setUser(u);
+      // Use functional update: never overwrite existing user with null from a concurrent loadUser
+      setUser((prev) => (u !== null ? u : prev ?? null));
+      // Recovery: redirect immediately when we have user + auth_failed, before any effect re-run
+      if (u && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("error") === "auth_failed") {
+        window.location.replace("/");
+        return;
+      }
     } catch {
-      setUser(null);
+      setUser((prev) => (prev ?? null));
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadUser();
-  }, [loadUser]);
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const authToken = params?.get("auth_token");
+
+    // Add token synchronously at the very start so concurrent effect runs see it.
+    // Use both module Set and window flag so it works across module instances (e.g. HMR).
+    if (authToken) {
+      if (confirmingTokens.has(authToken) || window.__confirmingAuthToken === authToken) {
+        return;
+      }
+      confirmingTokens.add(authToken);
+      window.__confirmingAuthToken = authToken;
+    }
+
+    if (authToken) {
+      const returnUrl = new URL(window.location.href);
+      returnUrl.searchParams.delete("auth_token");
+      const redirectTo = encodeURIComponent(returnUrl.toString());
+      const confirmUrl = `/api/auth/confirm?token=${encodeURIComponent(authToken)}&redirect=${redirectTo}`;
+      window.location.replace(confirmUrl);
+      return;
+    }
+
+    // Only fetch when we don't already have a user. Prevents a subsequent loadUser()
+    // (from effect re-run after router.replace) from overwriting valid user with null.
+    if (!authToken && !user) {
+      loadUser();
+    }
+  }, [loadUser, user]);
+
+  // Recovery: when we have user but URL has auth_failed, do full-page nav so dashboard
+  // loads fresh with session cookie (avoids React/Next.js layout transition losing state).
+  useEffect(() => {
+    if (user && typeof window !== "undefined") {
+      const err = new URLSearchParams(window.location.search).get("error");
+      if (err === "auth_failed") {
+        window.location.replace("/");
+      }
+    }
+  }, [user]);
 
   const loginWithGitHub = useCallback((returnTo = "/") => {
     window.location.href = getGitHubLoginUrl(returnTo);

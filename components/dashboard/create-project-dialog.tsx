@@ -26,11 +26,10 @@ const schema = z.object({
   slug: z
     .string()
     .min(1, "Slug is required")
-    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens only"),
-  subdomain: z
-    .string()
-    .min(1, "Subdomain is required")
-    .regex(/^[a-z0-9-]+$/, "Subdomain must be lowercase letters, numbers, and hyphens only"),
+    .regex(
+      /^[a-z0-9]+(-[a-z0-9]+)*$/,
+      "Slug: lowercase letters, numbers, single hyphens between segments"
+    ),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -47,7 +46,7 @@ export function CreateProjectDialog() {
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", slug: "", subdomain: "" },
+    defaultValues: { name: "", slug: "" },
   });
 
   const mutation = useMutation({
@@ -66,17 +65,16 @@ export function CreateProjectDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger>
-        <Button>
-          <PlusIcon className="h-4 w-4" />
-          New Project
-        </Button>
+      <DialogTrigger render={<Button className="gap-2 px-4" />}>
+        <PlusIcon className="h-4 w-4" />
+        New Project
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create Project</DialogTitle>
           <DialogDescription>
-            Create a new MCP project. You can connect a GitHub repo after creation.
+            Create a new MCP project. A unique platform subdomain is assigned automatically.
+            You can connect a GitHub repo after creation.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -92,16 +90,6 @@ export function CreateProjectDialog() {
             <Input id="slug" {...register("slug")} placeholder="my-skills" />
             {errors.slug && (
               <p className="text-destructive text-sm">{errors.slug.message}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="subdomain">Subdomain</Label>
-            <Input id="subdomain" {...register("subdomain")} placeholder="my-skills" />
-            <p className="text-muted-foreground text-xs">
-              MCP endpoint: https://{"{subdomain}"}.mcp.yourdomain.com
-            </p>
-            {errors.subdomain && (
-              <p className="text-destructive text-sm">{errors.subdomain.message}</p>
             )}
           </div>
           <DialogFooter>

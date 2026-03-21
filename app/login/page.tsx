@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,8 +15,15 @@ import { GithubIcon } from "lucide-react";
 
 function LoginContent() {
   const { loginWithGitHub, isLoading: authLoading, user } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("redirect") ?? "/";
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace(returnTo);
+    }
+  }, [authLoading, user, returnTo, router]);
 
   if (authLoading) {
     return (
@@ -27,7 +34,6 @@ function LoginContent() {
   }
 
   if (user) {
-    window.location.href = returnTo;
     return null;
   }
 

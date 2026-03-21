@@ -13,11 +13,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { LayoutDashboardIcon, FolderIcon } from "lucide-react";
+import { LayoutDashboardIcon, FolderIcon, CreditCardIcon } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboardIcon },
   { href: "/projects", label: "Projects", icon: FolderIcon },
+  { href: "/billing", label: "Billing", icon: CreditCardIcon },
 ];
 
 export function AppSidebar() {

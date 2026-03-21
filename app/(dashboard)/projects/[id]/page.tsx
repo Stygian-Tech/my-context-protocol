@@ -9,8 +9,10 @@ import { RepoConnectionSection } from "@/components/dashboard/repo-connection-se
 import { ReleaseTable } from "@/components/dashboard/release-table";
 import { ApiKeyManager } from "@/components/dashboard/api-key-manager";
 import { RequestLogsTable } from "@/components/dashboard/request-logs-table";
-
+import { CustomDomainSection } from "@/components/dashboard/custom-domain-section";
+import { useAuth } from "@/contexts/auth-context";
 export default function ProjectDetailPage() {
+  const { user } = useAuth();
   const params = useParams();
   const projectId = params.id as string;
 
@@ -38,11 +40,12 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-6 md:space-y-7">
+      <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-        <p className="text-muted-foreground">
-          {project.subdomain}.mcp.yourdomain.com
+        <p className="text-muted-foreground font-mono text-sm leading-relaxed break-all">
+          {project.mcp_url ??
+            "MCP URL unavailable — set SAAS_MCP_BASE_DOMAIN on the server (or verify a custom domain)."}
         </p>
       </div>
       <Tabs defaultValue="overview">
@@ -62,11 +65,19 @@ export default function ProjectDetailPage() {
                 <dd className="inline">{project.slug}</dd>
               </div>
               <div>
-                <dt className="text-muted-foreground inline">Subdomain: </dt>
+                <dt className="text-muted-foreground inline">Platform subdomain: </dt>
                 <dd className="inline">{project.subdomain}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground inline">MCP URL: </dt>
+                <dd className="inline font-mono break-all">
+                  {project.mcp_url ??
+                    "— (configure SAAS_MCP_BASE_DOMAIN or verify custom domain)"}
+                </dd>
               </div>
             </dl>
           </div>
+          {user?.plan === "pro" && <CustomDomainSection projectId={projectId} />}
         </TabsContent>
         <TabsContent value="repo">
           <RepoConnectionSection projectId={projectId} />

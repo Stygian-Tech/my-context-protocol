@@ -18,8 +18,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
           <Badge variant="secondary">{project.slug}</Badge>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground text-sm">
-            {project.subdomain}.mcp.yourdomain.com
+          <p className="text-muted-foreground font-mono text-xs break-all">
+            {project.mcp_url ?? "MCP URL not configured on server"}
           </p>
         </CardContent>
       </Card>

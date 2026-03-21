@@ -7,6 +7,10 @@ export interface Project {
   slug: string;
   subdomain: string;
   created_at: string;
+  custom_domain?: string | null;
+  custom_domain_verified_at?: string | null;
+  /** Full MCP endpoint URL from the API (scheme + host + path). */
+  mcp_url?: string | null;
 }
 
 export interface RepoConnection {
@@ -17,6 +21,15 @@ export interface RepoConnection {
   default_branch: string;
   auth_type: string;
   webhook_id?: string | null;
+}
+
+/** From `GET /github/repos` (GitHub repos the OAuth token can access). */
+export interface GithubRepoListItem {
+  full_name: string;
+  owner_login: string;
+  name: string;
+  default_branch: string;
+  is_private: boolean;
 }
 
 export interface Release {
@@ -59,9 +72,20 @@ export interface RequestLog {
   error_code?: string | null;
 }
 
+export type AppEnv = "local" | "dev" | "prod";
+
 export interface User {
   id: string;
   email?: string;
   login?: string;
   avatar_url?: string;
+  plan: "free" | "pro";
+  /** Server env allowlist (`INTERNAL_PRO_GITHUB_*`); not a Stripe subscription. */
+  internal_pro_bypass?: boolean;
+  /** Stripe Customer on file — Customer Portal works. */
+  can_manage_subscription?: boolean;
+  /** Backend `APP_ENV` from `/auth/me`. */
+  app_env?: AppEnv;
+  /** True when API applies non-production Pro/rate-limit bypasses. */
+  non_production_bypasses?: boolean;
 }
