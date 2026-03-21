@@ -90,8 +90,8 @@ When a user connects a repo:
 **Changes:**
 
 - `RepoFetcher.fetch(owner:repo:ref:token:)` — add `token` parameter.
-- `SyncPipeline` loads connection, decrypts token, passes to fetcher.
-- If no token, fail with a clear error (e.g. "Repo not connected" or "Reconnect repo").
+- `SyncPipeline` loads the connection, decrypts the **OAuth** token from the connection or account (same precedence as before). If `github_installation_id` is set on the connection, it exchanges an **installation access token** via the GitHub App (same helper as webhook/connect-repo paths) and passes that to the fetcher; otherwise it passes the OAuth token. If no OAuth token exists and no installation id is set, the fetcher may fall back to `GITHUB_TOKEN` env (self-hosted) or fail at the API.
+- If no usable token, fail with a clear error (e.g. "Repo not connected" or "Reconnect repo").
 
 ---
 

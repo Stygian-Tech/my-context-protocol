@@ -18,7 +18,14 @@ struct RepoFetcher {
         }
         request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let session: URLSession
+        if let authToken = authToken {
+            let delegate = GitHubTarballRedirectDelegate(bearerToken: authToken)
+            session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        } else {
+            session = URLSession.shared
+        }
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0

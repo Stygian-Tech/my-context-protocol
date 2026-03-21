@@ -38,7 +38,7 @@ struct AlterAccountsForOAuth: AsyncMigration {
             .unique(on: "slug")
             .create()
 
-        // Recreate dependent tables
+        // Recreate dependent tables (order matters for FK)
         try await database.schema("repo_connections")
             .id()
             .field("project_id", .uuid, .required, .references("projects", "id", onDelete: .cascade))

@@ -34,6 +34,10 @@ final class RepoConnection: Model, Content {
     @OptionalField(key: "webhook_secret")
     var webhookSecret: String?
 
+    /// GitHub App installation id when Pro webhooks use installation access tokens.
+    @OptionalField(key: "github_installation_id")
+    var githubInstallationId: Int64?
+
     @OptionalField(key: "token_encrypted")
     var tokenEncrypted: String?
 
@@ -53,6 +57,7 @@ final class RepoConnection: Model, Content {
         tokenRef: String? = nil,
         webhookId: String? = nil,
         webhookSecret: String? = nil,
+        githubInstallationId: Int64? = nil,
         tokenEncrypted: String? = nil
     ) {
         self.id = id
@@ -65,6 +70,7 @@ final class RepoConnection: Model, Content {
         self.tokenRef = tokenRef
         self.webhookId = webhookId
         self.webhookSecret = webhookSecret
+        self.githubInstallationId = githubInstallationId
         self.tokenEncrypted = tokenEncrypted
     }
 }

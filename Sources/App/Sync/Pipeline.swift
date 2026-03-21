@@ -3,10 +3,12 @@ import Vapor
 
 struct SyncPipeline {
     let db: Database
+    let app: Application
     let fetcher: RepoFetcher
 
     init(db: Database, app: Application) {
         self.db = db
+        self.app = app
         self.fetcher = RepoFetcher(app: app)
     }
 
@@ -21,15 +23,27 @@ struct SyncPipeline {
             throw PipelineError.noRepoConnection
         }
 
-        var token: String?
+        var oauthToken: String?
         if let encrypted = connection.tokenEncrypted {
-            token = try? TokenEncryption.decrypt(encrypted)
+            oauthToken = try? TokenEncryption.decrypt(encrypted)
         }
-        if token == nil {
+        if oauthToken == nil {
             try await project.$account.load(on: db)
             if let encrypted = project.account.githubTokenEncrypted {
-                token = try? TokenEncryption.decrypt(encrypted)
+                oauthToken = try? TokenEncryption.decrypt(encrypted)
             }
+        }
+
+        let token: String?
+        if let installationId = connection.githubInstallationId {
+            token = try await GitHubAppInstallationTokenService.bearerTokenForGitHubREST(
+                installationId: installationId,
+                oauthToken: oauthToken ?? "",
+                client: app.client,
+                logger: app.logger
+            )
+        } else {
+            token = oauthToken
         }
 
         let release = Release(
@@ -60,6 +74,8 @@ struct SyncPipeline {
 
             var allValid = true
             var errorSummary: String?
+            var parsedSkills: [(ParsedSkill, SkillPackage)] = []
+            var validationErrors: [[String: String]] = []
 
             for fileURL in skillFiles {
                 do {
@@ -76,11 +92,13 @@ struct SyncPipeline {
                         validationStatus: validationStatus
                     )
                     try await skillPackage.save(on: db)
+                    parsedSkills.append((skill, skillPackage))
 
                     if !report.isValid {
                         allValid = false
                         let errMsgs = report.errors.map { "\($0.path): \($0.message)" }
                         errorSummary = (errorSummary.map { $0 + "\n" } ?? "") + errMsgs.joined(separator: "\n")
+                        validationErrors.append(contentsOf: report.errors.map { ["path": $0.path, "message": $0.message] })
                     }
 
                     let toolIndex = ToolIndex(
@@ -93,15 +111,35 @@ struct SyncPipeline {
                 } catch {
                     allValid = false
                     errorSummary = (errorSummary.map { $0 + "\n" } ?? "") + "\(fileURL.path): \(error.localizedDescription)"
+                    validationErrors.append(["path": fileURL.path, "message": error.localizedDescription])
                 }
             }
+
+            let compiler = Compiler(db: db)
+            try await compiler.compile(releaseId: release.id!, skills: parsedSkills)
+
+            let reportPayload: [String: Any] = [
+                "is_valid": allValid,
+                "errors": validationErrors
+            ]
+            let reportData = try JSONSerialization.data(withJSONObject: reportPayload)
+            let reportJson = String(data: reportData, encoding: .utf8) ?? "{}"
+            let validationReport = ValidationReportRecord(
+                releaseId: release.id!,
+                reportJson: reportJson
+            )
+            try await validationReport.save(on: db)
 
             release.status = allValid ? "ready" : "failed"
             release.errorSummary = errorSummary
             release.commitSha = "latest"
             try await release.save(on: db)
 
-            if allValid {
+            let compiledSkills = try await CompiledSkill.query(on: db)
+                .filter(\.$release.$id == release.id!)
+                .all()
+            let allReady = allValid && compiledSkills.allSatisfy { $0.status == "ready" }
+            if allReady {
                 project.activeReleaseId = release.id
                 try await project.save(on: db)
             }

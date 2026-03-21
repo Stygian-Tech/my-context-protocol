@@ -1,12 +1,26 @@
 import Fluent
 import FluentPostgresDriver
 import FluentSQLiteDriver
+import NIOSSL
+import PostgresKit
 import Vapor
 
 public func configure(_ app: Application) throws {
+    let deploy = AppEnvironment.deployKind()
+    let bypass = AppEnvironment.nonProductionBypassesActive
+    let strict = AppEnvironment.strictProGating
+    app.logger.info(
+        "APP_ENV=\(deploy.rawValue) non_production_bypasses=\(bypass) STRICT_PRO_GATING=\(strict)"
+    )
+
     let corsOrigin = Environment.get("CORS_ORIGIN") ?? "http://localhost:3000"
+    // Use .originBased in dev to echo the request's Origin—avoids mismatch (localhost vs 127.0.0.1)
+    // and ensures CORS headers are correct for credentials: include.
+    let allowedOrigin: CORSMiddleware.AllowOriginSetting = corsOrigin.contains("localhost")
+        ? .originBased
+        : .custom(corsOrigin)
     let corsConfig = CORSMiddleware.Configuration(
-        allowedOrigin: .custom(corsOrigin),
+        allowedOrigin: allowedOrigin,
         allowedMethods: [.GET, .POST, .PUT, .OPTIONS, .DELETE, .PATCH],
         allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith],
         allowCredentials: true
@@ -17,10 +31,24 @@ public func configure(_ app: Application) throws {
     app.routes.defaultMaxBodySize = "10mb"
 
     app.sessions.use(.memory)
+    // Allow session cookie over HTTP on localhost (isSecure: false) so OAuth redirect flow works
+    let isLocalhost = (Environment.get("CORS_ORIGIN") ?? "").contains("localhost")
+    app.sessions.configuration.cookieFactory = { sessionID in
+        .init(string: sessionID.string, isSecure: !isLocalhost)
+    }
     app.middleware.use(app.sessions.middleware)
 
     if let databaseURL = Environment.get("DATABASE_URL"), !databaseURL.isEmpty {
-        try app.databases.use(.postgres(url: databaseURL), as: .psql)
+        let useInsecureTLS = Environment.get("DATABASE_INSECURE_TLS").map { $0.lowercased() }.map { $0 == "1" || $0 == "true" } ?? false
+        if useInsecureTLS {
+            var config = try SQLPostgresConfiguration(url: databaseURL)
+            var tlsConfig = TLSConfiguration.makeClientConfiguration()
+            tlsConfig.certificateVerification = .none
+            config.coreConfiguration.tls = .require(try NIOSSLContext(configuration: tlsConfig))
+            try app.databases.use(.postgres(configuration: config), as: .psql)
+        } else {
+            try app.databases.use(.postgres(url: databaseURL), as: .psql)
+        }
     } else if let url = Environment.get("SUPABASE_DB_URL") {
         try app.databases.use(.postgres(url: url), as: .psql)
     } else if app.environment == .testing {
@@ -56,6 +84,13 @@ public func configure(_ app: Application) throws {
     app.migrations.add(SeedPersonalUse())
     app.migrations.add(AlterAccountsForOAuth())
     app.migrations.add(AddSaaSFields())
+    app.migrations.add(CreateCompiledSkills())
+    app.migrations.add(CreateRoutingRules())
+    app.migrations.add(CreateCapabilityDefs())
+    app.migrations.add(CreateValidationReports())
+    app.migrations.add(AddBillingToAccounts())
+    app.migrations.add(AlterProjectsTenantAndDomain())
+    app.migrations.add(AddGithubInstallationToRepoConnections())
 
     try app.autoMigrate().wait()
 

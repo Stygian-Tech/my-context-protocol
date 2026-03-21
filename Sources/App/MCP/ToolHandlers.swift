@@ -15,20 +15,29 @@ struct ToolHandlers {
             return "No active release"
         }
 
-        let skillName = String(name.dropFirst("skill:".count))
-        let skillPackage = try await SkillPackage.query(on: db)
+        let compiledIds = try await CompiledSkill.query(on: db)
             .filter(\.$release.$id == releaseId)
-            .filter(\.$name == skillName)
-            .first()
+            .filter(\.$status == "ready")
+            .all()
+            .compactMap(\.id)
 
-        guard let skill = skillPackage else {
-            return "Skill not found: \(skillName)"
+        guard !compiledIds.isEmpty else {
+            return "No active release"
         }
 
+        guard let cap = try await CapabilityDef.query(on: db)
+            .filter(\.$compiledSkill.$id ~~ compiledIds)
+            .filter(\.$capabilityName == name)
+            .with(\.$compiledSkill)
+            .first() else {
+            return "Skill not found: \(name)"
+        }
+
+        let compiled = cap.compiledSkill
         return """
-        Skill: \(skill.name)
-        Path: \(skill.path)
-        Description: \(skill.description ?? "N/A")
+        Skill: \(compiled.name)
+        Path: \(compiled.path)
+        Summary: \(compiled.summary ?? "N/A")
         """
     }
 }

@@ -22,6 +22,16 @@ final class Account: Model, Content {
     @OptionalField(key: "github_token_encrypted")
     var githubTokenEncrypted: String?
 
+    @OptionalField(key: "stripe_customer_id")
+    var stripeCustomerId: String?
+
+    @OptionalField(key: "stripe_subscription_id")
+    var stripeSubscriptionId: String?
+
+    /// Stripe subscription lifecycle: none, active, trialing, past_due, canceled, unpaid, incomplete, etc.
+    @OptionalField(key: "subscription_status")
+    var subscriptionStatus: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -46,3 +56,23 @@ final class Account: Model, Content {
 }
 
 extension Account: @unchecked Sendable {}
+
+extension Account {
+    /// Stripe subscription in good standing.
+    var hasActiveProSubscription: Bool {
+        let s = subscriptionStatus ?? "none"
+        return s == "active" || s == "trialing"
+    }
+
+    /// Pro feature gate: non-production bypass, active Stripe subscription, or internal env allowlist (`INTERNAL_PRO_*`).
+    var hasProEntitlements: Bool {
+        if AppEnvironment.nonProductionBypassesActive { return true }
+        if hasActiveProSubscription { return true }
+        return InternalProBypass.matches(login: login, githubId: githubId)
+    }
+
+    var hasStripeCustomerRecord: Bool {
+        guard let id = stripeCustomerId else { return false }
+        return !id.isEmpty
+    }
+}

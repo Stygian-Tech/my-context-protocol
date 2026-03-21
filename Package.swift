@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "MyContextProtocol",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v13),
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),
@@ -12,6 +12,7 @@ let package = Package(
         .package(url: "https://github.com/vapor/fluent-postgres-driver.git", from: "2.7.0"),
         .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", from: "4.2.0"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
+        .package(url: "https://github.com/vapor/jwt-kit.git", from: "4.13.0"),
     ],
     targets: [
         .executableTarget(
@@ -22,6 +23,7 @@ let package = Package(
                 .product(name: "FluentPostgresDriver", package: "fluent-postgres-driver"),
                 .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
                 .product(name: "Yams", package: "Yams"),
+                .product(name: "JWTKit", package: "jwt-kit"),
             ],
             swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
         ),

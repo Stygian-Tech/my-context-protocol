@@ -8,11 +8,30 @@ struct ProjectResponse: Content {
     let slug: String
     let subdomain: String
     let created_at: String
+    let custom_domain: String?
+    let custom_domain_verified_at: String?
+    /// Public MCP endpoint (`SAAS_MCP_URL_SCHEME`, host, `SAAS_MCP_PATH`). Nil if tenant base domain unset and no verified custom domain.
+    let mcp_url: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, slug, subdomain
         case account_id = "account_id"
         case created_at = "created_at"
+        case custom_domain = "custom_domain"
+        case custom_domain_verified_at = "custom_domain_verified_at"
+        case mcp_url = "mcp_url"
+    }
+}
+
+struct CustomDomainResponse: Content {
+    let hostname: String?
+    let verified: Bool
+    let verification_token: String?
+    let instructions: String?
+
+    enum CodingKeys: String, CodingKey {
+        case hostname, verified, instructions
+        case verification_token = "verification_token"
     }
 }
 
@@ -24,6 +43,8 @@ struct RepoConnectionResponse: Content {
     let default_branch: String
     let auth_type: String
     let webhook_id: String?
+    /// True when a GitHub App installation id is stored (Pro webhook / API calls can use installation token).
+    let github_installation_configured: Bool
 
     enum CodingKeys: String, CodingKey {
         case provider, auth_type
@@ -32,6 +53,22 @@ struct RepoConnectionResponse: Content {
         case repo_name = "repo_name"
         case default_branch = "default_branch"
         case webhook_id = "webhook_id"
+        case github_installation_configured = "github_installation_configured"
+    }
+}
+
+/// One repository the signed-in user can access (from GitHub `GET /user/repos`).
+struct GithubRepoListItem: Content {
+    let full_name: String
+    let owner_login: String
+    let name: String
+    let default_branch: String
+    let is_private: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case full_name, name, default_branch
+        case owner_login = "owner_login"
+        case is_private = "is_private"
     }
 }
 
@@ -75,6 +112,29 @@ struct ApiKeyCreateResponse: Content {
 
     enum CodingKeys: String, CodingKey {
         case key, prefix
+    }
+}
+
+struct CompiledSkillResponse: Content {
+    let id: String
+    let release_id: String
+    let skill_package_id: String
+    let path: String
+    let name: String
+    let summary: String?
+    let exposure_type: String
+    let risk_level: String
+    let repo_specific: Bool
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, path, name, summary
+        case release_id = "release_id"
+        case skill_package_id = "skill_package_id"
+        case exposure_type = "exposure_type"
+        case risk_level = "risk_level"
+        case repo_specific = "repo_specific"
+        case status = "status"
     }
 }
 
