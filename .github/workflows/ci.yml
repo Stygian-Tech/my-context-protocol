@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test:
     name: Swift test
-    runs-on: ubuntu-latest
+    runs-on: depot/ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
@@ -27,7 +27,7 @@ jobs:
     name: Docker build and push (Depot)
     needs: test
     if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: depot/ubuntu-latest
     permissions:
       contents: read
       packages: write
