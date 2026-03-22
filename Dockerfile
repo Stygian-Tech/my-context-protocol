@@ -1,5 +1,5 @@
 # Build
-FROM swift:5.10-jammy AS build
+FROM swift:6.2-jammy AS build
 WORKDIR /build
 COPY Package.swift Package.resolved ./
 RUN swift package resolve
@@ -7,7 +7,7 @@ COPY Sources ./Sources
 RUN swift build -c release --product App
 
 # Run (Swift runtime + libc compatible with the build)
-FROM swift:5.10-jammy
+FROM swift:6.2-jammy
 WORKDIR /app
 COPY --from=build /build/.build/release/App /app/App
 EXPOSE 8080
