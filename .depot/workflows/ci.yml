@@ -123,7 +123,7 @@ jobs:
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=debug \
-            swift test --skip-build --parallel -vv --no-color-diagnostics \
+            swift test --skip-build -vv --no-color-diagnostics \
             --xunit-output .build/ci-logs/swift-test-xunit.xml \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
       - name: Re-run Tests Sequentially (Diagnostics)
