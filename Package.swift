@@ -44,6 +44,7 @@ let package = Package(
                 .product(name: "VaporTesting", package: "vapor"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ],
+            path: "Tests/AppTests",
             swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]
         ),
     ]

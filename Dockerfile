@@ -11,6 +11,7 @@ RUN --mount=type=cache,target=/root/.cache \
     swift package resolve
 
 COPY Sources ./Sources
+COPY Tests ./Tests
 
 # Copy the binary out of the cache mount so it exists in the image layer (mount contents are not saved).
 RUN --mount=type=cache,target=/root/.cache \
