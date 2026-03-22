@@ -107,7 +107,7 @@ jobs:
       # runs via Depot) output after linking can look missing because it is buried or truncated.
       # A dedicated "Run tests" step keeps pass/fail lines in a short, separate step.
       - name: Build Tests
-        run: swift build --build-tests -q -Xswiftc -warnings-as-errors
+        run: swift build --build-tests -Xswiftc -warnings-as-errors
       - name: List Tests
         run: swift test --skip-build --list-tests
       - name: Run Tests
