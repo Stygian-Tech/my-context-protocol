@@ -319,13 +319,12 @@ jobs:
     needs: test
     if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
     runs-on: depot-ubuntu-latest
-    # Depot auth: store the project ID + API token in GitHub repo secrets (values from Depot:
-    # Project settings → API / tokens). The remote build runs in your Depot project because of this.
-    # Dashboard "environment variables" are NOT auto-injected into `docker build`; pass build-time
-    # values with `build-args` / `secrets` on depot/build-push-action if the Dockerfile needs them.
-    env:
-      DEPOT_PROJECT_ID: ${{ secrets.DEPOT_PROJECT_ID }}
-      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+    # Depot API auth via GitHub OIDC (trust relationship in Depot project settings). No DEPOT_TOKEN.
+    # Docker Hub push still uses DOCKERHUB_* secrets below.
+    # Dashboard env vars are NOT auto-injected into `docker build`; use `build-args` / `secrets` if needed.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v3
@@ -341,13 +340,11 @@ jobs:
           else
             echo "TAG=dev" >> $GITHUB_OUTPUT
           fi
-      # `project` + `token` match depot.json / DEPOT_PROJECT_ID + DEPOT_TOKEN (set on job env above).
       - uses: depot/build-push-action@v1
         with:
           context: .
           push: true
-          project: ${{ secrets.DEPOT_PROJECT_ID }}
-          token: ${{ secrets.DEPOT_TOKEN }}
+          project: mp735xms8r
           tags: |
             stygiantech/my-context-protocol:${{ steps.vars.outputs.TAG }}
             stygiantech/my-context-protocol:sha-${{ github.sha }}

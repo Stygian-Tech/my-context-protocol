@@ -90,6 +90,10 @@ Sources/MyContextProtocol/
 - [Notion spec](https://www.notion.so/MyContextProtocol-325f6c1638ed80568b93dc8e6abba384)
 - Implementation plan: see `.cursor/plans/` for phased rollout
 
+## CI/CD
+
+- Backend GitHub Actions + Depot: see [`Docs/CI_CD.md`](Docs/CI_CD.md).
+
 ## License
 
 MIT
