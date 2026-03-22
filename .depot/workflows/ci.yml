@@ -108,16 +108,17 @@ jobs:
           sudo tar -xzf "$SWIFT_TAR" -C /opt
           echo "/opt/${SWIFT_ROOT}/usr/bin" >> "${GITHUB_PATH}"
           swift --version
-      # Use a single `swift test` invocation (build + run tests in one process).
+      # Single `swift test` (no split) — see swiftlang/swift-package-manager#9441: a *second*
+      # SwiftPM invocation (`swift test --skip-build` after `swift build`) can hang at "Planning
+      # build" on Linux/KVM with Swift 6.1+ (no CPU). Fix upstream: SwiftPM PR #9493 in 6.3-dev+.
       #
-      # Do NOT split into `swift build --build-tests` + `swift test --skip-build`: the second
-      # SwiftPM run is still an *incremental* build graph/plan ("Planning build"), and Swift 6.1+
-      # can hang there indefinitely on some Linux/KVM hosts (e.g. Depot). One combined `swift test`
-      # avoids that second incremental planning phase. See: swiftlang/swift-package-manager#9441
+      # Swift 6.2.x can still hang on the *first* planning pass if llbuild/plan state under `.build`
+      # is bad. We therefore: clean + scrub `index-build` / `build.db` before `swift test`, avoid
+      # extra manifest-cache flags that can interact badly, use `-v` for progress, and emit a
+      # heartbeat line every 60s so "silent" stalls are visible in logs.
       #
-      # `swift package clean` before + after resolve/patch drops llbuild / manifest JSON that may be
-      # stale or truncated when restoring caches. We only cache checkouts/repositories/artifacts,
-      # not incremental build records (see "Cache SwiftPM dependencies" above).
+      # `swift package clean` before + after resolve/patch; we only cache checkouts/repositories/
+      # artifacts (see "Cache SwiftPM dependencies" above).
       #
       # Vapor's VaporTesting target imports `Testing` but does not declare a swift-testing package
       # dependency; Linux OSS toolchains then miss `_TestingInternals`. Patch Vapor's checkout
@@ -189,18 +190,29 @@ jobs:
           PATCH_VAPOR_EOF
           swift package clean
           echo "Running swift test (after clean; single invocation; avoids incremental Planning build hang on Linux)..."
-          # AppTests use Swift Testing only (no XCTest). Without --disable-xctest, SwiftPM still
-          # spins up an empty XCTest harness ("Executed 0 tests") and --xunit-output can error on
-          # Linux with ENOENT / exit 1 after the build. Prefer Swift Testing explicitly; skip xUnit
-          # XML here (re-enable with an absolute path if you need JUnit for another system).
+          # AppTests use Swift Testing only. `--disable-xctest` turns off the XCTest *runner* (no
+          # empty XCTest harness / xunit quirks). SwiftPM still *names* the bundle
+          # `MyContextProtocolPackageTests.xctest` — that is the normal test bundle filename on
+          # Linux/macOS, not proof that XCTest.framework is linked.
+          # Prefer Swift Testing explicitly; skip xUnit XML here (re-enable with an absolute path if needed).
+          # Scrub planner state that `swift package clean` can leave behind on Linux (#9441).
+          rm -rf .build/index-build 2>/dev/null || true
+          find .build -name build.db -delete 2>/dev/null || true
+          (
+            while true; do
+              date -u +"[ci-heartbeat] %Y-%m-%dT%H:%M:%SZ swift test still running..."
+              sleep 60
+            done
+          ) &
+          _HEARTBEAT_PID=$!
+          trap 'kill ${_HEARTBEAT_PID} 2>/dev/null || true' EXIT
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=info \
             swift test --no-color-diagnostics --skip-update \
-            --disable-build-manifest-caching \
-            --manifest-cache local \
+            -v \
             --enable-swift-testing --disable-xctest \
-            -j 2 \
+            --no-parallel \
             -Xswiftc -warnings-as-errors \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
       - name: Re-run Tests Sequentially (Diagnostics)
@@ -265,14 +277,21 @@ jobs:
           print("Patched Vapor Package.swift: VaporTesting -> swift-testing.")
           PATCH_VAPOR_EOF
           swift package clean
+          rm -rf .build/index-build 2>/dev/null || true
+          find .build -name build.db -delete 2>/dev/null || true
+          (
+            while true; do
+              date -u +"[ci-heartbeat] %Y-%m-%dT%H:%M:%SZ swift test rerun still running..."
+              sleep 60
+            done
+          ) &
+          _HEARTBEAT_PID=$!
+          trap 'kill ${_HEARTBEAT_PID} 2>/dev/null || true' EXIT
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=debug \
             swift test --no-parallel -vv --no-color-diagnostics --skip-update \
-            --disable-build-manifest-caching \
-            --manifest-cache local \
             --enable-swift-testing --disable-xctest \
-            -j 2 \
             -Xswiftc -warnings-as-errors \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-rerun-console.log
       - name: Upload Swift Test Diagnostics
