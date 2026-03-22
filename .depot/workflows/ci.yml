@@ -18,13 +18,19 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Cache SwiftPM Build
+      # Cache dependency sources only — NOT the full `.build` tree. Restoring debug/index-build/
+      # manifest JSON / llbuild records from Actions cache often yields truncated files ("Corrupted
+      # JSON", "unexpected end of file") after interrupted jobs or cross-run races.
+      - name: Cache SwiftPM dependencies
         uses: actions/cache@v4
         with:
-          path: .build
-          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          path: |
+            .build/checkouts
+            .build/repositories
+            .build/artifacts
+          key: ${{ runner.os }}-spm-deps-${{ hashFiles('**/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-spm-
+            ${{ runner.os }}-spm-deps-
       - name: Swift Toolchain Cache Key
         id: swiftkey
         run: |
@@ -109,9 +115,9 @@ jobs:
       # can hang there indefinitely on some Linux/KVM hosts (e.g. Depot). One combined `swift test`
       # avoids that second incremental planning phase. See: swiftlang/swift-package-manager#9441
       #
-      # Always `swift package clean` after restoring the `.build` cache: a stale graph (e.g. only
-      # the App product built, or objects from another Swift/SPM version) can fail when linking
-      # AppTests to the executable target, while `clean` keeps checkouts and forces a consistent link.
+      # `swift package clean` before + after resolve/patch drops llbuild / manifest JSON that may be
+      # stale or truncated when restoring caches. We only cache checkouts/repositories/artifacts,
+      # not incremental build records (see "Cache SwiftPM dependencies" above).
       #
       # Vapor's VaporTesting target imports `Testing` but does not declare a swift-testing package
       # dependency; Linux OSS toolchains then miss `_TestingInternals`. Patch Vapor's checkout
@@ -129,6 +135,8 @@ jobs:
           swift --version | tee .build/ci-logs/swift-version.txt
           uname -a | tee .build/ci-logs/uname.txt
           ulimit -a 2>&1 | tee .build/ci-logs/ulimit.txt || true
+          # Drop any stale build graph / incremental state (do not rely on cached llbuild JSON).
+          swift package clean
           swift package resolve
           python3 <<'PATCH_VAPOR_EOF'
           import os
@@ -189,7 +197,10 @@ jobs:
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=info \
             swift test --no-color-diagnostics --skip-update \
+            --disable-build-manifest-caching \
+            --manifest-cache local \
             --enable-swift-testing --disable-xctest \
+            -j 2 \
             -Xswiftc -warnings-as-errors \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
       - name: Re-run Tests Sequentially (Diagnostics)
@@ -253,11 +264,15 @@ jobs:
           pkg.write_text(text, encoding="utf-8")
           print("Patched Vapor Package.swift: VaporTesting -> swift-testing.")
           PATCH_VAPOR_EOF
+          swift package clean
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=debug \
             swift test --no-parallel -vv --no-color-diagnostics --skip-update \
+            --disable-build-manifest-caching \
+            --manifest-cache local \
             --enable-swift-testing --disable-xctest \
+            -j 2 \
             -Xswiftc -warnings-as-errors \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-rerun-console.log
       - name: Upload Swift Test Diagnostics
