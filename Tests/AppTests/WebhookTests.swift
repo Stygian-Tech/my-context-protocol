@@ -1,5 +1,5 @@
 @testable import App
-import CryptoKit
+import Crypto
 import Foundation
 import NIOCore
 import Testing

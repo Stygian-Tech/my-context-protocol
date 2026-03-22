@@ -1,4 +1,4 @@
-import CryptoKit
+import Crypto
 import Fluent
 import Vapor
 
