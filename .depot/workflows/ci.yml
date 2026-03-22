@@ -112,6 +112,10 @@ jobs:
       # Always `swift package clean` after restoring the `.build` cache: a stale graph (e.g. only
       # the App product built, or objects from another Swift/SPM version) can fail when linking
       # AppTests to the executable target, while `clean` keeps checkouts and forces a consistent link.
+      #
+      # Vapor's VaporTesting target imports `Testing` but does not declare a swift-testing package
+      # dependency; Linux OSS toolchains then miss `_TestingInternals`. Patch Vapor's checkout
+      # after resolve (see scripts/patch-vapor-swift-testing.py and vapor/vapor#3391).
       - name: Build and Run Tests
         id: run_tests
         env:
@@ -124,13 +128,15 @@ jobs:
           swift --version | tee .build/ci-logs/swift-version.txt
           uname -a | tee .build/ci-logs/uname.txt
           ulimit -a 2>&1 | tee .build/ci-logs/ulimit.txt || true
+          swift package resolve
+          python3 scripts/patch-vapor-swift-testing.py
           swift package clean
           echo "Running swift test (after clean; single invocation; avoids incremental Planning build hang on Linux)..."
           # Line-buffer + tee: full console in artifact on failure; keep LOG_LEVEL quiet to reduce stdout backpressure.
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=info \
-            swift test --no-color-diagnostics \
+            swift test --no-color-diagnostics --skip-update \
             -Xswiftc -warnings-as-errors \
             --xunit-output .build/ci-logs/swift-test-xunit.xml \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
@@ -145,10 +151,12 @@ jobs:
           echo "Re-running swift test with --no-parallel -vv after purge/reset (avoids incremental Planning hang)..."
           swift package purge-cache
           swift package reset
+          swift package resolve
+          python3 scripts/patch-vapor-swift-testing.py
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=debug \
-            swift test --no-parallel -vv --no-color-diagnostics \
+            swift test --no-parallel -vv --no-color-diagnostics --skip-update \
             -Xswiftc -warnings-as-errors \
             --xunit-output .build/ci-logs/swift-test-xunit-rerun.xml \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-rerun-console.log
@@ -188,5 +196,5 @@ jobs:
           project: ${{ secrets.DEPOT_PROJECT_ID }}
           token: ${{ secrets.DEPOT_TOKEN }}
           tags: |
-            countablenewt/my-context-protocol:${{ steps.vars.outputs.TAG }}
-            countablenewt/my-context-protocol:sha-${{ github.sha }}
+            stygiantech/my-context-protocol:${{ steps.vars.outputs.TAG }}
+            stygiantech/my-context-protocol:sha-${{ github.sha }}
