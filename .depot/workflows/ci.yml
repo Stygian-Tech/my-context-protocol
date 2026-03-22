@@ -15,15 +15,27 @@ jobs:
   test:
     name: Swift Tests
     runs-on: depot-ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Cache SwiftPM build
+      - name: Cache SwiftPM Build
         uses: actions/cache@v4
         with:
           path: .build
           key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-spm-
+      - name: Swift Toolchain Cache Key
+        id: swiftkey
+        run: |
+          . /etc/os-release
+          echo "ubuntu=${VERSION_ID:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "arch=$(uname -m)" >> "$GITHUB_OUTPUT"
+      - name: Cache Swift Toolchain Tarball
+        uses: actions/cache@v4
+        with:
+          path: .ci-cache/swift-toolchain.tgz
+          key: swift-tarball-6.2.4-${{ steps.swiftkey.outputs.ubuntu }}-${{ steps.swiftkey.outputs.arch }}
       # Install Swift from swift.org (same generation as Dockerfile swift:6.2-jammy). On Depot CI,
       # setup-swift can leave an older host Swift on PATH; that compiler does not understand visionOS
       # in availability metadata from dependencies (e.g. Yams), which triggers fatal errors on Linux.
@@ -82,11 +94,16 @@ jobs:
           esac
           SWIFT_ROOT="swift-${SWIFT_VER}-RELEASE-${SWIFT_UBUNTU}"
           URL="https://download.swift.org/swift-${SWIFT_VER}-release/${SWIFT_DL}/swift-${SWIFT_VER}-RELEASE/${SWIFT_ROOT}.tar.gz"
-          curl -fsSL "$URL" -o /tmp/swift.tgz
-          sudo tar -xzf /tmp/swift.tgz -C /opt
+          mkdir -p .ci-cache
+          SWIFT_TAR=".ci-cache/swift-toolchain.tgz"
+          if [ ! -s "$SWIFT_TAR" ]; then
+            curl -fsSL "$URL" -o "$SWIFT_TAR"
+          fi
+          sudo tar -xzf "$SWIFT_TAR" -C /opt
           echo "/opt/${SWIFT_ROOT}/usr/bin" >> "${GITHUB_PATH}"
           swift --version
       - name: Run Tests
+        # Default parallelism uses all CPUs (16 here); -j 2 was throttling compile/link a lot.
         run: swift test --parallel -Xswiftc -warnings-as-errors
 
   docker:
