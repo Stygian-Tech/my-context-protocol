@@ -15,6 +15,9 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
         .package(url: "https://github.com/vapor/jwt-kit.git", from: "4.13.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+        // Explicit dependency: Linux CI links `AppTests` against `Testing`; pinning avoids
+        // toolchain/package mismatches when resolving the test bundle against `App`.
+        .package(url: "https://github.com/apple/swift-testing.git", from: "6.2.0"),
     ],
     targets: [
         .executableTarget(
@@ -35,6 +38,7 @@ let package = Package(
             name: "AppTests",
             dependencies: [
                 .target(name: "App"),
+                .product(name: "Testing", package: "swift-testing"),
                 .product(name: "VaporTesting", package: "vapor"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ],
