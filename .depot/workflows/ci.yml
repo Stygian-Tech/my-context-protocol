@@ -102,13 +102,13 @@ jobs:
           sudo tar -xzf "$SWIFT_TAR" -C /opt
           echo "/opt/${SWIFT_ROOT}/usr/bin" >> "${GITHUB_PATH}"
           swift --version
-      # Split build vs test so CI logs are readable on Depot (`depot-ubuntu-latest`): a single
-      # `swift test` emits a huge compile log first; in the GitHub Actions log view (used when CI
-      # runs via Depot) output after linking can look missing because it is buried or truncated.
-      # A dedicated "Run tests" step keeps pass/fail lines in a short, separate step.
-      - name: Build Tests
-        run: swift build --build-tests -Xswiftc -warnings-as-errors
-      - name: Run Tests
+      # Use a single `swift test` invocation (build + run tests in one process).
+      #
+      # Do NOT split into `swift build --build-tests` + `swift test --skip-build`: the second
+      # SwiftPM run is still an *incremental* build graph/plan ("Planning build"), and Swift 6.1+
+      # can hang there indefinitely on some Linux/KVM hosts (e.g. Depot). One combined `swift test`
+      # avoids that second incremental planning phase. See: swiftlang/swift-package-manager#9441
+      - name: Build and Run Tests
         id: run_tests
         env:
           # Prevent inherited runner/org secrets from forcing Postgres during `swift test` (hang risk on autoMigrate).
@@ -120,12 +120,13 @@ jobs:
           swift --version | tee .build/ci-logs/swift-version.txt
           uname -a | tee .build/ci-logs/uname.txt
           ulimit -a 2>&1 | tee .build/ci-logs/ulimit.txt || true
-          echo "Running swift test --skip-build (parallel, default verbosity)..."
+          echo "Running swift test (single invocation; avoids incremental Planning build hang on Linux)..."
           # Line-buffer + tee: full console in artifact on failure; keep LOG_LEVEL quiet to reduce stdout backpressure.
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=info \
-            swift test --skip-build --no-color-diagnostics \
+            swift test --no-color-diagnostics \
+            -Xswiftc -warnings-as-errors \
             --xunit-output .build/ci-logs/swift-test-xunit.xml \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
       - name: Re-run Tests Sequentially (Diagnostics)
@@ -136,11 +137,14 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p .build/ci-logs
-          echo "Re-running swift test --skip-build with --no-parallel for clearer failure output..."
+          echo "Re-running swift test with --no-parallel -vv after purge/reset (avoids incremental Planning hang)..."
+          swift package purge-cache
+          swift package reset
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=debug \
-            swift test --skip-build --no-parallel -vv --no-color-diagnostics \
+            swift test --no-parallel -vv --no-color-diagnostics \
+            -Xswiftc -warnings-as-errors \
             --xunit-output .build/ci-logs/swift-test-xunit-rerun.xml \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-rerun-console.log
       - name: Upload Swift Test Diagnostics
