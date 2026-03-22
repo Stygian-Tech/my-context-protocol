@@ -205,7 +205,10 @@ jobs:
             done
           ) &
           _HEARTBEAT_PID=$!
-          trap 'kill ${_HEARTBEAT_PID} 2>/dev/null || true' EXIT
+          # Do not use `trap ... EXIT` to kill the heartbeat: under `set -e`, a failed `kill` (e.g.
+          # race with exiting subshell) can override swift test's exit code. Capture PIPESTATUS and
+          # stop the heartbeat explicitly instead.
+          set +e
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=info \
@@ -215,6 +218,10 @@ jobs:
             --no-parallel \
             -Xswiftc -warnings-as-errors \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
+          _SWIFT_TEST_EXIT="${PIPESTATUS[0]}"
+          kill "${_HEARTBEAT_PID}" 2>/dev/null || true
+          wait "${_HEARTBEAT_PID}" 2>/dev/null || true
+          exit "${_SWIFT_TEST_EXIT}"
       - name: Re-run Tests Sequentially (Diagnostics)
         if: failure() && steps.run_tests.outcome == 'failure'
         env:
@@ -286,7 +293,7 @@ jobs:
             done
           ) &
           _HEARTBEAT_PID=$!
-          trap 'kill ${_HEARTBEAT_PID} 2>/dev/null || true' EXIT
+          set +e
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=debug \
@@ -294,6 +301,10 @@ jobs:
             --enable-swift-testing --disable-xctest \
             -Xswiftc -warnings-as-errors \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-rerun-console.log
+          _SWIFT_TEST_EXIT="${PIPESTATUS[0]}"
+          kill "${_HEARTBEAT_PID}" 2>/dev/null || true
+          wait "${_HEARTBEAT_PID}" 2>/dev/null || true
+          exit "${_SWIFT_TEST_EXIT}"
       - name: Upload Swift Test Diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
