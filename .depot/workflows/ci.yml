@@ -102,9 +102,19 @@ jobs:
           sudo tar -xzf "$SWIFT_TAR" -C /opt
           echo "/opt/${SWIFT_ROOT}/usr/bin" >> "${GITHUB_PATH}"
           swift --version
-      - name: Run Tests
-        # Default parallelism uses all CPUs (16 here); -j 2 was throttling compile/link a lot.
-        run: swift test --parallel -Xswiftc -warnings-as-errors
+      # Split build vs test so CI logs are readable on Depot (`depot-ubuntu-latest`): a single
+      # `swift test` emits a huge compile log first; in the GitHub Actions log view (used when CI
+      # runs via Depot) output after linking can look missing because it is buried or truncated.
+      # A dedicated "Run tests" step keeps pass/fail lines in a short, separate step.
+      - name: Build (tests)
+        run: swift build --build-tests -q -Xswiftc -warnings-as-errors
+      - name: Run tests
+        run: |
+          set -euxo pipefail
+          echo "Running swift test --skip-build (verbose)..."
+          # Line-buffer stdout/stderr (Depot runner has no TTY; avoids losing output on crash/OOM).
+          stdbuf -oL -eL env SWIFT_BACKTRACE=enable \
+            swift test --skip-build --parallel -v --no-color-diagnostics
 
   docker:
     name: Docker Build and Push
