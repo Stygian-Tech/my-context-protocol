@@ -106,15 +106,46 @@ jobs:
       # `swift test` emits a huge compile log first; in the GitHub Actions log view (used when CI
       # runs via Depot) output after linking can look missing because it is buried or truncated.
       # A dedicated "Run tests" step keeps pass/fail lines in a short, separate step.
-      - name: Build (tests)
+      - name: Build Tests
         run: swift build --build-tests -q -Xswiftc -warnings-as-errors
-      - name: Run tests
+      - name: List Tests
+        run: swift test --skip-build --list-tests
+      - name: Run Tests
+        id: run_tests
         run: |
           set -euxo pipefail
-          echo "Running swift test --skip-build (verbose)..."
-          # Line-buffer stdout/stderr (Depot runner has no TTY; avoids losing output on crash/OOM).
-          stdbuf -oL -eL env SWIFT_BACKTRACE=enable \
-            swift test --skip-build --parallel -v --no-color-diagnostics
+          mkdir -p .build/ci-logs
+          swift --version | tee .build/ci-logs/swift-version.txt
+          uname -a | tee .build/ci-logs/uname.txt
+          ulimit -a 2>&1 | tee .build/ci-logs/ulimit.txt || true
+          echo "Running swift test --skip-build (parallel, --very-verbose)..."
+          # Line-buffer + tee: full console in artifact on failure; LOG_LEVEL drives Vapor logging.
+          stdbuf -oL -eL env \
+            SWIFT_BACKTRACE=enable \
+            LOG_LEVEL=debug \
+            swift test --skip-build --parallel -vv --no-color-diagnostics \
+            --xunit-output .build/ci-logs/swift-test-xunit.xml \
+            2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
+      - name: Re-run Tests Sequentially (Diagnostics)
+        if: failure() && steps.run_tests.outcome == 'failure'
+        run: |
+          set -euxo pipefail
+          mkdir -p .build/ci-logs
+          echo "Re-running swift test --skip-build with --no-parallel for clearer failure output..."
+          stdbuf -oL -eL env \
+            SWIFT_BACKTRACE=enable \
+            LOG_LEVEL=debug \
+            swift test --skip-build --no-parallel -vv --no-color-diagnostics \
+            --xunit-output .build/ci-logs/swift-test-xunit-rerun.xml \
+            2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-rerun-console.log
+      - name: Upload Swift Test Diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-test-diagnostics
+          if-no-files-found: warn
+          path: |
+            .build/ci-logs/
 
   docker:
     name: Docker Build and Push
