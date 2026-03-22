@@ -17,6 +17,13 @@ jobs:
     runs-on: depot-ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
       # Install Swift from swift.org (same generation as Dockerfile swift:6.2-jammy). On Depot CI,
       # setup-swift can leave an older host Swift on PATH; that compiler does not understand visionOS
       # in availability metadata from dependencies (e.g. Yams), which triggers fatal errors on Linux.
@@ -80,7 +87,7 @@ jobs:
           echo "/opt/${SWIFT_ROOT}/usr/bin" >> "${GITHUB_PATH}"
           swift --version
       - name: Run Tests
-        run: swift test -Xswiftc -warnings-as-errors
+        run: swift test --parallel -Xswiftc -warnings-as-errors
 
   docker:
     name: Docker Build and Push
