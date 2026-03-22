@@ -108,26 +108,31 @@ jobs:
       # A dedicated "Run tests" step keeps pass/fail lines in a short, separate step.
       - name: Build Tests
         run: swift build --build-tests -Xswiftc -warnings-as-errors
-      - name: List Tests
-        run: swift test --skip-build --list-tests
       - name: Run Tests
         id: run_tests
+        env:
+          # Prevent inherited runner/org secrets from forcing Postgres during `swift test` (hang risk on autoMigrate).
+          DATABASE_URL: ""
+          SUPABASE_DB_URL: ""
         run: |
           set -euxo pipefail
           mkdir -p .build/ci-logs
           swift --version | tee .build/ci-logs/swift-version.txt
           uname -a | tee .build/ci-logs/uname.txt
           ulimit -a 2>&1 | tee .build/ci-logs/ulimit.txt || true
-          echo "Running swift test --skip-build (parallel, --very-verbose)..."
-          # Line-buffer + tee: full console in artifact on failure; LOG_LEVEL drives Vapor logging.
+          echo "Running swift test --skip-build (parallel, default verbosity)..."
+          # Line-buffer + tee: full console in artifact on failure; keep LOG_LEVEL quiet to reduce stdout backpressure.
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
-            LOG_LEVEL=debug \
-            swift test --skip-build -vv --no-color-diagnostics \
+            LOG_LEVEL=info \
+            swift test --skip-build --no-color-diagnostics \
             --xunit-output .build/ci-logs/swift-test-xunit.xml \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
       - name: Re-run Tests Sequentially (Diagnostics)
         if: failure() && steps.run_tests.outcome == 'failure'
+        env:
+          DATABASE_URL: ""
+          SUPABASE_DB_URL: ""
         run: |
           set -euxo pipefail
           mkdir -p .build/ci-logs

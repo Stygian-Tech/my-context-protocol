@@ -6,7 +6,7 @@ import Testing
 import Vapor
 import VaporTesting
 
-@Suite("Webhooks")
+@Suite("Webhooks", .serialized)
 struct WebhookTests {
     @Test("POST /webhooks/github-app rejects bad HMAC")
     func githubAppBadSig() async throws {

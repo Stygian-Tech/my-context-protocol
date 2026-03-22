@@ -1,7 +1,7 @@
 @testable import App
 import Testing
 
-@Suite("AppEnvironment")
+@Suite("AppEnvironment", .serialized)
 struct AppEnvironmentTests {
     @Test("deploy kind and bypass flags")
     func deployAndBypass() async throws {
