@@ -17,7 +17,7 @@ struct WebhookTests {
         setenv("GITHUB_APP_WEBHOOK_SECRET", "test_webhook_secret", 1)
 
         try await withApp(configure: configure) { app in
-            var body = ByteBufferAllocator().buffer(string: "{}")
+            let body = ByteBufferAllocator().buffer(string: "{}")
             try await app.testing().test(
                 .POST,
                 "webhooks/github-app",
@@ -48,7 +48,7 @@ struct WebhookTests {
         let sig = "sha256=" + mac.map { String(format: "%02x", $0) }.joined()
 
         try await withApp(configure: configure) { app in
-            var buf = ByteBufferAllocator().buffer(string: body)
+            let buf = ByteBufferAllocator().buffer(string: body)
             try await app.testing().test(
                 .POST,
                 "webhooks/github-app",
@@ -74,7 +74,7 @@ struct WebhookTests {
         setenv("STRIPE_WEBHOOK_SECRET", "stripe_test_secret", 1)
 
         try await withApp(configure: configure) { app in
-            var body = ByteBufferAllocator().buffer(string: "{}")
+            let body = ByteBufferAllocator().buffer(string: "{}")
             try await app.testing().test(
                 .POST,
                 "webhooks/stripe",
@@ -105,7 +105,7 @@ struct WebhookTests {
         let stripeSig = "t=\(ts),v1=\(hex)"
 
         try await withApp(configure: configure) { app in
-            var buf = ByteBufferAllocator().buffer(string: payload)
+            let buf = ByteBufferAllocator().buffer(string: payload)
             try await app.testing().test(
                 .POST,
                 "webhooks/stripe",

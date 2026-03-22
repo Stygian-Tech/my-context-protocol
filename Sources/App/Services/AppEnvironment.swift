@@ -9,9 +9,9 @@ enum DeployAppEnv: String, Sendable {
 
 enum AppEnvironment {
     /// Unit tests only (`@testable import App`); always nil in production.
-    static var _testOverrideAppEnv: String?
+    nonisolated(unsafe) static var _testOverrideAppEnv: String?
     /// Unit tests only; when set, overrides `STRICT_PRO_GATING` parsing.
-    static var _testOverrideStrict: Bool?
+    nonisolated(unsafe) static var _testOverrideStrict: Bool?
 
     /// Parsed `APP_ENV`: `local`, `dev`, or `prod`. Unknown/empty → `prod`.
     static func deployKind() -> DeployAppEnv {

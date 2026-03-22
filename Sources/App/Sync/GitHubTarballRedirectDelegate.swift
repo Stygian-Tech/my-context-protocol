@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// GitHub's tarball API returns `302` to `codeload.github.com`. `URLSession` does not forward
 /// `Authorization` across that redirect, which breaks private repos (often 403/404). Re-apply Bearer on redirect.
