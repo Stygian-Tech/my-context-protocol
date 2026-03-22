@@ -45,14 +45,14 @@ public func configure(_ app: Application) throws {
             var tlsConfig = TLSConfiguration.makeClientConfiguration()
             tlsConfig.certificateVerification = .none
             config.coreConfiguration.tls = .require(try NIOSSLContext(configuration: tlsConfig))
-            try app.databases.use(.postgres(configuration: config), as: .psql)
+            app.databases.use(.postgres(configuration: config), as: .psql)
         } else {
-            try app.databases.use(.postgres(url: databaseURL), as: .psql)
+            app.databases.use(try .postgres(url: databaseURL), as: .psql)
         }
     } else if let url = Environment.get("SUPABASE_DB_URL") {
-        try app.databases.use(.postgres(url: url), as: .psql)
+        app.databases.use(try .postgres(url: url), as: .psql)
     } else if app.environment == .testing {
-        try app.databases.use(.sqlite(.memory), as: .sqlite)
+        app.databases.use(.sqlite(.memory), as: .sqlite)
     } else {
         let hostname = Environment.get("DATABASE_HOST") ?? "localhost"
         let username = Environment.get("DATABASE_USERNAME") ?? "vapor_username"
@@ -60,16 +60,15 @@ public func configure(_ app: Application) throws {
         let database = Environment.get("DATABASE_NAME") ?? "vapor_database"
         let port = Environment.get("DATABASE_PORT").flatMap(Int.init) ?? 5432
 
-        try app.databases.use(
-            .postgres(
-                hostname: hostname,
-                port: port,
-                username: username,
-                password: password,
-                database: database
-            ),
-            as: .psql
+        let pgConfig = SQLPostgresConfiguration(
+            hostname: hostname,
+            port: port,
+            username: username,
+            password: password,
+            database: database,
+            tls: .disable
         )
+        app.databases.use(.postgres(configuration: pgConfig), as: .psql)
     }
 
     app.migrations.add(CreateAccounts())

@@ -5,7 +5,7 @@ import Foundation
 /// GET /auth/confirm?token= to establish session via fetch (same context as API calls).
 enum AuthTokenStore {
     private static let lock = NSLock()
-    private static var tokens: [String: (accountId: String, expiresAt: Date)] = [:]
+    nonisolated(unsafe) private static var tokens: [String: (accountId: String, expiresAt: Date)] = [:]
     private static let ttl: TimeInterval = 300 // 5 minutes
 
     static func put(_ token: String, accountId: String) {
