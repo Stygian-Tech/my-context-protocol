@@ -319,6 +319,13 @@ jobs:
     needs: test
     if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
     runs-on: depot-ubuntu-latest
+    # Depot auth: store the project ID + API token in GitHub repo secrets (values from Depot:
+    # Project settings → API / tokens). The remote build runs in your Depot project because of this.
+    # Dashboard "environment variables" are NOT auto-injected into `docker build`; pass build-time
+    # values with `build-args` / `secrets` on depot/build-push-action if the Dockerfile needs them.
+    env:
+      DEPOT_PROJECT_ID: ${{ secrets.DEPOT_PROJECT_ID }}
+      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v3
@@ -334,6 +341,7 @@ jobs:
           else
             echo "TAG=dev" >> $GITHUB_OUTPUT
           fi
+      # `project` + `token` match depot.json / DEPOT_PROJECT_ID + DEPOT_TOKEN (set on job env above).
       - uses: depot/build-push-action@v1
         with:
           context: .
