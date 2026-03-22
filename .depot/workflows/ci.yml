@@ -181,13 +181,16 @@ jobs:
           PATCH_VAPOR_EOF
           swift package clean
           echo "Running swift test (after clean; single invocation; avoids incremental Planning build hang on Linux)..."
-          # Line-buffer + tee: full console in artifact on failure; keep LOG_LEVEL quiet to reduce stdout backpressure.
+          # AppTests use Swift Testing only (no XCTest). Without --disable-xctest, SwiftPM still
+          # spins up an empty XCTest harness ("Executed 0 tests") and --xunit-output can error on
+          # Linux with ENOENT / exit 1 after the build. Prefer Swift Testing explicitly; skip xUnit
+          # XML here (re-enable with an absolute path if you need JUnit for another system).
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=info \
             swift test --no-color-diagnostics --skip-update \
+            --enable-swift-testing --disable-xctest \
             -Xswiftc -warnings-as-errors \
-            --xunit-output .build/ci-logs/swift-test-xunit.xml \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-console.log
       - name: Re-run Tests Sequentially (Diagnostics)
         if: failure() && steps.run_tests.outcome == 'failure'
@@ -254,8 +257,8 @@ jobs:
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=debug \
             swift test --no-parallel -vv --no-color-diagnostics --skip-update \
+            --enable-swift-testing --disable-xctest \
             -Xswiftc -warnings-as-errors \
-            --xunit-output .build/ci-logs/swift-test-xunit-rerun.xml \
             2>&1 | stdbuf -oL tee .build/ci-logs/swift-test-rerun-console.log
       - name: Upload Swift Test Diagnostics
         if: failure()
