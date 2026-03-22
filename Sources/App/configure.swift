@@ -5,6 +5,12 @@ import NIOSSL
 import PostgresKit
 import Vapor
 
+private func isTruthyEnv(_ key: String) -> Bool {
+    guard let raw = Environment.get(key) else { return false }
+    let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return v == "1" || v == "true" || v == "yes"
+}
+
 public func configure(_ app: Application) throws {
     let deploy = AppEnvironment.deployKind()
     let bypass = AppEnvironment.nonProductionBypassesActive
@@ -38,7 +44,12 @@ public func configure(_ app: Application) throws {
     }
     app.middleware.use(app.sessions.middleware)
 
-    if let databaseURL = Environment.get("DATABASE_URL"), !databaseURL.isEmpty {
+    /// When `true`, integration tests may use `DATABASE_URL` / `SUPABASE_DB_URL` instead of in-memory SQLite.
+    let usePostgresInTests = isTruthyEnv("TEST_USE_POSTGRES")
+
+    if app.environment == .testing, !usePostgresInTests {
+        app.databases.use(.sqlite(.memory), as: .sqlite)
+    } else if let databaseURL = Environment.get("DATABASE_URL"), !databaseURL.isEmpty {
         let useInsecureTLS = Environment.get("DATABASE_INSECURE_TLS").map { $0.lowercased() }.map { $0 == "1" || $0 == "true" } ?? false
         if useInsecureTLS {
             var config = try SQLPostgresConfiguration(url: databaseURL)
@@ -49,7 +60,7 @@ public func configure(_ app: Application) throws {
         } else {
             app.databases.use(try .postgres(url: databaseURL), as: .psql)
         }
-    } else if let url = Environment.get("SUPABASE_DB_URL") {
+    } else if let url = Environment.get("SUPABASE_DB_URL"), !url.isEmpty {
         app.databases.use(try .postgres(url: url), as: .psql)
     } else if app.environment == .testing {
         app.databases.use(.sqlite(.memory), as: .sqlite)
