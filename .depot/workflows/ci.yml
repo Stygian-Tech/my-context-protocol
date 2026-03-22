@@ -108,6 +108,10 @@ jobs:
       # SwiftPM run is still an *incremental* build graph/plan ("Planning build"), and Swift 6.1+
       # can hang there indefinitely on some Linux/KVM hosts (e.g. Depot). One combined `swift test`
       # avoids that second incremental planning phase. See: swiftlang/swift-package-manager#9441
+      #
+      # Always `swift package clean` after restoring the `.build` cache: a stale graph (e.g. only
+      # the App product built, or objects from another Swift/SPM version) can fail when linking
+      # AppTests to the executable target, while `clean` keeps checkouts and forces a consistent link.
       - name: Build and Run Tests
         id: run_tests
         env:
@@ -120,7 +124,8 @@ jobs:
           swift --version | tee .build/ci-logs/swift-version.txt
           uname -a | tee .build/ci-logs/uname.txt
           ulimit -a 2>&1 | tee .build/ci-logs/ulimit.txt || true
-          echo "Running swift test (single invocation; avoids incremental Planning build hang on Linux)..."
+          swift package clean
+          echo "Running swift test (after clean; single invocation; avoids incremental Planning build hang on Linux)..."
           # Line-buffer + tee: full console in artifact on failure; keep LOG_LEVEL quiet to reduce stdout backpressure.
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
