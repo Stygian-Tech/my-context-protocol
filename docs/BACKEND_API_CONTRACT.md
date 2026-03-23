@@ -179,6 +179,8 @@ Content-Type: application/json
 
 **Response:** `RepoConnection` object.
 
+- **`409 Conflict`** — Pro + webhooks + GitHub App env configured, but no installation id yet. JSON: `{ "reason": "github_app_install_required", "install_url": "..." }`. Navigate to `install_url`, complete install on GitHub (include the repo), then POST again.
+
 ---
 
 ### Trigger sync

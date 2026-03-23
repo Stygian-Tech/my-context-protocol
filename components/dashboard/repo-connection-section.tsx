@@ -62,6 +62,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
   const [syncError, setSyncError] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const pendingConnectKey = `pendingRepoConnect:${projectId}`;
 
   const { data: connection, isLoading } = useQuery({
     queryKey: ["repo-connection", projectId],
@@ -98,6 +99,42 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
 
   const fullName = watch("full_name");
 
+  // After GitHub App install, resume the connect form and strip callback query params.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("github_app_installed") !== "1") return;
+
+    const stored = sessionStorage.getItem(pendingConnectKey);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as {
+          full_name: string;
+          branch: string;
+        };
+        sessionStorage.removeItem(pendingConnectKey);
+        setShowForm(true);
+        reset({ full_name: parsed.full_name, branch: parsed.branch || "main" });
+      } catch {
+        sessionStorage.removeItem(pendingConnectKey);
+      }
+    } else {
+      const ro = params.get("resume_owner");
+      const rr = params.get("resume_repo");
+      if (ro && rr) {
+        setShowForm(true);
+        reset({ full_name: `${ro}/${rr}`, branch: "main" });
+      }
+    }
+
+    params.delete("github_app_installed");
+    params.delete("resume_owner");
+    params.delete("resume_repo");
+    const qs = params.toString();
+    const path = window.location.pathname + (qs ? `?${qs}` : "");
+    window.history.replaceState({}, "", path);
+  }, [projectId, pendingConnectKey, reset]);
+
   useEffect(() => {
     if (!reposQuery.data?.length || !fullName) return;
     const row = reposQuery.data.find((r) => r.full_name === fullName);
@@ -107,18 +144,42 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
   }, [fullName, reposQuery.data, setValue]);
 
   const connectMutation = useMutation({
-    mutationFn: (data: FormData) => {
+    mutationFn: async (data: FormData) => {
       const i = data.full_name.indexOf("/");
       const owner = data.full_name.slice(0, i);
       const repo = data.full_name.slice(i + 1);
-      return connectRepo(projectId, {
-        owner,
-        repo,
-        branch: data.branch.trim(),
-      });
+      const branch = data.branch.trim();
+      try {
+        return await connectRepo(projectId, {
+          owner,
+          repo,
+          branch,
+        });
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409 && err.body && typeof err.body === "object") {
+          const installUrl = (err.body as { install_url?: string }).install_url;
+          if (installUrl) {
+            if (typeof window !== "undefined") {
+              sessionStorage.setItem(
+                pendingConnectKey,
+                JSON.stringify({
+                  full_name: data.full_name,
+                  branch,
+                  owner,
+                  repo,
+                })
+              );
+              window.location.href = installUrl;
+            }
+            return undefined as unknown as Awaited<ReturnType<typeof connectRepo>>;
+          }
+        }
+        throw err;
+      }
     },
     onMutate: () => setConnectError(null),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data == null) return;
       queryClient.invalidateQueries({ queryKey: ["repo-connection", projectId] });
       queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
       setShowForm(false);
