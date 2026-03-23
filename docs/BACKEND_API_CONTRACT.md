@@ -32,9 +32,11 @@ The frontend runs on a different origin (e.g. `http://localhost:3000`). The back
 GET /auth/github?return_to=<url>
 ```
 
-- `return_to`: Full URL to redirect the user after successful login (e.g. `http://localhost:3000/` or `http://localhost:3000/projects`).
+- `return_to`: Full URL to redirect the user after successful login (e.g. `http://localhost:3000/` or `http://localhost:3000/projects`). If omitted, the backend uses `FRONTEND_URL` or `CORS_ORIGIN` + `/` when configured.
+- When `FRONTEND_URL` / `CORS_ORIGIN` are set, `return_to` must match one of those origins (open-redirect protection).
 - No auth required.
-- Backend should redirect to GitHub OAuth.
+- Backend redirects to GitHub OAuth with a **signed** `state` parameter (HMAC via `ENCRYPTION_KEY`) so the post-login redirect does not rely on in-memory sessions or sticky load balancers.
+- Requires `GITHUB_OAUTH_REDIRECT_URI` and `ENCRYPTION_KEY` (32-byte base64) to be configured.
 
 **Response:** 302 redirect to GitHub.
 
@@ -50,9 +52,9 @@ GET /auth/github/callback?code=<code>&state=<state>
 
 - GitHub sends the user here after authorization.
 - Backend exchanges `code` for tokens, creates/updates user, creates session.
-- Backend redirects to the `return_to` URL with session cookie set.
+- Backend redirects to the `return_to` URL encoded in signed `state` with `?auth_token=<one-time-token>`. If `state` is missing or invalid, the user is sent to `/login?error=...` when `FRONTEND_URL` / `CORS_ORIGIN` is set, otherwise `400`.
 
-**Response:** 302 redirect to `return_to` with `Set-Cookie` for session.
+**Response:** 302 redirect to `return_to` with `auth_token`; session is finalized via `/auth/confirm`.
 
 ---
 
