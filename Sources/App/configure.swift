@@ -49,6 +49,12 @@ public func configure(_ app: Application) throws {
 
     if app.environment == .testing, !usePostgresInTests {
         app.databases.use(.sqlite(.memory), as: .sqlite)
+    } else if isTruthyEnv("USE_SQLITE") {
+        // Local dev: file-backed SQLite (leave DATABASE_URL empty). Path is relative to the process working directory.
+        let rawPath = Environment.get("SQLITE_PATH") ?? "db.sqlite"
+        let sqlitePath = rawPath.hasPrefix("/") ? rawPath : app.directory.workingDirectory + rawPath
+        app.databases.use(.sqlite(.file(sqlitePath)), as: .sqlite)
+        app.logger.info("Using SQLite database at \(sqlitePath)")
     } else if let databaseURL = Environment.get("DATABASE_URL"), !databaseURL.isEmpty {
         let useInsecureTLS = Environment.get("DATABASE_INSECURE_TLS").map { $0.lowercased() }.map { $0 == "1" || $0 == "true" } ?? false
         if useInsecureTLS {

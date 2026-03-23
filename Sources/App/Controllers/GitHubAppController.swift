@@ -2,8 +2,41 @@ import Fluent
 import Vapor
 
 enum GitHubAppController {
+    /// Mirrors signed `state` so install can complete if GitHub omits or alters `state` (e.g. OAuth-during-install sends `code` instead).
+    private static let sessionInstallProjectKey = "github_app_install_project_id"
+    private static let sessionInstallReturnToKey = "github_app_install_return_to"
+    private static let sessionInstallOwnerKey = "github_app_install_owner"
+    private static let sessionInstallRepoKey = "github_app_install_repo"
+
     private static func fallbackBaseForErrors(req: Request) -> String? {
         AppFrontendURL.defaultReturnToURL()
+    }
+
+    private static func clearInstallSessionKeys(_ req: Request) {
+        req.session.data[sessionInstallProjectKey] = nil
+        req.session.data[sessionInstallReturnToKey] = nil
+        req.session.data[sessionInstallOwnerKey] = nil
+        req.session.data[sessionInstallRepoKey] = nil
+    }
+
+    private struct InstallSessionContext {
+        let projectId: UUID
+        let returnTo: String?
+        let owner: String?
+        let repo: String?
+    }
+
+    /// Reads and clears session keys set in `installRedirect` when signed `state` cannot be verified.
+    private static func loadInstallContextFromSession(req: Request) -> InstallSessionContext? {
+        guard let pidStr = req.session.data[sessionInstallProjectKey], !pidStr.isEmpty,
+              let projectId = UUID(uuidString: pidStr) else {
+            return nil
+        }
+        let returnTo = req.session.data[sessionInstallReturnToKey].flatMap { $0.isEmpty ? nil : $0 }
+        let owner = req.session.data[sessionInstallOwnerKey].flatMap { $0.isEmpty ? nil : $0 }
+        let repo = req.session.data[sessionInstallRepoKey].flatMap { $0.isEmpty ? nil : $0 }
+        clearInstallSessionKeys(req)
+        return InstallSessionContext(projectId: projectId, returnTo: returnTo, owner: owner, repo: repo)
     }
 
     private static func redirectWithQueryParam(
@@ -56,6 +89,24 @@ enum GitHubAppController {
             throw Abort(.internalServerError, reason: "Failed to build GitHub App install state")
         }
 
+        // Session backup: GitHub sometimes does not echo `state` back (e.g. OAuth during install uses `code` only).
+        req.session.data[Self.sessionInstallProjectKey] = project.id!.uuidString
+        if let rt = returnToOpt {
+            req.session.data[Self.sessionInstallReturnToKey] = rt
+        } else {
+            req.session.data[Self.sessionInstallReturnToKey] = nil
+        }
+        if let o = ownerOpt {
+            req.session.data[Self.sessionInstallOwnerKey] = o
+        } else {
+            req.session.data[Self.sessionInstallOwnerKey] = nil
+        }
+        if let r = repoOpt {
+            req.session.data[Self.sessionInstallRepoKey] = r
+        } else {
+            req.session.data[Self.sessionInstallRepoKey] = nil
+        }
+
         var components = URLComponents(string: "https://github.com/apps/\(slug)/installations/new")!
         components.queryItems = [URLQueryItem(name: "state", value: state)]
         guard let target = components.url else {
@@ -72,17 +123,39 @@ enum GitHubAppController {
         let returnToFromState: String?
         let ownerFromState: String?
         let repoFromState: String?
-        do {
-            guard let s = queryState, !s.isEmpty else {
-                throw SignedOAuthState.StateError.invalidFormat
+
+        if let s = queryState, !s.isEmpty {
+            do {
+                (projectId, returnToFromState, ownerFromState, repoFromState) = try SignedOAuthState.verifyGitHubAppInstall(state: s)
+                clearInstallSessionKeys(req)
+            } catch {
+                req.logger.warning(
+                    "GitHub App install state verify failed: \(error) (state length \(s.count)); trying session fallback"
+                )
+                guard let fallback = self.loadInstallContextFromSession(req: req) else {
+                    req.logger.warning("GitHub App install session fallback failed (no matching session install context)")
+                    if let base = fallbackBaseForErrors(req: req) {
+                        return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: "invalid_state")
+                    }
+                    throw Abort(.badRequest, reason: "Invalid or expired install state")
+                }
+                projectId = fallback.projectId
+                returnToFromState = fallback.returnTo
+                ownerFromState = fallback.owner
+                repoFromState = fallback.repo
             }
-            (projectId, returnToFromState, ownerFromState, repoFromState) = try SignedOAuthState.verifyGitHubAppInstall(state: s)
-        } catch {
-            req.logger.warning("GitHub App install state verify failed: \(error)")
-            if let base = fallbackBaseForErrors(req: req) {
-                return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: "invalid_state")
+        } else {
+            req.logger.warning("GitHub App install callback missing or empty state; trying session fallback")
+            guard let fallback = self.loadInstallContextFromSession(req: req) else {
+                if let base = fallbackBaseForErrors(req: req) {
+                    return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: "invalid_state")
+                }
+                throw Abort(.badRequest, reason: "Invalid or expired install state")
             }
-            throw Abort(.badRequest, reason: "Invalid or expired install state")
+            projectId = fallback.projectId
+            returnToFromState = fallback.returnTo
+            ownerFromState = fallback.owner
+            repoFromState = fallback.repo
         }
 
         let returnToEffective = returnToFromState ?? fallbackBaseForErrors(req: req) ?? ""

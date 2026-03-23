@@ -15,8 +15,8 @@ A hosted MCP (Model Context Protocol) gateway that ingests [SKILL.md](https://gi
 | Layer | Choice |
 |-------|--------|
 | Backend | Vapor (Swift) |
-| Database | Supabase Postgres |
-| ORM | Fluent + PostgresKit |
+| Database | Supabase Postgres (production); **local file SQLite** via `USE_SQLITE=1` |
+| ORM | Fluent + PostgresKit / FluentSQLiteDriver |
 | MCP | Custom JSON-RPC handler (no Swift SDK) |
 | Parsing | Yams (YAML frontmatter in SKILL.md) |
 
@@ -37,8 +37,9 @@ MCP Client ← JSON-RPC over HTTP ← MCP Endpoint ← Active Release Catalog �
 1. Clone and configure env:
 
    ```bash
-   cp Resources/env.example .env
-   # Edit .env with DATABASE_URL (or individual DB vars), GITHUB_TOKEN, GITHUB_REPO, etc.
+   cp .env.example .env
+   # Local SQLite: `USE_SQLITE=1` and leave `DATABASE_URL` empty (creates `db.sqlite`).
+   # Postgres: set `USE_SQLITE=0` and `DATABASE_URL=...` (or individual DB vars).
    ```
 
 2. Build and run:
