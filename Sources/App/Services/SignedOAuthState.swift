@@ -27,6 +27,9 @@ enum SignedOAuthState {
         let k: String
         let pid: String
         let rt: String?
+        /// Target repo the user is connecting (optional; used to resume the connect form after install).
+        let owner: String?
+        let repo: String?
         let exp: Int64
         let n: String
     }
@@ -83,13 +86,20 @@ enum SignedOAuthState {
 
     // MARK: - GitHub App install
 
-    static func signGitHubAppInstall(projectId: UUID, returnTo: String?) throws -> String {
+    static func signGitHubAppInstall(
+        projectId: UUID,
+        returnTo: String?,
+        owner: String? = nil,
+        repo: String? = nil
+    ) throws -> String {
         let key = try hmacKey()
         let exp = Int64(Date().timeIntervalSince1970) + 3600
         let payload = GitHubAppPayload(
             k: appKind,
             pid: projectId.uuidString,
             rt: returnTo,
+            owner: owner,
+            repo: repo,
             exp: exp,
             n: UUID().uuidString
         )
@@ -97,7 +107,12 @@ enum SignedOAuthState {
         return try signPayload(json, key: key)
     }
 
-    static func verifyGitHubAppInstall(state: String) throws -> (projectId: UUID, returnTo: String?) {
+    static func verifyGitHubAppInstall(state: String) throws -> (
+        projectId: UUID,
+        returnTo: String?,
+        owner: String?,
+        repo: String?
+    ) {
         let key = try hmacKey()
         let json = try verifyAndDecode(state, key: key)
         let payload = try JSONDecoder().decode(GitHubAppPayload.self, from: json)
@@ -110,6 +125,6 @@ enum SignedOAuthState {
         guard let pid = UUID(uuidString: payload.pid) else {
             throw StateError.invalidFormat
         }
-        return (pid, payload.rt)
+        return (pid, payload.rt, payload.owner, payload.repo)
     }
 }

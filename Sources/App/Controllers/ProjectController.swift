@@ -72,6 +72,46 @@ struct ProjectController {
         return project
     }
 
+    /// True when GitHub App + private key are configured so `connect-repo` can use installation tokens for Pro webhooks.
+    private static func isGitHubAppConfiguredForProWebhooks() -> Bool {
+        guard let slug = Environment.get("GITHUB_APP_SLUG"), !slug.isEmpty else { return false }
+        guard let cid = Environment.get("GITHUB_APP_CLIENT_ID"), !cid.isEmpty else { return false }
+        return (try? GitHubAppInstallationTokenService.loadPrivatePEM()) != nil
+    }
+
+    /// Public URL of the project page (same origin as `FRONTEND_URL` / `CORS_ORIGIN` — used for GitHub App install `return_to`).
+    private static func frontendProjectPageUrl(projectId: UUID) throws -> String {
+        guard let base = AppFrontendURL.normalizedBase() else {
+            throw Abort(.internalServerError, reason: "FRONTEND_URL or CORS_ORIGIN must be set for GitHub App install flow")
+        }
+        return "\(base)/projects/\(projectId.uuidString)"
+    }
+
+    /// Browser navigates here (same-origin `/api` proxy) so session cookies apply; includes `owner`/`repo` so install state can resume connect.
+    private static func buildGitHubAppInstallUrl(projectId: UUID, owner: String, repo: String, returnTo: String) throws -> String {
+        guard let base = AppFrontendURL.normalizedBase() else {
+            throw Abort(.internalServerError, reason: "FRONTEND_URL or CORS_ORIGIN must be set for GitHub App install flow")
+        }
+        guard let baseUrl = URL(string: base) else {
+            throw Abort(.internalServerError, reason: "Invalid FRONTEND_URL or CORS_ORIGIN")
+        }
+        var components = URLComponents()
+        components.scheme = baseUrl.scheme
+        components.host = baseUrl.host
+        components.port = baseUrl.port
+        components.path = "/api/auth/github/app/install"
+        components.queryItems = [
+            URLQueryItem(name: "project_id", value: projectId.uuidString),
+            URLQueryItem(name: "owner", value: owner),
+            URLQueryItem(name: "repo", value: repo),
+            URLQueryItem(name: "return_to", value: returnTo)
+        ]
+        guard let url = components.url else {
+            throw Abort(.internalServerError, reason: "Could not build GitHub App install URL")
+        }
+        return url.absoluteString
+    }
+
     static func list(req: Request) async throws -> [ProjectResponse] {
         let account = try requireAccount(req)
         let projects = try await Project.query(on: req.db)
@@ -136,7 +176,7 @@ struct ProjectController {
         )
     }
 
-    static func connectRepo(req: Request) async throws -> RepoConnectionResponse {
+    static func connectRepo(req: Request) async throws -> Response {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
         struct ConnectBody: Content {
@@ -165,6 +205,28 @@ struct ProjectController {
         let existing = try await project.$repoConnections.get(on: req.db)
         let existingFirst = existing.first
         let effectiveInstallationId: Int64? = pendingInstallation ?? existingFirst?.githubInstallationId
+
+        // Pro: require GitHub App installation (when app + webhook env are configured) before we can use installation tokens.
+        if account.hasProEntitlements,
+           let wb = Environment.get("WEBHOOK_BASE_URL"), !wb.isEmpty,
+           Self.isGitHubAppConfiguredForProWebhooks(),
+           effectiveInstallationId == nil {
+            let returnTo = try Self.frontendProjectPageUrl(projectId: project.id!)
+            let installUrl = try Self.buildGitHubAppInstallUrl(
+                projectId: project.id!,
+                owner: body.owner,
+                repo: body.repo,
+                returnTo: returnTo
+            )
+            let payload = GitHubAppInstallRequiredResponse(
+                reason: "github_app_install_required",
+                install_url: installUrl
+            )
+            let response = try await payload.encodeResponse(for: req)
+            response.status = .conflict
+            response.headers.replaceOrAdd(name: .contentType, value: "application/json; charset=utf-8")
+            return response
+        }
 
         if let first = existingFirst, let oldWebhookId = first.webhookId {
             let deleteToken = try await GitHubAppInstallationTokenService.bearerTokenForGitHubREST(
@@ -245,7 +307,7 @@ struct ProjectController {
             )
             try await conn.save(on: req.db)
         }
-        return RepoConnectionResponse(
+        let repoPayload = RepoConnectionResponse(
             project_id: project.id!.uuidString,
             provider: conn.provider,
             repo_owner: conn.repoOwner,
@@ -255,6 +317,7 @@ struct ProjectController {
             webhook_id: conn.webhookId,
             github_installation_configured: conn.githubInstallationId != nil
         )
+        return try await repoPayload.encodeResponse(for: req)
     }
 
     static func sync(req: Request) async throws -> Response {

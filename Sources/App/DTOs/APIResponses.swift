@@ -57,6 +57,12 @@ struct RepoConnectionResponse: Content {
     }
 }
 
+/// Returned with HTTP 409 when Pro webhooks require a GitHub App installation before `connect-repo` can proceed.
+struct GitHubAppInstallRequiredResponse: Content {
+    let reason: String
+    let install_url: String
+}
+
 /// One repository the signed-in user can access (from GitHub `GET /user/repos`).
 struct GithubRepoListItem: Content {
     let full_name: String

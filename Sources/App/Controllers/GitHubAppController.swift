@@ -37,9 +37,19 @@ enum GitHubAppController {
 
         let returnToOpt = try AppFrontendURL.validateOptionalReturnTo(req.query[String.self, at: "return_to"], for: req)
 
+        let rawOwner = req.query[String.self, at: "owner"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawRepo = req.query[String.self, at: "repo"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ownerOpt = rawOwner.flatMap { $0.isEmpty ? nil : $0 }
+        let repoOpt = rawRepo.flatMap { $0.isEmpty ? nil : $0 }
+
         let state: String
         do {
-            state = try SignedOAuthState.signGitHubAppInstall(projectId: project.id!, returnTo: returnToOpt)
+            state = try SignedOAuthState.signGitHubAppInstall(
+                projectId: project.id!,
+                returnTo: returnToOpt,
+                owner: ownerOpt,
+                repo: repoOpt
+            )
         } catch SignedOAuthState.StateError.keyNotConfigured {
             throw Abort(.internalServerError, reason: "ENCRYPTION_KEY must be configured (32-byte base64) for OAuth state signing")
         } catch {
@@ -60,11 +70,13 @@ enum GitHubAppController {
 
         let projectId: UUID
         let returnToFromState: String?
+        let ownerFromState: String?
+        let repoFromState: String?
         do {
             guard let s = queryState, !s.isEmpty else {
                 throw SignedOAuthState.StateError.invalidFormat
             }
-            (projectId, returnToFromState) = try SignedOAuthState.verifyGitHubAppInstall(state: s)
+            (projectId, returnToFromState, ownerFromState, repoFromState) = try SignedOAuthState.verifyGitHubAppInstall(state: s)
         } catch {
             req.logger.warning("GitHub App install state verify failed: \(error)")
             if let base = fallbackBaseForErrors(req: req) {
@@ -131,7 +143,13 @@ enum GitHubAppController {
             }
             throw Abort(.internalServerError, reason: "FRONTEND_URL or CORS_ORIGIN must be set for install callback redirect")
         }
-        let success = successBase + (successBase.contains("?") ? "&" : "?") + "github_app_installed=1"
+        var extra = "github_app_installed=1"
+        if let o = ownerFromState, let r = repoFromState, !o.isEmpty, !r.isEmpty,
+           let eo = o.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let er = r.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            extra += "&resume_owner=\(eo)&resume_repo=\(er)"
+        }
+        let success = successBase + (successBase.contains("?") ? "&" : "?") + extra
         return req.redirect(to: success, redirectType: .normal)
     }
 }

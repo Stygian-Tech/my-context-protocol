@@ -17,6 +17,12 @@ private func userResponse(for account: Account, suggestedGithubAppInstall: Bool 
 }
 
 struct AuthController {
+    /// Space-separated GitHub OAuth scopes (authorize URL). Keep in sync with `Docs/GITHUB_OAUTH_AND_APP.md`.
+    /// - `read:user` / `user:email`: profile for login.
+    /// - `repo`: private repos, contents, and **repository webhooks** (REST `POST /repos/{owner}/{repo}/hooks`).
+    /// - `read:org`: org membership / listing org-owned repos (still subject to org SAML SSO on GitHub’s side).
+    private static let githubOAuthScope = "read:user user:email repo read:org"
+
     /// When OAuth state is missing or invalid and we cannot recover `return_to`, redirect here or fail.
     private static func oauthFailureResponse(req: Request, message: String, log: String? = nil) throws -> Response {
         if let log = log {
@@ -62,7 +68,7 @@ struct AuthController {
             URLQueryItem(name: "client_id", value: clientId),
             URLQueryItem(name: "redirect_uri", value: redirectUri),
             URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "scope", value: "read:user user:email repo"),
+            URLQueryItem(name: "scope", value: githubOAuthScope),
         ]
         guard let url = components.url else {
             throw Abort(.internalServerError, reason: "Invalid OAuth URL")
