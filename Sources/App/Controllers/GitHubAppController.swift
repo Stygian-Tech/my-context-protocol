@@ -2,7 +2,7 @@ import Fluent
 import Vapor
 
 enum GitHubAppController {
-    /// Mirrors signed `state` so install can complete if GitHub omits or alters `state` (e.g. OAuth-during-install sends `code` instead).
+    /// Mirrors signed `state` so install can complete if GitHub omits or alters `state` (e.g. OAuth-during-install sends `code` only).
     private static let sessionInstallProjectKey = "github_app_install_project_id"
     private static let sessionInstallReturnToKey = "github_app_install_return_to"
     private static let sessionInstallOwnerKey = "github_app_install_owner"
@@ -50,6 +50,13 @@ enum GitHubAppController {
         return req.redirect(to: base + sep + param + "=" + enc, redirectType: .normal)
     }
 
+    private static func redirectInvalidState(req: Request) throws -> Response {
+        if let base = fallbackBaseForErrors(req: req) {
+            return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: "invalid_state")
+        }
+        throw Abort(.badRequest, reason: "Invalid or expired install state")
+    }
+
     /// Starts the GitHub App installation flow. Requires session auth.
     static func installRedirect(req: Request) async throws -> Response {
         guard let account = req.storage[AccountKey.self], let account = account else {
@@ -75,21 +82,22 @@ enum GitHubAppController {
         let ownerOpt = rawOwner.flatMap { $0.isEmpty ? nil : $0 }
         let repoOpt = rawRepo.flatMap { $0.isEmpty ? nil : $0 }
 
-        let state: String
-        do {
-            state = try SignedOAuthState.signGitHubAppInstall(
-                projectId: project.id!,
-                returnTo: returnToOpt,
-                owner: ownerOpt,
-                repo: repoOpt
-            )
-        } catch SignedOAuthState.StateError.keyNotConfigured {
-            throw Abort(.internalServerError, reason: "ENCRYPTION_KEY must be configured (32-byte base64) for OAuth state signing")
-        } catch {
-            throw Abort(.internalServerError, reason: "Failed to build GitHub App install state")
+        // Short UUID `state` stored in DB — survives load balancers and avoids GitHub truncating long signed payloads.
+        let intent = GitHubAppInstallIntent(
+            projectId: project.id!,
+            accountId: account.id!,
+            returnTo: returnToOpt,
+            owner: ownerOpt,
+            repo: repoOpt,
+            expiresAt: Date().addingTimeInterval(3600)
+        )
+        try await intent.save(on: req.db)
+        guard let stateId = intent.id else {
+            throw Abort(.internalServerError, reason: "Failed to create GitHub App install intent")
         }
+        let state = stateId.uuidString
 
-        // Session backup: GitHub sometimes does not echo `state` back (e.g. OAuth during install uses `code` only).
+        // Session backup when GitHub omits `state` or for legacy debugging.
         req.session.data[Self.sessionInstallProjectKey] = project.id!.uuidString
         if let rt = returnToOpt {
             req.session.data[Self.sessionInstallReturnToKey] = rt
@@ -115,51 +123,86 @@ enum GitHubAppController {
         return req.redirect(to: target.absoluteString, redirectType: .normal)
     }
 
-    /// Setup URL target after GitHub App installation. Requires session (same browser).
-    static func installCallback(req: Request) async throws -> Response {
-        let queryState = req.query[String.self, at: "state"]
-
+    private struct ResolvedInstall {
         let projectId: UUID
-        let returnToFromState: String?
-        let ownerFromState: String?
-        let repoFromState: String?
+        let returnTo: String?
+        let owner: String?
+        let repo: String?
+    }
 
+    /// Legacy signed `state` or session backup (when DB intent row is missing / expired).
+    private static func resolveInstallWithoutDbIntent(req: Request, queryState: String?) async throws -> ResolvedInstall? {
         if let s = queryState, !s.isEmpty {
             do {
-                (projectId, returnToFromState, ownerFromState, repoFromState) = try SignedOAuthState.verifyGitHubAppInstall(state: s)
+                let (pid, rt, o, r) = try SignedOAuthState.verifyGitHubAppInstall(state: s)
                 clearInstallSessionKeys(req)
+                return ResolvedInstall(projectId: pid, returnTo: rt, owner: o, repo: r)
             } catch {
                 req.logger.warning(
                     "GitHub App install state verify failed: \(error) (state length \(s.count)); trying session fallback"
                 )
-                guard let fallback = self.loadInstallContextFromSession(req: req) else {
+                guard let fallback = loadInstallContextFromSession(req: req) else {
                     req.logger.warning("GitHub App install session fallback failed (no matching session install context)")
-                    if let base = fallbackBaseForErrors(req: req) {
-                        return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: "invalid_state")
-                    }
-                    throw Abort(.badRequest, reason: "Invalid or expired install state")
+                    return nil
                 }
-                projectId = fallback.projectId
-                returnToFromState = fallback.returnTo
-                ownerFromState = fallback.owner
-                repoFromState = fallback.repo
+                return ResolvedInstall(
+                    projectId: fallback.projectId,
+                    returnTo: fallback.returnTo,
+                    owner: fallback.owner,
+                    repo: fallback.repo
+                )
+            }
+        }
+        req.logger.warning("GitHub App install callback missing or empty state; trying session fallback")
+        guard let fallback = loadInstallContextFromSession(req: req) else {
+            req.logger.warning(
+                "GitHub App install session fallback failed (no session install context). If Setup URL uses a different host than where you log in, set SESSION_COOKIE_DOMAIN (e.g. .mycontextprotocol.dev) or use the app origin + /api/.../callback."
+            )
+            return nil
+        }
+        return ResolvedInstall(
+            projectId: fallback.projectId,
+            returnTo: fallback.returnTo,
+            owner: fallback.owner,
+            repo: fallback.repo
+        )
+    }
+
+    /// Setup URL target after GitHub App installation. Requires session (same browser) unless intent + session match.
+    static func installCallback(req: Request) async throws -> Response {
+        let queryState = req.query[String.self, at: "state"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let resolved: ResolvedInstall
+
+        if let s = queryState, !s.isEmpty, let uuid = UUID(uuidString: s),
+           let intent = try await GitHubAppInstallIntent.find(uuid, on: req.db) {
+            if intent.expiresAt <= Date() {
+                try await intent.delete(on: req.db)
+                req.logger.warning("GitHub App install intent expired (state id prefix \(s.prefix(8)))")
+                guard let r = try await resolveInstallWithoutDbIntent(req: req, queryState: queryState) else {
+                    return try redirectInvalidState(req: req)
+                }
+                resolved = r
+            } else {
+                try await intent.delete(on: req.db)
+                resolved = ResolvedInstall(
+                    projectId: intent.$project.id,
+                    returnTo: intent.returnTo,
+                    owner: intent.owner,
+                    repo: intent.repo
+                )
             }
         } else {
-            req.logger.warning("GitHub App install callback missing or empty state; trying session fallback")
-            guard let fallback = self.loadInstallContextFromSession(req: req) else {
-                req.logger.warning(
-                    "GitHub App install session fallback failed (no session install context). If Setup URL uses a different host than where you log in, set SESSION_COOKIE_DOMAIN (e.g. .mycontextprotocol.dev) or use the app origin + /api/.../callback."
-                )
-                if let base = fallbackBaseForErrors(req: req) {
-                    return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: "invalid_state")
-                }
-                throw Abort(.badRequest, reason: "Invalid or expired install state")
+            guard let r = try await resolveInstallWithoutDbIntent(req: req, queryState: queryState) else {
+                return try redirectInvalidState(req: req)
             }
-            projectId = fallback.projectId
-            returnToFromState = fallback.returnTo
-            ownerFromState = fallback.owner
-            repoFromState = fallback.repo
+            resolved = r
         }
+
+        let projectId = resolved.projectId
+        let returnToFromState = resolved.returnTo
+        let ownerFromState = resolved.owner
+        let repoFromState = resolved.repo
 
         let returnToEffective = returnToFromState ?? fallbackBaseForErrors(req: req) ?? ""
 

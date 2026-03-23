@@ -125,6 +125,7 @@ public func configure(_ app: Application) throws {
     app.migrations.add(AddBillingToAccounts())
     app.migrations.add(AlterProjectsTenantAndDomain())
     app.migrations.add(AddGithubInstallationToRepoConnections())
+    app.migrations.add(CreateGitHubAppInstallIntents())
 
     try app.autoMigrate().wait()
 
