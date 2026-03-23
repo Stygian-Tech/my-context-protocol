@@ -17,16 +17,45 @@ private func userResponse(for account: Account, suggestedGithubAppInstall: Bool 
 }
 
 struct AuthController {
+    /// When OAuth state is missing or invalid and we cannot recover `return_to`, redirect here or fail.
+    private static func oauthFailureResponse(req: Request, message: String, log: String? = nil) throws -> Response {
+        if let log = log {
+            req.logger.warning("\(log)")
+        }
+        if let url = AppFrontendURL.loginErrorURL(code: message) {
+            return req.redirect(to: url, redirectType: .normal)
+        }
+        throw Abort(.badRequest, reason: message)
+    }
+
     static func githubInitiate(req: Request) async throws -> Response {
         guard let clientId = Environment.get("GITHUB_CLIENT_ID"), !clientId.isEmpty else {
             throw Abort(.internalServerError, reason: "GITHUB_CLIENT_ID not configured")
         }
-        let redirectUri = Environment.get("GITHUB_OAUTH_REDIRECT_URI") ?? "http://localhost:8080/auth/github/callback"
-        let returnTo = req.query[String.self, at: "return_to"] ?? "http://localhost:3000/"
+        guard let redirectUri = Environment.get("GITHUB_OAUTH_REDIRECT_URI"), !redirectUri.isEmpty else {
+            throw Abort(.internalServerError, reason: "GITHUB_OAUTH_REDIRECT_URI not configured")
+        }
 
-        let state = UUID().uuidString
-        req.session.data["oauth_state"] = state
-        req.session.data["oauth_return_to"] = returnTo
+        let returnTo: String
+        if let q = req.query[String.self, at: "return_to"], !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            returnTo = try AppFrontendURL.validateReturnTo(q, for: req)
+        } else if let d = AppFrontendURL.defaultReturnToURL() {
+            returnTo = d
+        } else {
+            throw Abort(
+                .badRequest,
+                reason: "return_to is required, or set FRONTEND_URL or CORS_ORIGIN for a default redirect"
+            )
+        }
+
+        let state: String
+        do {
+            state = try SignedOAuthState.signGitHubOAuth(returnTo: returnTo)
+        } catch SignedOAuthState.StateError.keyNotConfigured {
+            throw Abort(.internalServerError, reason: "ENCRYPTION_KEY must be configured (32-byte base64) for OAuth state signing")
+        } catch {
+            throw Abort(.internalServerError, reason: "Failed to build OAuth state")
+        }
 
         var components = URLComponents(string: "https://github.com/login/oauth/authorize")!
         components.queryItems = [
@@ -46,21 +75,34 @@ struct AuthController {
               let clientSecret = Environment.get("GITHUB_CLIENT_SECRET"), !clientSecret.isEmpty else {
             throw Abort(.internalServerError, reason: "GitHub OAuth not configured")
         }
-        let redirectUri = Environment.get("GITHUB_OAUTH_REDIRECT_URI") ?? "http://localhost:8080/auth/github/callback"
+        guard let redirectUri = Environment.get("GITHUB_OAUTH_REDIRECT_URI"), !redirectUri.isEmpty else {
+            throw Abort(.internalServerError, reason: "GITHUB_OAUTH_REDIRECT_URI not configured")
+        }
+
+        let stateParam = req.query[String.self, at: "state"]
+        let returnTo: String
+        if let s = stateParam, !s.isEmpty {
+            do {
+                returnTo = try SignedOAuthState.verifyGitHubOAuth(state: s)
+            } catch {
+                return try oauthFailureResponse(
+                    req: req,
+                    message: "oauth_invalid_state",
+                    log: "GitHub OAuth state verify failed: \(error)"
+                )
+            }
+        } else {
+            return try oauthFailureResponse(
+                req: req,
+                message: "oauth_missing_state",
+                log: "GitHub OAuth state query parameter missing"
+            )
+        }
 
         let code = req.query[String.self, at: "code"]
-        let state = req.query[String.self, at: "state"]
-        let storedState = req.session.data["oauth_state"]
-        let returnTo = req.session.data["oauth_return_to"] ?? "http://localhost:3000/"
-
-        req.session.data["oauth_state"] = nil
-        req.session.data["oauth_return_to"] = nil
 
         guard let code = code, !code.isEmpty else {
             return req.redirect(to: returnTo + (returnTo.contains("?") ? "&" : "?") + "error=missing_code", redirectType: .normal)
-        }
-        guard let state = state, let storedState = storedState, state == storedState, !state.isEmpty else {
-            return req.redirect(to: returnTo + (returnTo.contains("?") ? "&" : "?") + "error=invalid_state", redirectType: .normal)
         }
 
         struct TokenRequest: Content {

@@ -19,7 +19,7 @@ public func configure(_ app: Application) throws {
         "APP_ENV=\(deploy.rawValue) non_production_bypasses=\(bypass) STRICT_PRO_GATING=\(strict)"
     )
 
-    let corsOrigin = Environment.get("CORS_ORIGIN") ?? "http://localhost:3000"
+    let corsOrigin = Environment.get("FRONTEND_URL") ?? Environment.get("CORS_ORIGIN") ?? "http://localhost:3000"
     // Use .originBased in dev to echo the request's Origin—avoids mismatch (localhost vs 127.0.0.1)
     // and ensures CORS headers are correct for credentials: include.
     let allowedOrigin: CORSMiddleware.AllowOriginSetting = corsOrigin.contains("localhost")
@@ -38,7 +38,7 @@ public func configure(_ app: Application) throws {
 
     app.sessions.use(.memory)
     // Allow session cookie over HTTP on localhost (isSecure: false) so OAuth redirect flow works
-    let isLocalhost = (Environment.get("CORS_ORIGIN") ?? "").contains("localhost")
+    let isLocalhost = corsOrigin.contains("localhost")
     app.sessions.configuration.cookieFactory = { sessionID in
         .init(string: sessionID.string, isSecure: !isLocalhost)
     }

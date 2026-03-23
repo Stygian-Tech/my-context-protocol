@@ -2,6 +2,21 @@ import Fluent
 import Vapor
 
 enum GitHubAppController {
+    private static func fallbackBaseForErrors(req: Request) -> String? {
+        AppFrontendURL.defaultReturnToURL()
+    }
+
+    private static func redirectWithQueryParam(
+        req: Request,
+        base: String,
+        param: String,
+        value: String
+    ) -> Response {
+        let sep = base.contains("?") ? "&" : "?"
+        let enc = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+        return req.redirect(to: base + sep + param + "=" + enc, redirectType: .normal)
+    }
+
     /// Starts the GitHub App installation flow. Requires session auth.
     static func installRedirect(req: Request) async throws -> Response {
         guard let account = req.storage[AccountKey.self], let account = account else {
@@ -20,11 +35,16 @@ enum GitHubAppController {
             throw Abort(.notFound, reason: "Project not found")
         }
 
-        let state = UUID().uuidString
-        req.session.data["github_app_install_state"] = state
-        req.session.data["github_app_install_project_id"] = project.id!.uuidString
-        let returnTo = req.query[String.self, at: "return_to"] ?? ""
-        req.session.data["github_app_install_return_to"] = returnTo
+        let returnToOpt = try AppFrontendURL.validateOptionalReturnTo(req.query[String.self, at: "return_to"], for: req)
+
+        let state: String
+        do {
+            state = try SignedOAuthState.signGitHubAppInstall(projectId: project.id!, returnTo: returnToOpt)
+        } catch SignedOAuthState.StateError.keyNotConfigured {
+            throw Abort(.internalServerError, reason: "ENCRYPTION_KEY must be configured (32-byte base64) for OAuth state signing")
+        } catch {
+            throw Abort(.internalServerError, reason: "Failed to build GitHub App install state")
+        }
 
         var components = URLComponents(string: "https://github.com/apps/\(slug)/installations/new")!
         components.queryItems = [URLQueryItem(name: "state", value: state)]
@@ -36,47 +56,63 @@ enum GitHubAppController {
 
     /// Setup URL target after GitHub App installation. Requires session (same browser).
     static func installCallback(req: Request) async throws -> Response {
-        let returnTo = req.session.data["github_app_install_return_to"].flatMap { $0.isEmpty ? nil : $0 } ?? ""
-
         let queryState = req.query[String.self, at: "state"]
-        let storedState = req.session.data["github_app_install_state"]
-        let projectIdStr = req.session.data["github_app_install_project_id"]
 
-        req.session.data["github_app_install_state"] = nil
-        req.session.data["github_app_install_project_id"] = nil
-        req.session.data["github_app_install_return_to"] = nil
+        let projectId: UUID
+        let returnToFromState: String?
+        do {
+            guard let s = queryState, !s.isEmpty else {
+                throw SignedOAuthState.StateError.invalidFormat
+            }
+            (projectId, returnToFromState) = try SignedOAuthState.verifyGitHubAppInstall(state: s)
+        } catch {
+            req.logger.warning("GitHub App install state verify failed: \(error)")
+            if let base = fallbackBaseForErrors(req: req) {
+                return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: "invalid_state")
+            }
+            throw Abort(.badRequest, reason: "Invalid or expired install state")
+        }
+
+        let returnToEffective = returnToFromState ?? fallbackBaseForErrors(req: req) ?? ""
 
         guard let accountIdStr = req.session.data["accountId"],
               let accountId = UUID(uuidString: accountIdStr),
               let account = try await Account.find(accountId, on: req.db) else {
-            let err = returnTo.isEmpty ? "http://localhost:3000/?github_app_error=not_authenticated"
-                : returnTo + (returnTo.contains("?") ? "&" : "?") + "github_app_error=not_authenticated"
-            return req.redirect(to: err, redirectType: .normal)
+            if !returnToEffective.isEmpty {
+                return redirectWithQueryParam(
+                    req: req,
+                    base: returnToEffective,
+                    param: "github_app_error",
+                    value: "not_authenticated"
+                )
+            }
+            if let url = AppFrontendURL.loginErrorURL(code: "github_app_not_authenticated") {
+                return req.redirect(to: url, redirectType: .normal)
+            }
+            throw Abort(.unauthorized, reason: "Not authenticated")
         }
 
-        func redirectError(_ code: String) -> Response {
-            let base = returnTo.isEmpty ? "http://localhost:3000/" : returnTo
-            return req.redirect(to: base + (base.contains("?") ? "&" : "?") + "github_app_error=\(code)", redirectType: .normal)
-        }
-
-        guard let queryState = queryState, let storedState = storedState, queryState == storedState, !queryState.isEmpty else {
-            return redirectError("invalid_state")
+        func redirectError(_ code: String) throws -> Response {
+            let base = returnToEffective.isEmpty ? (fallbackBaseForErrors(req: req) ?? "") : returnToEffective
+            if base.isEmpty {
+                if let url = AppFrontendURL.loginErrorURL(code: "github_app_\(code)") {
+                    return req.redirect(to: url, redirectType: .normal)
+                }
+                throw Abort(.badRequest, reason: "GitHub App install error: \(code)")
+            }
+            return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: code)
         }
 
         guard let installationStr = req.query[String.self, at: "installation_id"],
               let installationId = Int64(installationStr) else {
-            return redirectError("missing_installation_id")
-        }
-
-        guard let projectIdStr = projectIdStr, let projectId = UUID(uuidString: projectIdStr) else {
-            return redirectError("missing_project")
+            return try redirectError("missing_installation_id")
         }
 
         guard let project = try await Project.query(on: req.db)
             .filter(\.$id == projectId)
             .filter(\.$account.$id == account.id!)
             .first() else {
-            return redirectError("project_not_found")
+            return try redirectError("project_not_found")
         }
 
         let connections = try await project.$repoConnections.get(on: req.db)
@@ -88,7 +124,13 @@ enum GitHubAppController {
             req.session.data["github_app_pending_installation_project_id"] = project.id!.uuidString
         }
 
-        let successBase = returnTo.isEmpty ? "http://localhost:3000/" : returnTo
+        let successBase = returnToEffective.isEmpty ? (fallbackBaseForErrors(req: req) ?? "") : returnToEffective
+        if successBase.isEmpty {
+            if let url = AppFrontendURL.loginErrorURL(code: "github_app_missing_return") {
+                return req.redirect(to: url, redirectType: .normal)
+            }
+            throw Abort(.internalServerError, reason: "FRONTEND_URL or CORS_ORIGIN must be set for install callback redirect")
+        }
         let success = successBase + (successBase.contains("?") ? "&" : "?") + "github_app_installed=1"
         return req.redirect(to: success, redirectType: .normal)
     }

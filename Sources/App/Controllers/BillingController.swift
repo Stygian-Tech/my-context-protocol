@@ -9,11 +9,11 @@ struct BillingController {
         return account
     }
 
-    private static func frontendBase(req: Request) -> String {
-        if let u = Environment.get("FRONTEND_URL"), !u.isEmpty {
-            return u.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    private static func frontendBase(req: Request) throws -> String {
+        guard let base = AppFrontendURL.normalizedBase() else {
+            throw Abort(.internalServerError, reason: "FRONTEND_URL or CORS_ORIGIN must be set for billing redirects")
         }
-        return (Environment.get("CORS_ORIGIN") ?? "http://localhost:3000").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return base
     }
 
     /// Resolves Stripe Price ID for Pro checkout. Unknown values default to monthly.
@@ -30,7 +30,7 @@ struct BillingController {
 
     static func createCheckoutSession(req: Request) async throws -> CheckoutSessionURLResponse {
         let account = try requireAccount(req)
-        let base = frontendBase(req: req)
+        let base = try frontendBase(req: req)
         struct Body: Content {
             /// `"month"` (default) or `"year"` for yearly billing.
             var interval: String?
@@ -68,7 +68,7 @@ struct BillingController {
         guard let customerId = account.stripeCustomerId, !customerId.isEmpty else {
             throw Abort(.badRequest, reason: "No Stripe customer on file")
         }
-        let base = frontendBase(req: req)
+        let base = try frontendBase(req: req)
         let returnURL = "\(base)/"
         let url = try await StripeClient.createBillingPortalSession(
             customerId: customerId,
