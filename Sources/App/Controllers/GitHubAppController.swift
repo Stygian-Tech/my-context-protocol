@@ -147,6 +147,9 @@ enum GitHubAppController {
         } else {
             req.logger.warning("GitHub App install callback missing or empty state; trying session fallback")
             guard let fallback = self.loadInstallContextFromSession(req: req) else {
+                req.logger.warning(
+                    "GitHub App install session fallback failed (no session install context). If Setup URL uses a different host than where you log in, set SESSION_COOKIE_DOMAIN (e.g. .mycontextprotocol.dev) or use the app origin + /api/.../callback."
+                )
                 if let base = fallbackBaseForErrors(req: req) {
                     return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: "invalid_state")
                 }

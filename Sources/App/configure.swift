@@ -39,8 +39,26 @@ public func configure(_ app: Application) throws {
     app.sessions.use(.memory)
     // Allow session cookie over HTTP on localhost (isSecure: false) so OAuth redirect flow works
     let isLocalhost = corsOrigin.contains("localhost")
+    // When the browser hits both the app host (e.g. testing.app.com) and the API host (e.g. api.testing.app.com),
+    // host-only cookies are not shared. Set SESSION_COOKIE_DOMAIN to the registrable domain (e.g. .mycontextprotocol.dev)
+    // so GitHub App Setup URL can use the API host and still receive the same session + install fallback keys.
+    let sessionCookieDomain: String? = {
+        if isLocalhost { return nil }
+        let raw = Environment.get("SESSION_COOKIE_DOMAIN")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return raw.isEmpty ? nil : raw
+    }()
+    if let domain = sessionCookieDomain {
+        app.logger.info("Session cookie Domain=\(domain) (shared across subdomains)")
+    }
     app.sessions.configuration.cookieFactory = { sessionID in
-        .init(string: sessionID.string, isSecure: !isLocalhost)
+        .init(
+            string: sessionID.string,
+            domain: sessionCookieDomain,
+            path: "/",
+            isSecure: !isLocalhost,
+            isHTTPOnly: true,
+            sameSite: .lax
+        )
     }
     app.middleware.use(app.sessions.middleware)
 
