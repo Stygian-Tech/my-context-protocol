@@ -2,7 +2,7 @@ import Fluent
 import Vapor
 
 enum GitHubAppController {
-    /// Mirrors signed `state` so install can complete if GitHub omits or alters `state` (e.g. OAuth-during-install sends `code` only).
+    /// Mirrors signed `state` so install can complete if GitHub omits or alters `state` (e.g. OAuth-during-install sends `code` instead).
     private static let sessionInstallProjectKey = "github_app_install_project_id"
     private static let sessionInstallReturnToKey = "github_app_install_return_to"
     private static let sessionInstallOwnerKey = "github_app_install_owner"
@@ -26,8 +26,8 @@ enum GitHubAppController {
         let repo: String?
     }
 
-    /// Reads and clears session keys set in `installRedirect` when signed `state` cannot be verified.
-    private static func loadInstallContextFromSession(req: Request) -> InstallSessionContext? {
+    /// Read backup keys without clearing — clearing only on successful callback so failed attempts can retry.
+    private static func peekSessionInstallContext(req: Request) -> InstallSessionContext? {
         guard let pidStr = req.session.data[sessionInstallProjectKey], !pidStr.isEmpty,
               let projectId = UUID(uuidString: pidStr) else {
             return nil
@@ -35,7 +35,6 @@ enum GitHubAppController {
         let returnTo = req.session.data[sessionInstallReturnToKey].flatMap { $0.isEmpty ? nil : $0 }
         let owner = req.session.data[sessionInstallOwnerKey].flatMap { $0.isEmpty ? nil : $0 }
         let repo = req.session.data[sessionInstallRepoKey].flatMap { $0.isEmpty ? nil : $0 }
-        clearInstallSessionKeys(req)
         return InstallSessionContext(projectId: projectId, returnTo: returnTo, owner: owner, repo: repo)
     }
 
@@ -130,18 +129,17 @@ enum GitHubAppController {
         let repo: String?
     }
 
-    /// Legacy signed `state` or session backup (when DB intent row is missing / expired).
+    /// Legacy signed `state` or session backup (when DB intent row is missing / expired). Does **not** clear session keys.
     private static func resolveInstallWithoutDbIntent(req: Request, queryState: String?) async throws -> ResolvedInstall? {
         if let s = queryState, !s.isEmpty {
             do {
                 let (pid, rt, o, r) = try SignedOAuthState.verifyGitHubAppInstall(state: s)
-                clearInstallSessionKeys(req)
                 return ResolvedInstall(projectId: pid, returnTo: rt, owner: o, repo: r)
             } catch {
                 req.logger.warning(
                     "GitHub App install state verify failed: \(error) (state length \(s.count)); trying session fallback"
                 )
-                guard let fallback = loadInstallContextFromSession(req: req) else {
+                guard let fallback = peekSessionInstallContext(req: req) else {
                     req.logger.warning("GitHub App install session fallback failed (no matching session install context)")
                     return nil
                 }
@@ -154,7 +152,7 @@ enum GitHubAppController {
             }
         }
         req.logger.warning("GitHub App install callback missing or empty state; trying session fallback")
-        guard let fallback = loadInstallContextFromSession(req: req) else {
+        guard let fallback = peekSessionInstallContext(req: req) else {
             req.logger.warning(
                 "GitHub App install session fallback failed (no session install context). If Setup URL uses a different host than where you log in, set SESSION_COOKIE_DOMAIN (e.g. .mycontextprotocol.dev) or use the app origin + /api/.../callback."
             )
@@ -168,9 +166,61 @@ enum GitHubAppController {
         )
     }
 
+    /// When `state` is missing or invalid but `installation_id` is present: verify GitHub installation matches the session user, then use the latest non-expired intent for that account.
+    private static func resolveViaInstallationAndLatestIntent(
+        req: Request,
+        installationId: Int64,
+        account: Account
+    ) async throws -> (ResolvedInstall, GitHubAppInstallIntent)? {
+        guard (try? GitHubAppInstallationTokenService.loadPrivatePEM()) != nil,
+              let cid = Environment.get("GITHUB_APP_CLIENT_ID"), !cid.isEmpty else {
+            req.logger.warning("GitHub App install fallback: app JWT not configured")
+            return nil
+        }
+        let gh: GitHubInstallationMeta
+        do {
+            gh = try await GitHubAppInstallationTokenService.fetchInstallation(
+                installationId: installationId,
+                client: req.client,
+                logger: req.logger
+            )
+        } catch {
+            req.logger.warning("GitHub App install fallback: GitHub installation fetch failed: \(error)")
+            return nil
+        }
+        guard gh.accountType == "User", gh.accountId == account.githubId else {
+            req.logger.warning(
+                "GitHub App install fallback: installation account does not match session user (type=\(gh.accountType))"
+            )
+            return nil
+        }
+        guard let intent = try await GitHubAppInstallIntent.query(on: req.db)
+            .filter(\.$account.$id == account.id!)
+            .filter(\.$expiresAt > Date())
+            .sort(\.$expiresAt, .descending)
+            .first() else {
+            req.logger.warning("GitHub App install fallback: no pending install intent for account")
+            return nil
+        }
+        let resolved = ResolvedInstall(
+            projectId: intent.$project.id,
+            returnTo: intent.returnTo,
+            owner: intent.owner,
+            repo: intent.repo
+        )
+        return (resolved, intent)
+    }
+
     /// Setup URL target after GitHub App installation. Requires session (same browser) unless intent + session match.
     static func installCallback(req: Request) async throws -> Response {
-        let queryState = normalizeInstallStateQuery(req.query[String.self, at: "state"])
+        let queryState = mergedInstallStateQuery(req)
+
+        let installationIdOpt: Int64? = {
+            if let s = req.query[String.self, at: "installation_id"], let v = Int64(s) {
+                return v
+            }
+            return parseQueryParam(req.url.query, name: "installation_id").flatMap { Int64($0) }
+        }()
 
         let resolved: ResolvedInstall
         /// Consumed only after session + project + installation_id succeed — never delete before auth, or retries get `invalid_state`.
@@ -195,10 +245,20 @@ enum GitHubAppController {
                 dbIntentToFinalize = intent
             }
         } else {
-            guard let r = try await resolveInstallWithoutDbIntent(req: req, queryState: queryState) else {
+            var r = try await resolveInstallWithoutDbIntent(req: req, queryState: queryState)
+            if r == nil, let iid = installationIdOpt,
+               let accountIdStr = req.session.data["accountId"],
+               let accId = UUID(uuidString: accountIdStr),
+               let acc = try await Account.find(accId, on: req.db),
+               let pair = try await resolveViaInstallationAndLatestIntent(req: req, installationId: iid, account: acc) {
+                r = pair.0
+                dbIntentToFinalize = pair.1
+                req.logger.info("GitHub App install resolved via installation_id + GitHub installation verification")
+            }
+            guard let final = r else {
                 return try redirectInvalidState(req: req)
             }
-            resolved = r
+            resolved = final
         }
 
         let projectId = resolved.projectId
@@ -242,8 +302,7 @@ enum GitHubAppController {
             return redirectWithQueryParam(req: req, base: base, param: "github_app_error", value: code)
         }
 
-        guard let installationStr = req.query[String.self, at: "installation_id"],
-              let installationId = Int64(installationStr) else {
+        guard let installationId = installationIdOpt else {
             return try redirectError("missing_installation_id")
         }
 
@@ -281,8 +340,25 @@ enum GitHubAppController {
         if let intent = dbIntentToFinalize {
             try await intent.delete(on: req.db)
         }
+        clearInstallSessionKeys(req)
 
         return req.redirect(to: success, redirectType: .normal)
+    }
+
+    /// Prefer `req.query`; if `state` is missing, parse `req.url.query` (some proxies differ).
+    private static func mergedInstallStateQuery(_ req: Request) -> String? {
+        let fromQuery = normalizeInstallStateQuery(req.query[String.self, at: "state"])
+        if let fromQuery { return fromQuery }
+        return normalizeInstallStateQuery(parseQueryParam(req.url.query, name: "state"))
+    }
+
+    private static func parseQueryParam(_ query: String?, name: String) -> String? {
+        guard let query, !query.isEmpty else { return nil }
+        return URLComponents(string: "https://placeholder.local?\(query)")?
+            .queryItems?
+            .first(where: { $0.name == name })?
+            .value
+            .flatMap { $0.removingPercentEncoding ?? $0 }
     }
 
     /// Trim and strip accidental wrapping quotes from GitHub's `state` query value.

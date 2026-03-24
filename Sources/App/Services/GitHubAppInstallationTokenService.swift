@@ -13,6 +13,13 @@ private struct GitHubAppJWTClaims: JWTPayload {
     }
 }
 
+/// Minimal metadata from `GET /app/installations/{id}` (used to tie GitHub install to our `Account`).
+struct GitHubInstallationMeta: Sendable {
+    let installationId: Int64
+    let accountId: Int64
+    let accountType: String
+}
+
 enum GitHubAppInstallationTokenService {
     /// PEM text for the GitHub App private key.
     static func loadPrivatePEM() throws -> String {
@@ -46,6 +53,44 @@ enum GitHubAppInstallationTokenService {
         return try signer.sign(claims)
     }
 
+    /// `GET /app/installations/{id}` — confirms which GitHub account owns the installation (JWT auth).
+    static func fetchInstallation(
+        installationId: Int64,
+        client: Client,
+        logger: Logger
+    ) async throws -> GitHubInstallationMeta {
+        let jwt = try createAppJWT()
+        let url = "https://api.github.com/app/installations/\(installationId)"
+        struct Body: Decodable {
+            let id: Int64
+            let account: Account
+            struct Account: Decodable {
+                let id: Int64
+                let type: String
+            }
+        }
+        let response = try await client.get(URI(string: url)) { req in
+            req.headers.bearerAuthorization = BearerAuthorization(token: jwt)
+            req.headers.add(name: "Accept", value: "application/vnd.github+json")
+            req.headers.add(name: "X-GitHub-Api-Version", value: "2022-11-28")
+            req.headers.add(name: "User-Agent", value: "MyContextProtocol-GitHub-App")
+        }.get()
+        guard response.status == .ok else {
+            let body = response.body.map { String(buffer: $0) } ?? ""
+            logger.warning("GitHub GET installation failed status=\(response.status.code) body=\(body.prefix(500))")
+            throw Abort(
+                .badGateway,
+                reason: "GitHub installation lookup failed (status \(response.status.code))"
+            )
+        }
+        let decoded = try response.content.decode(Body.self)
+        return GitHubInstallationMeta(
+            installationId: decoded.id,
+            accountId: decoded.account.id,
+            accountType: decoded.account.type
+        )
+    }
+
     /// `POST /app/installations/{id}/access_tokens` — returns a bearer token for repository API calls.
     static func createInstallationToken(
         installationId: Int64,
@@ -67,7 +112,7 @@ enum GitHubAppInstallationTokenService {
             req.headers.add(name: "Accept", value: "application/vnd.github+json")
             req.headers.add(name: "X-GitHub-Api-Version", value: "2022-11-28")
             req.headers.add(name: "User-Agent", value: "MyContextProtocol-GitHub-App")
-        }
+        }.get()
 
         guard response.status == .created else {
             let body = response.body.map { String(buffer: $0) } ?? ""
