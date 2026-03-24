@@ -170,9 +170,11 @@ enum GitHubAppController {
 
     /// Setup URL target after GitHub App installation. Requires session (same browser) unless intent + session match.
     static func installCallback(req: Request) async throws -> Response {
-        let queryState = req.query[String.self, at: "state"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryState = normalizeInstallStateQuery(req.query[String.self, at: "state"])
 
         let resolved: ResolvedInstall
+        /// Consumed only after session + project + installation_id succeed — never delete before auth, or retries get `invalid_state`.
+        var dbIntentToFinalize: GitHubAppInstallIntent?
 
         if let s = queryState, !s.isEmpty, let uuid = UUID(uuidString: s),
            let intent = try await GitHubAppInstallIntent.find(uuid, on: req.db) {
@@ -184,13 +186,13 @@ enum GitHubAppController {
                 }
                 resolved = r
             } else {
-                try await intent.delete(on: req.db)
                 resolved = ResolvedInstall(
                     projectId: intent.$project.id,
                     returnTo: intent.returnTo,
                     owner: intent.owner,
                     repo: intent.repo
                 )
+                dbIntentToFinalize = intent
             }
         } else {
             guard let r = try await resolveInstallWithoutDbIntent(req: req, queryState: queryState) else {
@@ -221,6 +223,12 @@ enum GitHubAppController {
                 return req.redirect(to: url, redirectType: .normal)
             }
             throw Abort(.unauthorized, reason: "Not authenticated")
+        }
+
+        if let intent = dbIntentToFinalize, intent.$account.id != account.id {
+            req.logger.warning("GitHub App install intent account mismatch (session vs intent row)")
+            try await intent.delete(on: req.db)
+            return try redirectInvalidState(req: req)
         }
 
         func redirectError(_ code: String) throws -> Response {
@@ -269,6 +277,25 @@ enum GitHubAppController {
             extra += "&resume_owner=\(eo)&resume_repo=\(er)"
         }
         let success = successBase + (successBase.contains("?") ? "&" : "?") + extra
+
+        if let intent = dbIntentToFinalize {
+            try await intent.delete(on: req.db)
+        }
+
         return req.redirect(to: success, redirectType: .normal)
+    }
+
+    /// Trim and strip accidental wrapping quotes from GitHub's `state` query value.
+    private static func normalizeInstallStateQuery(_ raw: String?) -> String? {
+        guard var s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else {
+            return nil
+        }
+        if s.count >= 2, s.first == "\"", s.last == "\"" {
+            s = String(s.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if s.count >= 2, s.first == "'", s.last == "'" {
+            s = String(s.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return s.isEmpty ? nil : s
     }
 }
