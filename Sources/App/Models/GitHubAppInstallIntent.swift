@@ -46,3 +46,5 @@ final class GitHubAppInstallIntent: Model, Content {
         self.expiresAt = expiresAt
     }
 }
+
+extension GitHubAppInstallIntent: @unchecked Sendable {}
