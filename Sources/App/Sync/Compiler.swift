@@ -15,7 +15,9 @@ struct Compiler {
             let sideEffectLevel = SkillInference.inferSideEffectLevel(from: parsed)
             let riskLevel = SkillInference.inferRiskLevel(from: parsed)
             let repoSpecific = SkillInference.inferRepoSpecific(from: parsed)
-            let summary = parsed.description ?? String(parsed.body.prefix(200))
+            let summary = parsed.description.map { d in
+                d.count > 2048 ? String(d.prefix(2048)) : d
+            } ?? String(parsed.body.prefix(200))
             let status = SkillInference.inferPublishabilityStatus(
                 exposureType: exposureType,
                 riskLevel: riskLevel,

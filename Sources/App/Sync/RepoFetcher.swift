@@ -59,6 +59,28 @@ struct RepoFetcher {
         return extractPath
     }
 
+    /// Picks the directory GitHub’s tarball uses as the **clone root** so paths don’t start with `{owner}-{repo}-{sha}/`.
+    ///
+    /// - **Normal case:** `extractPath` has exactly one child directory (the archive root). We descend into it; inside it the
+    ///   repo may have **many** top-level folders (`Workflow/`, `CodingStyle/`, etc.). That is fine — `findSkillFiles` is **recursive**
+    ///   and collects every `**/SKILL.md`. Relative paths look like `Workflow/some-skill/SKILL.md`.
+    /// - **Edge case:** several immediate children under `extractPath` (unusual). We keep `extractPath` as the scan root and still
+    ///   recurse the whole tree; nothing requires a flat repo layout beyond “each skill is some `skill-name/SKILL.md` anywhere under root.”
+    func resolveRepositoryRoot(extractPath: URL) throws -> URL {
+        let urls = try FileManager.default.contentsOfDirectory(
+            at: extractPath,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        let directories = urls.filter { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+        if directories.count == 1 {
+            return directories[0]
+        }
+        return extractPath
+    }
+
     func findSkillFiles(in directory: URL) -> [URL] {
         var results: [URL] = []
         guard let enumerator = FileManager.default.enumerator(

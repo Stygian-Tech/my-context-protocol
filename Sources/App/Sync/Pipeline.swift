@@ -70,8 +70,9 @@ struct SyncPipeline {
             )
             tempExtractPath = extractPath
 
-            let basePath = extractPath.path
-            let skillFiles = fetcher.findSkillFiles(in: extractPath)
+            let repoRoot = try fetcher.resolveRepositoryRoot(extractPath: extractPath)
+            let basePath = repoRoot.path
+            let skillFiles = fetcher.findSkillFiles(in: repoRoot)
 
             var allValid = true
             var errorSummary: String?
@@ -118,8 +119,9 @@ struct SyncPipeline {
                     try await toolIndex.save(on: db)
                 } catch {
                     allValid = false
-                    errorSummary = (errorSummary.map { $0 + "\n" } ?? "") + "\(fileURL.path): \(error.localizedDescription)"
-                    validationErrors.append(["path": fileURL.path, "message": error.localizedDescription])
+                    let rel = Self.relativeRepoPath(fileURL: fileURL, repoRootPath: basePath)
+                    errorSummary = (errorSummary.map { $0 + "\n" } ?? "") + "\(rel): \(error.localizedDescription)"
+                    validationErrors.append(["path": rel, "message": error.localizedDescription])
                 }
             }
 
@@ -163,4 +165,15 @@ struct SyncPipeline {
 enum PipelineError: Error {
     case projectNotFound
     case noRepoConnection
+}
+
+extension SyncPipeline {
+    fileprivate static func relativeRepoPath(fileURL: URL, repoRootPath: String) -> String {
+        let p = fileURL.path
+        let prefix = repoRootPath.hasSuffix("/") ? repoRootPath : repoRootPath + "/"
+        if p.hasPrefix(prefix) {
+            return String(p.dropFirst(prefix.count))
+        }
+        return fileURL.lastPathComponent
+    }
 }

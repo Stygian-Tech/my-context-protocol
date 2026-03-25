@@ -23,12 +23,18 @@ struct Validator {
         }
 
         if !skill.name.isEmpty {
-            let nameRange = NSRange(skill.name.startIndex..., in: skill.name)
-            if nameRange.location != NSNotFound,
-               Self.allowedNamePattern.firstMatch(in: skill.name, range: nameRange) == nil {
+            let nsName = skill.name as NSString
+            let full = NSRange(location: 0, length: nsName.length)
+            let ok: Bool
+            if let m = Self.allowedNamePattern.firstMatch(in: skill.name, options: [], range: full) {
+                ok = NSEqualRanges(m.range, full)
+            } else {
+                ok = false
+            }
+            if !ok {
                 errors.append(ValidationError(
                     path: skill.path,
-                    message: "name must be lowercase with hyphens only: \(skill.name)",
+                    message: "name must be lowercase ASCII slug (letters, digits, single hyphens): got \"\(skill.name)\"",
                     line: nil
                 ))
             }

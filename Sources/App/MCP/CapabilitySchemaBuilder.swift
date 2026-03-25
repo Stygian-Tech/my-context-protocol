@@ -15,7 +15,8 @@ enum CapabilitySchemaBuilder {
             .first { !$0.isEmpty }
         let detailHelp: String
         if let blurb, !blurb.isEmpty {
-            detailHelp = "Optional extra context. Skill summary: \(blurb)"
+            let capped = blurb.count > 480 ? String(blurb.prefix(480)) + "…" : blurb
+            detailHelp = "Optional extra context. Skill summary: \(capped)"
         } else {
             detailHelp = "Optional extra context or question for this skill."
         }

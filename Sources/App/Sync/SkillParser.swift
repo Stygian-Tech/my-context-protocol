@@ -42,7 +42,7 @@ struct SkillParser {
                     let value = String(line[line.index(after: colonIndex)...])
                         .trimmingCharacters(in: .whitespaces)
                         .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-                    frontmatter[key] = value
+                    frontmatter[key] = Self.normalizeScalarString(value)
                 }
                 i += 1
             }
@@ -54,11 +54,19 @@ struct SkillParser {
             body = content
         }
 
-        guard let name = frontmatter["name"] else {
+        guard let rawName = frontmatter["name"] else {
+            throw SkillParserError.missingName
+        }
+        let name = Self.normalizeScalarString(rawName)
+        guard !name.isEmpty else {
             throw SkillParserError.missingName
         }
 
-        let description = frontmatter["description"]
+        let description: String? = {
+            guard let d = frontmatter["description"] else { return nil }
+            let t = Self.normalizeScalarString(d)
+            return t.isEmpty ? nil : t
+        }()
         let relativePath = fileURL.path.replacingOccurrences(of: basePath, with: "")
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let hash = content.data(using: .utf8).map { $0.base64EncodedString() }
@@ -83,6 +91,12 @@ struct SkillParser {
             sideEffects: sideEffects,
             repoSpecific: repoSpecific
         )
+    }
+
+    /// Trims whitespace/newlines and strips stray `\\r` from Windows-style line endings in single-line YAML values.
+    private static func normalizeScalarString(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\r", with: "")
     }
 
     private static func parseStringArray(_ raw: String?) -> [String]? {
