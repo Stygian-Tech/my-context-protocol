@@ -16,6 +16,9 @@ final class ApiKey: Model, Content {
     @Field(key: "key_hash")
     var keyHash: String
 
+    @OptionalField(key: "name")
+    var name: String?
+
     @Field(key: "status")
     var status: String
 
@@ -30,12 +33,14 @@ final class ApiKey: Model, Content {
     init(
         id: UUID? = nil,
         projectId: UUID,
+        name: String? = nil,
         keyPrefix: String,
         keyHash: String,
         status: String = "active"
     ) {
         self.id = id
         self.$project.id = projectId
+        self.name = name
         self.keyPrefix = keyPrefix
         self.keyHash = keyHash
         self.status = status

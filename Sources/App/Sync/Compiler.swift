@@ -40,10 +40,13 @@ struct Compiler {
 
             let useWhenJson = parsed.useWhen.flatMap { (try? JSONEncoder().encode($0)).flatMap { String(data: $0, encoding: .utf8) } }
             let avoidWhenJson = parsed.avoidWhen.flatMap { (try? JSONEncoder().encode($0)).flatMap { String(data: $0, encoding: .utf8) } }
+            let failureModesJson = parsed.failureModes.flatMap { (try? JSONEncoder().encode($0)).flatMap { String(data: $0, encoding: .utf8) } }
             let rule = RoutingRule(
                 compiledSkillId: compiledSkill.id!,
                 useWhenJson: useWhenJson,
-                avoidWhenJson: avoidWhenJson
+                avoidWhenJson: avoidWhenJson,
+                failureModesJson: failureModesJson,
+                invokeFirst: parsed.invokeFirst
             )
             try await rule.save(on: db)
 
@@ -57,7 +60,13 @@ struct Compiler {
                     summary: summary
                 )
             case "resource":
-                schemaJson = CapabilitySchemaBuilder.resourceMetaJson(skillName: package.name)
+                schemaJson = CapabilitySchemaBuilder.resourceMetaJson(
+                    skillName: package.name,
+                    useWhen: parsed.useWhen,
+                    avoidWhen: parsed.avoidWhen,
+                    failureModes: parsed.failureModes,
+                    invokeFirst: parsed.invokeFirst
+                )
             case "prompt":
                 schemaJson = CapabilitySchemaBuilder.promptMetaJson()
             default:
@@ -78,13 +87,23 @@ struct Compiler {
     }
 
     /// Recomputes `schema_json` when a compiled skill's exposure type is changed via the API.
-    static func schemaJson(forCapabilityType capabilityType: String, compiled: CompiledSkill) -> String? {
+    static func schemaJson(
+        forCapabilityType capabilityType: String,
+        compiled: CompiledSkill,
+        routingHints: RoutingHints = .empty
+    ) -> String? {
         let summary = compiled.summary
         switch capabilityType {
         case "tool":
             return CapabilitySchemaBuilder.toolInputSchemaJson(description: nil, summary: summary)
         case "resource":
-            return CapabilitySchemaBuilder.resourceMetaJson(skillName: compiled.name)
+            return CapabilitySchemaBuilder.resourceMetaJson(
+                skillName: compiled.name,
+                useWhen: routingHints.useWhen,
+                avoidWhen: routingHints.avoidWhen,
+                failureModes: routingHints.failureModes,
+                invokeFirst: routingHints.invokeFirst
+            )
         case "prompt":
             return CapabilitySchemaBuilder.promptMetaJson()
         default:

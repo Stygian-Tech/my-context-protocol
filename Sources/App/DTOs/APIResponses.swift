@@ -98,6 +98,7 @@ struct ReleaseResponse: Content {
 struct ApiKeyResponse: Content {
     let id: String
     let project_id: String
+    let name: String?
     let key_prefix: String
     let status: String
     let created_at: String
@@ -106,18 +107,34 @@ struct ApiKeyResponse: Content {
     enum CodingKeys: String, CodingKey {
         case id, status
         case project_id = "project_id"
+        case name
         case key_prefix = "key_prefix"
         case created_at = "created_at"
         case last_used_at = "last_used_at"
     }
 }
 
+struct ApiKeyCreateRequest: Content {
+    let name: String?
+
+    func normalizedName() throws -> String? {
+        guard let name else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.count <= 64 else {
+            throw Abort(.badRequest, reason: "API key name must be 64 characters or fewer")
+        }
+        return trimmed
+    }
+}
+
 struct ApiKeyCreateResponse: Content {
     let key: String
     let prefix: String
+    let name: String?
 
     enum CodingKeys: String, CodingKey {
-        case key, prefix
+        case key, prefix, name
     }
 }
 
@@ -137,10 +154,18 @@ struct ProjectCatalogResource: Content {
     let name: String?
     let description: String?
     let mime_type: String?
+    let use_when: [String]?
+    let avoid_when: [String]?
+    let failure_modes: [String]?
+    let invoke_first: Bool?
 
     enum CodingKeys: String, CodingKey {
         case uri, name, description
         case mime_type = "mime_type"
+        case use_when = "use_when"
+        case avoid_when = "avoid_when"
+        case failure_modes = "failure_modes"
+        case invoke_first = "invoke_first"
     }
 }
 
@@ -165,6 +190,21 @@ struct ProjectCatalogResponse: Content {
     }
 }
 
+/// PATCH body fragment for SKILL routing fields (mirrors front matter; persisted in `routing_rules`).
+struct CompiledSkillRoutingPatch: Content {
+    var use_when: [String]?
+    var avoid_when: [String]?
+    var failure_modes: [String]?
+    var invoke_first: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case use_when = "use_when"
+        case avoid_when = "avoid_when"
+        case failure_modes = "failure_modes"
+        case invoke_first = "invoke_first"
+    }
+}
+
 struct CompiledSkillResponse: Content {
     let id: String
     let release_id: String
@@ -180,6 +220,11 @@ struct CompiledSkillResponse: Content {
     let risk_level: String
     let repo_specific: Bool
     let status: String
+    /// From `routing_rules` — comma lists in SKILL become arrays; surfaced on MCP resources when `exposure_type` is `resource`.
+    let use_when: [String]
+    let avoid_when: [String]
+    let failure_modes: [String]
+    let invoke_first: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, path, name, summary
@@ -190,6 +235,10 @@ struct CompiledSkillResponse: Content {
         case exposure_type = "exposure_type"
         case risk_level = "risk_level"
         case repo_specific = "repo_specific"
+        case use_when = "use_when"
+        case avoid_when = "avoid_when"
+        case failure_modes = "failure_modes"
+        case invoke_first = "invoke_first"
         case status = "status"
     }
 }

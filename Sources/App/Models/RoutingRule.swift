@@ -16,6 +16,12 @@ final class RoutingRule: Model, Content {
     @OptionalField(key: "avoid_when_json")
     var avoidWhenJson: String?
 
+    @OptionalField(key: "failure_modes_json")
+    var failureModesJson: String?
+
+    @OptionalField(key: "invoke_first")
+    var invokeFirst: Bool?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -25,12 +31,16 @@ final class RoutingRule: Model, Content {
         id: UUID? = nil,
         compiledSkillId: UUID,
         useWhenJson: String? = nil,
-        avoidWhenJson: String? = nil
+        avoidWhenJson: String? = nil,
+        failureModesJson: String? = nil,
+        invokeFirst: Bool? = nil
     ) {
         self.id = id
         self.$compiledSkill.id = compiledSkillId
         self.useWhenJson = useWhenJson
         self.avoidWhenJson = avoidWhenJson
+        self.failureModesJson = failureModesJson
+        self.invokeFirst = invokeFirst
     }
 }
 

@@ -112,6 +112,63 @@ struct ProjectController {
         return url.absoluteString
     }
 
+    private static func compiledSkillResponse(
+        _ cs: CompiledSkill,
+        schemaJson: String?,
+        routingRule: RoutingRule?
+    ) -> CompiledSkillResponse {
+        let h = RoutingHints.from(rule: routingRule)
+        return CompiledSkillResponse(
+            id: cs.id!.uuidString,
+            release_id: cs.$release.id.uuidString,
+            skill_package_id: cs.$skillPackage.id.uuidString,
+            path: cs.path,
+            name: cs.name,
+            summary: cs.summary,
+            skill_body: cs.skillBody,
+            schema_json: schemaJson,
+            exposure_type: cs.exposureType,
+            risk_level: cs.riskLevel,
+            repo_specific: cs.repoSpecific,
+            status: cs.status,
+            use_when: h.useWhen ?? [],
+            avoid_when: h.avoidWhen ?? [],
+            failure_modes: h.failureModes ?? [],
+            invoke_first: h.invokeFirst ?? false
+        )
+    }
+
+    private static func jsonRoutingArray(_ strings: [String]) throws -> String? {
+        if strings.isEmpty { return nil }
+        let data = try JSONEncoder().encode(strings)
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func applyRoutingPatch(
+        compiledSkillId: UUID,
+        patch: CompiledSkillRoutingPatch,
+        db: Database
+    ) async throws {
+        let useList = patch.use_when ?? []
+        let avoidList = patch.avoid_when ?? []
+        let failList = patch.failure_modes ?? []
+        let invokeFlag = patch.invoke_first ?? false
+
+        let useJson = try jsonRoutingArray(useList)
+        let avoidJson = try jsonRoutingArray(avoidList)
+        let failJson = try jsonRoutingArray(failList)
+
+        let existing = try await RoutingRule.query(on: db)
+            .filter(\.$compiledSkill.$id == compiledSkillId)
+            .first()
+        let rule = existing ?? RoutingRule(compiledSkillId: compiledSkillId)
+        rule.useWhenJson = useJson
+        rule.avoidWhenJson = avoidJson
+        rule.failureModesJson = failJson
+        rule.invokeFirst = invokeFlag
+        try await rule.save(on: db)
+    }
+
     static func list(req: Request) async throws -> [ProjectResponse] {
         let account = try requireAccount(req)
         let projects = try await Project.query(on: req.db)
@@ -176,7 +233,11 @@ struct ProjectController {
                 uri: meta.uri,
                 name: cap.compiledSkill.name,
                 description: cap.compiledSkill.summary,
-                mime_type: meta.mimeType
+                mime_type: meta.mimeType,
+                use_when: meta.useWhen,
+                avoid_when: meta.avoidWhen,
+                failure_modes: meta.failureModes,
+                invoke_first: meta.invokeFirst
             )
         }
 
@@ -560,21 +621,21 @@ struct ProjectController {
                 }
             }
         }
+        var ruleBySkillId: [UUID: RoutingRule] = [:]
+        if !skillIds.isEmpty {
+            let rules = try await RoutingRule.query(on: req.db)
+                .filter(\.$compiledSkill.$id ~~ skillIds)
+                .all()
+            for rule in rules {
+                ruleBySkillId[rule.$compiledSkill.id] = rule
+            }
+        }
         return compiled.map { cs in
             let sid = cs.id!
-            return CompiledSkillResponse(
-                id: sid.uuidString,
-                release_id: cs.$release.id.uuidString,
-                skill_package_id: cs.$skillPackage.id.uuidString,
-                path: cs.path,
-                name: cs.name,
-                summary: cs.summary,
-                skill_body: cs.skillBody,
-                schema_json: schemaBySkillId[sid],
-                exposure_type: cs.exposureType,
-                risk_level: cs.riskLevel,
-                repo_specific: cs.repoSpecific,
-                status: cs.status
+            return Self.compiledSkillResponse(
+                cs,
+                schemaJson: schemaBySkillId[sid],
+                routingRule: ruleBySkillId[sid]
             )
         }
     }
@@ -605,6 +666,8 @@ struct ProjectController {
             let status: String?
             let summary: String?
             let skill_body: String?
+            /// Mirrors SKILL front matter routing lists / `invoke_first`; updates `routing_rules` and (for resources) default MCP metadata.
+            let routing: CompiledSkillRoutingPatch?
             /// When `true`, `schema_json` is applied (empty string → rebuild default from summary/exposure). When `false` or omitted, custom JSON is preserved unless `exposure_type` or `summary` changes (those recompute defaults).
             let replace_schema: Bool?
             /// Replaces `capability_defs.schema_json` when `replace_schema` is true (must be valid JSON unless empty).
@@ -631,8 +694,16 @@ struct ProjectController {
             compiled.skillBody = t.isEmpty ? nil : bodySkill
         }
         try await compiled.save(on: req.db)
+        if let routing = body.routing {
+            try await Self.applyRoutingPatch(compiledSkillId: compiled.id!, patch: routing, db: req.db)
+        }
         let exposureChanged = compiled.exposureType != exposureBefore
         let summaryChanged = compiled.summary != summaryBefore
+        let routingChanged = body.routing != nil
+        let routingRule = try await RoutingRule.query(on: req.db)
+            .filter(\.$compiledSkill.$id == compiled.id!)
+            .first()
+        let routingHints = RoutingHints.from(rule: routingRule)
         let caps = try await CapabilityDef.query(on: req.db)
             .filter(\.$compiledSkill.$id == compiled.id!)
             .all()
@@ -642,37 +713,24 @@ struct ProjectController {
         if body.replace_schema == true, let raw = body.schema_json {
             let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if t.isEmpty {
-                newSchema = Compiler.schemaJson(forCapabilityType: capType, compiled: compiled)
+                newSchema = Compiler.schemaJson(forCapabilityType: capType, compiled: compiled, routingHints: routingHints)
             } else {
                 guard (try? JSONSerialization.jsonObject(with: Data(t.utf8))) != nil else {
                     throw Abort(.badRequest, reason: "schema_json must be valid JSON")
                 }
                 newSchema = t
             }
-        } else if exposureChanged || summaryChanged {
-            newSchema = Compiler.schemaJson(forCapabilityType: capType, compiled: compiled)
+        } else if exposureChanged || summaryChanged || (routingChanged && capType == "resource") {
+            newSchema = Compiler.schemaJson(forCapabilityType: capType, compiled: compiled, routingHints: routingHints)
         } else {
-            newSchema = existingSchema ?? Compiler.schemaJson(forCapabilityType: capType, compiled: compiled)
+            newSchema = existingSchema ?? Compiler.schemaJson(forCapabilityType: capType, compiled: compiled, routingHints: routingHints)
         }
         for cap in caps {
             cap.type = capType
             cap.schemaJson = newSchema
             try await cap.save(on: req.db)
         }
-        return CompiledSkillResponse(
-            id: compiled.id!.uuidString,
-            release_id: compiled.$release.id.uuidString,
-            skill_package_id: compiled.$skillPackage.id.uuidString,
-            path: compiled.path,
-            name: compiled.name,
-            summary: compiled.summary,
-            skill_body: compiled.skillBody,
-            schema_json: newSchema,
-            exposure_type: compiled.exposureType,
-            risk_level: compiled.riskLevel,
-            repo_specific: compiled.repoSpecific,
-            status: compiled.status
-        )
+        return Self.compiledSkillResponse(compiled, schemaJson: newSchema, routingRule: routingRule)
     }
 
     static func listApiKeys(req: Request) async throws -> [ApiKeyResponse] {
@@ -683,6 +741,7 @@ struct ProjectController {
             ApiKeyResponse(
                 id: k.id!.uuidString,
                 project_id: project.id!.uuidString,
+                name: k.name,
                 key_prefix: k.keyPrefix,
                 status: k.status,
                 created_at: formatDate(k.createdAt),
@@ -694,6 +753,8 @@ struct ProjectController {
     static func createApiKey(req: Request) async throws -> ApiKeyCreateResponse {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
+        let body = try? req.content.decode(ApiKeyCreateRequest.self)
+        let name = try body?.normalizedName()
         let rawKey = "mcp_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
         let hash = SHA256.hash(data: Data(rawKey.utf8))
         let hashString = hash.map { String(format: "%02x", $0) }.joined()
@@ -701,12 +762,13 @@ struct ProjectController {
 
         let apiKey = ApiKey(
             projectId: project.id!,
+            name: name,
             keyPrefix: prefix,
             keyHash: hashString,
             status: "active"
         )
         try await apiKey.save(on: req.db)
-        return ApiKeyCreateResponse(key: rawKey, prefix: prefix)
+        return ApiKeyCreateResponse(key: rawKey, prefix: prefix, name: name)
     }
 
     static func listRequestLogs(req: Request) async throws -> [RequestLogResponse] {

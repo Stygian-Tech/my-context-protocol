@@ -211,7 +211,11 @@ struct MCPController {
                 uri: meta.uri,
                 name: compiled.name,
                 description: compiled.summary,
-                mimeType: meta.mimeType
+                mimeType: meta.mimeType,
+                useWhen: meta.useWhen,
+                avoidWhen: meta.avoidWhen,
+                failureModes: meta.failureModes,
+                invokeFirst: meta.invokeFirst
             )
         }
         return try await serveSuccess(
@@ -240,7 +244,14 @@ struct MCPController {
         )
         for cap in caps {
             if let meta = CapabilitySchemaBuilder.parseResourceMeta(cap.schemaJson), meta.uri == uri {
-                let body = cap.compiledSkill.skillBody ?? cap.compiledSkill.summary ?? ""
+                let compiled = cap.compiledSkill
+                var body = compiled.skillBody ?? compiled.summary ?? ""
+                if let preamble = CapabilitySchemaBuilder.resourceReadPreamble(
+                    meta: meta,
+                    skillSummary: compiled.summary
+                ) {
+                    body = preamble + body
+                }
                 let read = ResourceReadResult(contents: [
                     ResourceContents(uri: uri, mimeType: meta.mimeType, text: body)
                 ])

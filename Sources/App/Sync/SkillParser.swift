@@ -9,6 +9,10 @@ struct ParsedSkill {
     let exposeAs: String?
     let useWhen: [String]?
     let avoidWhen: [String]?
+    /// Operational fallbacks when routing or tools fail (exposed in MCP resource metadata).
+    let failureModes: [String]?
+    /// When true, agents should consider loading this resource before other skills on the same task.
+    let invokeFirst: Bool?
     let riskLevel: String?
     let sideEffects: String?
     let repoSpecific: Bool?
@@ -74,6 +78,8 @@ struct SkillParser {
         let exposeAs = frontmatter["expose_as"]
         let useWhen = parseStringArray(frontmatter["use_when"])
         let avoidWhen = parseStringArray(frontmatter["avoid_when"])
+        let failureModes = parseStringArray(frontmatter["failure_modes"])
+        let invokeFirst = frontmatter["invoke_first"].map { $0.lowercased() == "true" }
         let riskLevel = frontmatter["risk_level"]
         let sideEffects = frontmatter["side_effects"]
         let repoSpecific = frontmatter["repo_specific"].map { $0.lowercased() == "true" }
@@ -87,6 +93,8 @@ struct SkillParser {
             exposeAs: exposeAs,
             useWhen: useWhen,
             avoidWhen: avoidWhen,
+            failureModes: failureModes,
+            invokeFirst: invokeFirst,
             riskLevel: riskLevel,
             sideEffects: sideEffects,
             repoSpecific: repoSpecific

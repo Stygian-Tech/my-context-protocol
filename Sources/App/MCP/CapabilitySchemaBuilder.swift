@@ -1,10 +1,20 @@
 import Foundation
 
+/// Machine-readable resource row from `capability_defs.schema_json` for MCP resources.
+struct ParsedResourceMeta: Equatable {
+    let uri: String
+    let mimeType: String
+    let useWhen: [String]?
+    let avoidWhen: [String]?
+    let failureModes: [String]?
+    let invokeFirst: Bool?
+}
+
 /// Builds `schema_json` for `CapabilityDef` rows and stable resource URIs for MCP.
 ///
 /// Contract:
 /// - **tool**: JSON string of an MCP-compatible `inputSchema` object (`type`, `properties`, optional `required`).
-/// - **resource**: JSON object `{ "uri": "ctx://skill/...", "mimeType": "text/markdown" }` for `resources/list` / `resources/read`.
+/// - **resource**: JSON object with `uri`, `mimeType`, and optional agent hints (`use_when`, `avoid_when`, `failure_modes`, `invoke_first`).
 /// - **prompt**: JSON object `{ "arguments": [] }` (reserved; prompt params can be extended later).
 enum CapabilitySchemaBuilder {
     static let resourceURIScheme = "ctx"
@@ -47,12 +57,41 @@ enum CapabilitySchemaBuilder {
     }
 
     static func resourceMetaJson(skillName: String) -> String {
+        resourceMetaJson(
+            skillName: skillName,
+            useWhen: nil,
+            avoidWhen: nil,
+            failureModes: nil,
+            invokeFirst: nil
+        )
+    }
+
+    /// Rich metadata for `resources/list`, `resources/read` preamble, and dashboard catalog.
+    static func resourceMetaJson(
+        skillName: String,
+        useWhen: [String]?,
+        avoidWhen: [String]?,
+        failureModes: [String]?,
+        invokeFirst: Bool?
+    ) -> String {
         let uri = resourceURI(skillName: skillName)
-        let payload: [String: String] = [
+        var payload: [String: Any] = [
             "uri": uri,
             "mimeType": "text/markdown"
         ]
-        if let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
+        if let useWhen, !useWhen.isEmpty {
+            payload["use_when"] = useWhen
+        }
+        if let avoidWhen, !avoidWhen.isEmpty {
+            payload["avoid_when"] = avoidWhen
+        }
+        if let failureModes, !failureModes.isEmpty {
+            payload["failure_modes"] = failureModes
+        }
+        if invokeFirst == true {
+            payload["invoke_first"] = true
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
            let s = String(data: data, encoding: .utf8) {
             return s
         }
@@ -77,13 +116,60 @@ enum CapabilitySchemaBuilder {
         return "\(resourceURIScheme)://\(resourceURIHost)/\(enc)"
     }
 
-    static func parseResourceMeta(_ schemaJson: String?) -> (uri: String, mimeType: String)? {
+    static func parseResourceMeta(_ schemaJson: String?) -> ParsedResourceMeta? {
         guard let schemaJson, let data = schemaJson.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let uri = obj["uri"] as? String, !uri.isEmpty else {
             return nil
         }
         let mime = (obj["mimeType"] as? String) ?? "text/markdown"
-        return (uri, mime)
+        let useWhen = obj["use_when"] as? [String]
+        let avoidWhen = obj["avoid_when"] as? [String]
+        let failureModes = obj["failure_modes"] as? [String]
+        let invokeFirst = obj["invoke_first"] as? Bool
+        return ParsedResourceMeta(
+            uri: uri,
+            mimeType: mime,
+            useWhen: useWhen,
+            avoidWhen: avoidWhen,
+            failureModes: failureModes,
+            invokeFirst: invokeFirst
+        )
+    }
+
+    /// Short markdown block prepended to `resources/read` so agents see triggers without re-parsing SKILL frontmatter.
+    static func resourceReadPreamble(meta: ParsedResourceMeta, skillSummary: String?) -> String? {
+        var lines: [String] = []
+        if meta.invokeFirst == true {
+            lines.append("**Invoke first:** consider loading this resource before other skills on the same task.")
+        }
+        if let use = meta.useWhen, !use.isEmpty {
+            lines.append("**Read when:**")
+            for u in use {
+                lines.append("- \(u)")
+            }
+        }
+        if let avoid = meta.avoidWhen, !avoid.isEmpty {
+            lines.append("**Skip when:**")
+            for a in avoid {
+                lines.append("- \(a)")
+            }
+        }
+        if let fm = meta.failureModes, !fm.isEmpty {
+            lines.append("**Failure modes / fallbacks:**")
+            for f in fm {
+                lines.append("- \(f)")
+            }
+        }
+        guard !lines.isEmpty else {
+            return nil
+        }
+        var out = "<!-- MyContextProtocol: agent routing (from SKILL front matter) -->\n\n"
+        out += lines.joined(separator: "\n")
+        out += "\n\n---\n\n"
+        if let s = skillSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+            out += "*Summary:* \(s)\n\n---\n\n"
+        }
+        return out
     }
 }

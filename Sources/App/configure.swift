@@ -129,6 +129,8 @@ public func configure(_ app: Application) throws {
     app.migrations.add(AddGithubAppInstallationIdToAccounts())
     app.migrations.add(AddCompiledSkillSkillBody())
     app.migrations.add(AddRequestLogErrorMessage())
+    app.migrations.add(AddNameToApiKeys())
+    app.migrations.add(AddAgentHintsToRoutingRules())
 
     try app.autoMigrate().wait()
 

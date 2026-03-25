@@ -182,10 +182,19 @@ struct MCPResource: Content {
     let name: String?
     let description: String?
     let mimeType: String?
+    /// Optional agent hints (also in `schema_json`); snake_case matches SKILL front matter keys.
+    let useWhen: [String]?
+    let avoidWhen: [String]?
+    let failureModes: [String]?
+    let invokeFirst: Bool?
 
     enum CodingKeys: String, CodingKey {
         case uri, name, description
         case mimeType = "mimeType"
+        case useWhen = "use_when"
+        case avoidWhen = "avoid_when"
+        case failureModes = "failure_modes"
+        case invokeFirst = "invoke_first"
     }
 }
 
