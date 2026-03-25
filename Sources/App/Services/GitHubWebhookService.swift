@@ -99,3 +99,36 @@ enum GitHubWebhookError: Error {
     case createFailed(status: Int, body: String)
     case deleteFailed(status: Int, body: String)
 }
+
+extension GitHubWebhookError: AbortError {
+    var status: HTTPResponseStatus {
+        switch self {
+        case .repoAccessDenied(let code):
+            if code == 404 { return .notFound }
+            if code == 403 { return .forbidden }
+            return .badGateway
+        case .createFailed(let code, _):
+            if code == 403 || code == 401 { return .forbidden }
+            if code == 404 { return .notFound }
+            if code == 422 { return .unprocessableEntity }
+            return .badGateway
+        case .deleteFailed:
+            return .badGateway
+        }
+    }
+
+    var reason: String {
+        switch self {
+        case .repoAccessDenied(let code):
+            return "GitHub API returned HTTP \(code) for this repository. Confirm the owner/repo name, that the GitHub App is installed, and that this repository is included in the installation."
+        case .createFailed(let code, let body):
+            let snippet = String(body.prefix(400)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if snippet.isEmpty {
+                return "Could not create repository webhook on GitHub (HTTP \(code))."
+            }
+            return "Could not create repository webhook on GitHub (HTTP \(code)): \(snippet)"
+        case .deleteFailed(let code, let body):
+            return "Could not delete previous webhook on GitHub (HTTP \(code)): \(String(body.prefix(200)))"
+        }
+    }
+}
