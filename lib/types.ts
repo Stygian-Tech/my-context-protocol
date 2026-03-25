@@ -51,6 +51,33 @@ export interface SkillPackage {
   validation_status: string;
 }
 
+export interface ProjectCatalogTool {
+  name: string;
+  description?: string | null;
+  input_schema_json?: string | null;
+}
+
+export interface ProjectCatalogResource {
+  uri: string;
+  name?: string | null;
+  description?: string | null;
+  mime_type?: string | null;
+}
+
+export interface ProjectCatalogPrompt {
+  name: string;
+  description?: string | null;
+}
+
+export interface ProjectCatalog {
+  release_id?: string | null;
+  release_status?: string | null;
+  mcp_url?: string | null;
+  tools: ProjectCatalogTool[];
+  resources: ProjectCatalogResource[];
+  prompts: ProjectCatalogPrompt[];
+}
+
 export interface ApiKey {
   id: string;
   project_id: string;
@@ -70,6 +97,35 @@ export interface RequestLog {
   latency_ms?: number | null;
   status: number;
   error_code?: string | null;
+  /** JSON-RPC error message or other detail when present */
+  error_message?: string | null;
+}
+
+export interface ValidationErrorEntry {
+  path: string;
+  message: string;
+}
+
+export interface ReleaseValidationReport {
+  is_valid: boolean;
+  errors: ValidationErrorEntry[];
+}
+
+export interface CompiledSkill {
+  id: string;
+  release_id: string;
+  skill_package_id: string;
+  path: string;
+  name: string;
+  summary?: string | null;
+  /** SKILL.md body — tool/resource/prompt content over MCP. */
+  skill_body?: string | null;
+  /** Capability metadata / tool inputSchema JSON from the compiler or your edits. */
+  schema_json?: string | null;
+  exposure_type: "tool" | "resource" | "prompt" | string;
+  risk_level: string;
+  repo_specific: boolean;
+  status: string;
 }
 
 export type AppEnv = "local" | "dev" | "prod";

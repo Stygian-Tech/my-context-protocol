@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchReleases, activateRelease } from "@/lib/projects-api";
+import { ReleaseSkillMetadataDialog } from "@/components/dashboard/release-skill-metadata-dialog";
+import { ReleaseValidationDialog } from "@/components/dashboard/release-validation-dialog";
 import {
   Table,
   TableBody,
@@ -34,6 +37,13 @@ function statusVariant(status: ReleaseStatus) {
 
 export function ReleaseTable({ projectId }: ReleaseTableProps) {
   const queryClient = useQueryClient();
+  const [metaOpen, setMetaOpen] = useState(false);
+  const [metaReleaseId, setMetaReleaseId] = useState<string | null>(null);
+  const [validationOpen, setValidationOpen] = useState(false);
+  const [validationCtx, setValidationCtx] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
 
   const { data: releases, isLoading } = useQuery({
     queryKey: ["releases", projectId],
@@ -44,6 +54,8 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
     mutationFn: (releaseId: string) => activateRelease(projectId, releaseId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-catalog", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     },
   });
 
@@ -69,7 +81,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
             <TableHead>Status</TableHead>
             <TableHead>Created</TableHead>
             <TableHead>Error</TableHead>
-            <TableHead className="w-[100px]">Actions</TableHead>
+            <TableHead className="w-[140px]">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -86,20 +98,48 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
               <TableCell>
                 {new Date(release.created_at).toLocaleString()}
               </TableCell>
-              <TableCell className="max-w-[200px] truncate text-muted-foreground text-sm">
-                {release.error_summary ?? "-"}
+              <TableCell className="max-w-[min(28rem,40vw)] align-top text-muted-foreground text-sm whitespace-pre-wrap break-words">
+                {release.error_summary ?? "—"}
               </TableCell>
               <TableCell>
-                {release.status === "ready" && (
+                <div className="flex flex-col gap-1">
+                  {release.status === "ready" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => activateMutation.mutate(release.id)}
+                      disabled={activateMutation.isPending}
+                    >
+                      Activate
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => activateMutation.mutate(release.id)}
-                    disabled={activateMutation.isPending}
+                    onClick={() => {
+                      setMetaReleaseId(release.id);
+                      setMetaOpen(true);
+                    }}
                   >
-                    Activate
+                    MCP metadata
                   </Button>
-                )}
+                  {release.status === "failed" || release.error_summary ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="border-destructive/30 text-destructive hover:bg-destructive/10"
+                      onClick={() => {
+                        setValidationCtx({
+                          id: release.id,
+                          label: release.commit_sha.slice(0, 7),
+                        });
+                        setValidationOpen(true);
+                      }}
+                    >
+                      Errors
+                    </Button>
+                  ) : null}
+                </div>
               </TableCell>
             </TableRow>
           ))}
@@ -114,6 +154,25 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
           </p>
         </div>
       )}
+      <ReleaseSkillMetadataDialog
+        projectId={projectId}
+        releaseId={metaReleaseId}
+        open={metaOpen}
+        onOpenChange={(open) => {
+          setMetaOpen(open);
+          if (!open) setMetaReleaseId(null);
+        }}
+      />
+      <ReleaseValidationDialog
+        projectId={projectId}
+        releaseId={validationCtx?.id ?? null}
+        releaseLabel={validationCtx?.label ?? ""}
+        open={validationOpen}
+        onOpenChange={(open) => {
+          setValidationOpen(open);
+          if (!open) setValidationCtx(null);
+        }}
+      />
     </div>
   );
 }

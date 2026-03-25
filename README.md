@@ -95,6 +95,7 @@ This frontend is designed to work with the MyContextProtocol Vapor backend. Auth
 - `GET /projects/:id/api-keys` — List API keys
 - `POST /projects/:id/api-keys` — Create API key
 - `GET /projects/:id/request-logs` — Request logs
+- `GET /projects/:id/catalog` — Active-release MCP catalog (tools, resources, prompts) for the dashboard
 
 Configure CORS on the backend to allow the frontend origin.
 

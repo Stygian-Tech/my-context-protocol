@@ -10,7 +10,11 @@ import { ReleaseTable } from "@/components/dashboard/release-table";
 import { ApiKeyManager } from "@/components/dashboard/api-key-manager";
 import { RequestLogsTable } from "@/components/dashboard/request-logs-table";
 import { CustomDomainSection } from "@/components/dashboard/custom-domain-section";
+import { McpCatalogSection } from "@/components/dashboard/mcp-catalog-section";
 import { useAuth } from "@/contexts/auth-context";
+import { ApiError, formatApiErrorDetail } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { CopyIcon } from "lucide-react";
 export default function ProjectDetailPage() {
   const { user } = useAuth();
   const params = useParams();
@@ -33,8 +37,15 @@ export default function ProjectDetailPage() {
 
   if (error) {
     return (
-      <div className="rounded-md bg-destructive/10 p-4 text-destructive">
-        Failed to load project.
+      <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+        <p className="font-medium text-destructive">Failed to load project.</p>
+        {error instanceof ApiError ? (
+          <pre className="text-muted-foreground max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">
+            {formatApiErrorDetail(error.body) || error.message}
+          </pre>
+        ) : (
+          <p className="text-muted-foreground text-xs">{String(error)}</p>
+        )}
       </div>
     );
   }
@@ -43,10 +54,24 @@ export default function ProjectDetailPage() {
     <div className="space-y-6 md:space-y-7">
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-        <p className="text-muted-foreground font-mono text-sm leading-relaxed break-all">
-          {project.mcp_url ??
-            "MCP URL unavailable — set SAAS_MCP_BASE_DOMAIN on the server (or verify a custom domain)."}
-        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <p className="text-muted-foreground font-mono text-sm leading-relaxed break-all">
+            {project.mcp_url ??
+              "MCP URL unavailable — set SAAS_MCP_BASE_DOMAIN on the server (or verify a custom domain)."}
+          </p>
+          {project.mcp_url ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => void navigator.clipboard.writeText(project.mcp_url!)}
+            >
+              <CopyIcon className="mr-1 h-3.5 w-3.5" />
+              Copy MCP URL
+            </Button>
+          ) : null}
+        </div>
       </div>
       <Tabs defaultValue="overview">
         <TabsList>
@@ -77,6 +102,7 @@ export default function ProjectDetailPage() {
               </div>
             </dl>
           </div>
+          <McpCatalogSection projectId={projectId} />
           {user?.plan === "pro" && <CustomDomainSection projectId={projectId} />}
         </TabsContent>
         <TabsContent value="repo">

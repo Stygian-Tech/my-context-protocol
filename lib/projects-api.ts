@@ -6,6 +6,9 @@ import type {
   ApiKey,
   RequestLog,
   GithubRepoListItem,
+  ProjectCatalog,
+  ReleaseValidationReport,
+  CompiledSkill,
 } from "./types";
 
 export async function fetchProjects(): Promise<Project[]> {
@@ -16,6 +19,10 @@ export async function fetchProjects(): Promise<Project[]> {
 
 export async function fetchProject(id: string): Promise<Project> {
   return api.get<Project>(`/projects/${id}`);
+}
+
+export async function fetchProjectCatalog(projectId: string): Promise<ProjectCatalog> {
+  return api.get<ProjectCatalog>(`/projects/${projectId}/catalog`);
 }
 
 export async function createProject(data: {
@@ -85,6 +92,45 @@ export async function activateRelease(
   await api.post(`/projects/${projectId}/releases/${releaseId}/activate`);
 }
 
+export async function fetchReleaseValidation(
+  projectId: string,
+  releaseId: string
+): Promise<ReleaseValidationReport> {
+  return api.get<ReleaseValidationReport>(
+    `/projects/${projectId}/releases/${releaseId}/validation`
+  );
+}
+
+export async function fetchCompiledSkills(
+  projectId: string,
+  releaseId: string
+): Promise<CompiledSkill[]> {
+  return api.get<CompiledSkill[]>(
+    `/projects/${projectId}/releases/${releaseId}/compiled-skills`
+  );
+}
+
+export async function updateCompiledSkill(
+  projectId: string,
+  releaseId: string,
+  compiledSkillId: string,
+  body: {
+    exposure_type?: string;
+    risk_level?: string;
+    status?: string;
+    summary?: string | null;
+    skill_body?: string | null;
+    /** When true, `schema_json` is applied (use empty string to rebuild defaults). */
+    replace_schema?: boolean;
+    schema_json?: string | null;
+  }
+): Promise<CompiledSkill> {
+  return api.patch<CompiledSkill>(
+    `/projects/${projectId}/releases/${releaseId}/compiled-skills/${compiledSkillId}`,
+    body
+  );
+}
+
 export async function fetchApiKeys(projectId: string): Promise<ApiKey[]> {
   const response = await api.get<ApiKey[] | { api_keys: ApiKey[] }>(
     `/projects/${projectId}/api-keys`
@@ -101,9 +147,10 @@ export async function fetchRequestLogs(
   projectId: string,
   params?: { limit?: number; offset?: number }
 ): Promise<RequestLog[]> {
-  const search = params
-    ? `?${new URLSearchParams(params as Record<string, string>).toString()}`
-    : "";
+  const q = new URLSearchParams();
+  if (params?.limit != null) q.set("limit", String(params.limit));
+  if (params?.offset != null) q.set("offset", String(params.offset));
+  const search = q.toString() ? `?${q.toString()}` : "";
   const response = await api.get<RequestLog[] | { logs: RequestLog[] }>(
     `/projects/${projectId}/request-logs${search}`
   );

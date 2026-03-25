@@ -16,6 +16,24 @@ export class ApiError extends Error {
   }
 }
 
+/** Readable detail from an API error body for dashboards and dialogs. */
+export function formatApiErrorDetail(body: unknown): string {
+  if (body == null || body === "") return "";
+  if (typeof body === "string") return body;
+  if (typeof body === "object") {
+    const o = body as Record<string, unknown>;
+    if (typeof o.reason === "string") return o.reason;
+    if (typeof o.error === "string") return o.error;
+    if (typeof o.message === "string") return o.message;
+    try {
+      return JSON.stringify(body, null, 2);
+    } catch {
+      return String(body);
+    }
+  }
+  return String(body);
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type");
   const isJson = contentType?.includes("application/json");
@@ -61,5 +79,7 @@ export const api = {
     apiFetch<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown) =>
+    apiFetch<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => apiFetch<T>(path, { method: "DELETE" }),
 };

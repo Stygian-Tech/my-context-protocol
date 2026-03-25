@@ -97,6 +97,8 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
     defaultValues: { full_name: "", branch: "main" },
   });
 
+  // react-hook-form watch is synchronous; exhaustive-deps lint treats the library as incompatible.
+  /* eslint-disable-next-line react-hooks/incompatible-library -- form watch for dependent UI */
   const fullName = watch("full_name");
 
   // After GitHub App install, resume the connect form and strip callback query params.
@@ -201,6 +203,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
       queryClient.invalidateQueries({ queryKey: ["repo-connection", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-catalog", projectId] });
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 429) {
