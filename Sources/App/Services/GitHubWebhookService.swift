@@ -76,26 +76,55 @@ enum GitHubWebhookService {
         }
     }
 
-    /// Verifies the token can access the repo (GET /repos/:owner/:repo).
+    /// Verifies access to the repo (`GET /repos/:owner/:repo`).
+    /// When `userFallbackToken` is set (Pro path: primary is an installation token), a 403/404 from GitHub
+    /// may mean the repository is not part of the installation; we re-check with the user token to surface that.
     static func verifyRepoAccess(
+        owner: String,
+        repo: String,
+        primaryToken: String,
+        userFallbackToken: String?,
+        client: Client,
+        logger: Logger
+    ) async throws {
+        let primaryCode = try await gitHubRepoGetStatus(owner: owner, repo: repo, token: primaryToken, client: client)
+        if primaryCode == 200 { return }
+
+        if let fallback = userFallbackToken, !fallback.isEmpty, primaryCode == 403 || primaryCode == 404 {
+            let fbCode = try await gitHubRepoGetStatus(owner: owner, repo: repo, token: fallback, client: client)
+            if fbCode == 200 {
+                logger.warning(
+                    "GitHub repo \(owner)/\(repo): installation token denied (HTTP \(primaryCode)) but user OAuth can access; repo likely not in App installation scope"
+                )
+                throw GitHubWebhookError.repoNotIncludedInAppInstallation
+            }
+        }
+
+        throw GitHubWebhookError.repoAccessDenied(status: primaryCode)
+    }
+
+    private static func gitHubRepoGetStatus(
         owner: String,
         repo: String,
         token: String,
         client: Client
-    ) async throws {
+    ) async throws -> Int {
         let url = "https://api.github.com/repos/\(owner)/\(repo)"
         let response = try await client.get(URI(string: url)) { req in
             req.headers.bearerAuthorization = BearerAuthorization(token: token)
             req.headers.add(name: "Accept", value: "application/vnd.github+json")
+            req.headers.add(name: "X-GitHub-Api-Version", value: "2022-11-28")
+            req.headers.add(name: "User-Agent", value: "MyContextProtocol/1")
         }
-        guard response.status == .ok else {
-            throw GitHubWebhookError.repoAccessDenied(status: Int(response.status.code))
-        }
+        return Int(response.status.code)
     }
 }
 
 enum GitHubWebhookError: Error {
+    /// Installation (or primary) token cannot read the repo, and user token was not tried or also failed.
     case repoAccessDenied(status: Int)
+    /// User OAuth can read the repo but the GitHub App installation does not include it (`Resource not accessible by integration`).
+    case repoNotIncludedInAppInstallation
     case createFailed(status: Int, body: String)
     case deleteFailed(status: Int, body: String)
 }
@@ -107,6 +136,8 @@ extension GitHubWebhookError: AbortError {
             if code == 404 { return .notFound }
             if code == 403 { return .forbidden }
             return .badGateway
+        case .repoNotIncludedInAppInstallation:
+            return .unprocessableEntity
         case .createFailed(let code, _):
             if code == 403 || code == 401 { return .forbidden }
             if code == 404 { return .notFound }
@@ -120,7 +151,9 @@ extension GitHubWebhookError: AbortError {
     var reason: String {
         switch self {
         case .repoAccessDenied(let code):
-            return "GitHub API returned HTTP \(code) for this repository. Confirm the owner/repo name, that the GitHub App is installed, and that this repository is included in the installation."
+            return "GitHub API returned HTTP \(code) for this repository. Confirm the owner/repo name and that your GitHub login still has access."
+        case .repoNotIncludedInAppInstallation:
+            return "Your GitHub account can access this repository, but the GitHub App installation does not include it. On github.com: Settings → Integrations → Applications → Installed GitHub Apps → configure this app → Repository access → add this repository (or “All repositories”), then try connecting again."
         case .createFailed(let code, let body):
             let snippet = String(body.prefix(400)).trimmingCharacters(in: .whitespacesAndNewlines)
             if snippet.isEmpty {

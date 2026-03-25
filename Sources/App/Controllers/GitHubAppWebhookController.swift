@@ -34,18 +34,13 @@ enum GitHubAppWebhookController {
                 struct Inst: Decodable { let id: Int64? }
             }
             guard let payload = try? JSONDecoder().decode(InstallationEvent.self, from: bodyData),
-                  payload.action == "deleted",
+                  let action = payload.action,
                   let iid = payload.installation?.id else {
                 return Response(status: .ok, body: .init(string: "{\"ok\":true}"))
             }
-            let conns = try await RepoConnection.query(on: req.db)
-                .filter(\.$githubInstallationId == iid)
-                .all()
-            for conn in conns {
-                conn.githubInstallationId = nil
-                conn.webhookId = nil
-                conn.webhookSecret = nil
-                try await conn.save(on: req.db)
+            // Uninstall, suspend, or installer removing the integration — tokens stop working; clear local ids so connect-repo can require reinstall.
+            if action == "deleted" || action == "suspend" {
+                try await GitHubAppInstallationCleanup.clearReferences(installationId: iid, on: req.db, logger: req.logger)
             }
             return Response(status: .ok, body: .init(string: "{\"ok\":true}"))
         }
@@ -61,24 +56,14 @@ enum GitHubAppWebhookController {
                   let ghAccountId = payload.account?.id else {
                 return Response(status: .ok, body: .init(string: "{\"ok\":true}"))
             }
-            guard let acct = try await Account.query(on: req.db)
-                .filter(\.$githubId == ghAccountId)
-                .first(),
-                let aid = acct.id else {
+            guard (try await Account.query(on: req.db).filter(\.$githubId == ghAccountId).first()) != nil else {
                 return Response(status: .ok, body: .init(string: "{\"ok\":true}"))
             }
-            let userProjects = try await Project.query(on: req.db)
-                .filter(\.$account.$id == aid)
-                .all()
-            for project in userProjects {
-                let conns = try await project.$repoConnections.get(on: req.db)
-                for conn in conns {
-                    conn.githubInstallationId = nil
-                    conn.webhookId = nil
-                    conn.webhookSecret = nil
-                    try await conn.save(on: req.db)
-                }
-            }
+            try await GitHubAppInstallationCleanup.clearAllForGitHubUser(
+                githubUserId: ghAccountId,
+                on: req.db,
+                logger: req.logger
+            )
             return Response(status: .ok, body: .init(string: "{\"ok\":true}"))
         }
 

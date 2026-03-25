@@ -204,7 +204,8 @@ struct ProjectController {
 
         let existing = try await project.$repoConnections.get(on: req.db)
         let existingFirst = existing.first
-        let effectiveInstallationId: Int64? = pendingInstallation ?? existingFirst?.githubInstallationId
+        let effectiveInstallationId: Int64? =
+            pendingInstallation ?? existingFirst?.githubInstallationId ?? account.githubAppInstallationId
 
         // Pro: require GitHub App installation (when app + webhook env are configured) before we can use installation tokens.
         if account.hasProEntitlements,
@@ -233,7 +234,8 @@ struct ProjectController {
                 installationId: first.githubInstallationId,
                 oauthToken: token,
                 client: req.client,
-                logger: req.logger
+                logger: req.logger,
+                db: req.db
             )
             try? await GitHubWebhookService.deleteWebhook(
                 owner: first.repoOwner,
@@ -248,13 +250,17 @@ struct ProjectController {
             installationId: effectiveInstallationId,
             oauthToken: token,
             client: req.client,
-            logger: req.logger
+            logger: req.logger,
+            db: req.db
         )
+        let userFallbackForVerify: String? = effectiveInstallationId != nil ? token : nil
         try await GitHubWebhookService.verifyRepoAccess(
             owner: body.owner,
             repo: body.repo,
-            token: verifyToken,
-            client: req.client
+            primaryToken: verifyToken,
+            userFallbackToken: userFallbackForVerify,
+            client: req.client,
+            logger: req.logger
         )
 
         let isPro = account.hasProEntitlements
@@ -268,7 +274,8 @@ struct ProjectController {
                 installationId: effectiveInstallationId,
                 oauthToken: token,
                 client: req.client,
-                logger: req.logger
+                logger: req.logger,
+                db: req.db
             )
             let created = try await GitHubWebhookService.createWebhook(
                 owner: body.owner,

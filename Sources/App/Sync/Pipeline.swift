@@ -40,7 +40,8 @@ struct SyncPipeline {
                 installationId: installationId,
                 oauthToken: oauthToken ?? "",
                 client: app.client,
-                logger: app.logger
+                logger: app.logger,
+                db: db
             )
         } else {
             token = oauthToken

@@ -182,7 +182,8 @@ enum GitHubAppController {
             gh = try await GitHubAppInstallationTokenService.fetchInstallation(
                 installationId: installationId,
                 client: req.client,
-                logger: req.logger
+                logger: req.logger,
+                db: req.db
             )
         } catch {
             req.logger.warning("GitHub App install fallback: GitHub installation fetch failed: \(error)")
@@ -351,6 +352,9 @@ enum GitHubAppController {
             .first() else {
             return try redirectError("project_not_found")
         }
+
+        account.githubAppInstallationId = installationId
+        try await account.save(on: req.db)
 
         let connections = try await project.$repoConnections.get(on: req.db)
         if let conn = connections.first {

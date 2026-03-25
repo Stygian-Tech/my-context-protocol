@@ -1,3 +1,4 @@
+import Fluent
 import Foundation
 import JWTKit
 import Vapor
@@ -143,7 +144,8 @@ enum GitHubAppInstallationTokenService {
     static func fetchInstallation(
         installationId: Int64,
         client: Client,
-        logger: Logger
+        logger: Logger,
+        db: Database? = nil
     ) async throws -> GitHubInstallationMeta {
         let jwt = try createAppJWT()
         let url = "https://api.github.com/app/installations/\(installationId)"
@@ -164,6 +166,13 @@ enum GitHubAppInstallationTokenService {
         guard response.status == .ok else {
             let body = response.body.map { String(buffer: $0) } ?? ""
             logger.warning("GitHub GET installation failed status=\(response.status.code) body=\(body.prefix(500))")
+            if response.status == .notFound, let db {
+                try? await GitHubAppInstallationCleanup.clearReferences(
+                    installationId: installationId,
+                    on: db,
+                    logger: logger
+                )
+            }
             throw Abort(
                 .badGateway,
                 reason: "GitHub installation lookup failed (status \(response.status.code))"
@@ -181,7 +190,8 @@ enum GitHubAppInstallationTokenService {
     static func createInstallationToken(
         installationId: Int64,
         client: Client,
-        logger: Logger
+        logger: Logger,
+        db: Database? = nil
     ) async throws -> String {
         let jwt = try createAppJWT()
         let url = "https://api.github.com/app/installations/\(installationId)/access_tokens"
@@ -203,9 +213,16 @@ enum GitHubAppInstallationTokenService {
         guard response.status == .created else {
             let body = response.body.map { String(buffer: $0) } ?? ""
             logger.warning("GitHub installation token failed status=\(response.status.code) body=\(body.prefix(500))")
+            if response.status == .notFound, let db {
+                try? await GitHubAppInstallationCleanup.clearReferences(
+                    installationId: installationId,
+                    on: db,
+                    logger: logger
+                )
+            }
             throw Abort(
                 .badGateway,
-                reason: "GitHub installation token exchange failed (status \(response.status.code))"
+                reason: "GitHub installation token exchange failed (status \(response.status.code)); if you removed the GitHub App from GitHub, reinstall it from the product."
             )
         }
 
@@ -221,10 +238,16 @@ enum GitHubAppInstallationTokenService {
         installationId: Int64?,
         oauthToken: String,
         client: Client,
-        logger: Logger
+        logger: Logger,
+        db: Database? = nil
     ) async throws -> String {
         if let installationId {
-            try await createInstallationToken(installationId: installationId, client: client, logger: logger)
+            try await createInstallationToken(
+                installationId: installationId,
+                client: client,
+                logger: logger,
+                db: db
+            )
         } else {
             oauthToken
         }

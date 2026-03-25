@@ -24,7 +24,8 @@ enum GitHubWebhookCleanup {
                         deleteToken = try await GitHubAppInstallationTokenService.createInstallationToken(
                             installationId: iid,
                             client: client,
-                            logger: logger
+                            logger: logger,
+                            db: db
                         )
                     } catch {
                         logger.warning("GitHub App installation token failed during webhook cleanup; skipping hook delete for \(conn.repoOwner)/\(conn.repoName)")

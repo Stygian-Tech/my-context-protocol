@@ -22,6 +22,10 @@ final class Account: Model, Content {
     @OptionalField(key: "github_token_encrypted")
     var githubTokenEncrypted: String?
 
+    /// GitHub App installation id for this GitHub user (persists across sessions; see install callback).
+    @OptionalField(key: "github_app_installation_id")
+    var githubAppInstallationId: Int64?
+
     @OptionalField(key: "stripe_customer_id")
     var stripeCustomerId: String?
 
