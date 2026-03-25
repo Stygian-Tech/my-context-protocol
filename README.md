@@ -57,7 +57,8 @@ MCP Client ← JSON-RPC over HTTP ← MCP Endpoint ← Active Release Catalog �
 
 6. **Create API key**: `POST /api-keys` (requires session) returns a new MCP API key.
 
-7. **MCP endpoint**: `POST /mcp` with `Authorization: Bearer <api_key>` for JSON-RPC (initialize, tools/list, tools/call).
+7. **MCP endpoint**: `POST` to `SAAS_MCP_PATH` (default `/mcp`) on the tenant host with `Authorization: Bearer <api_key>` for JSON-RPC: `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`.
+8. **Catalog (dashboard)**: `GET /projects/:id/catalog` (session auth) returns the active release’s tools, resources, and prompts for the UI.
 
 ## Environment Variables
 

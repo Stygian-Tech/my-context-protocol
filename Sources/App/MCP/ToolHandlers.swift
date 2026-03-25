@@ -34,11 +34,22 @@ struct ToolHandlers {
         }
 
         let compiled = cap.compiledSkill
-        return """
-        Skill: \(compiled.name)
-        Path: \(compiled.path)
-        Summary: \(compiled.summary ?? "N/A")
-        """
+        let detailRaw = arguments["detail"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = (detailRaw?.isEmpty == false) ? detailRaw : nil
+        var lines = [
+            "Skill: \(compiled.name)",
+            "Path: \(compiled.path)",
+            "Summary: \(compiled.summary ?? "N/A")"
+        ]
+        if let detail {
+            lines.append("Detail: \(detail)")
+        }
+        if let body = compiled.skillBody?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty {
+            lines.append("")
+            lines.append("---")
+            lines.append(body)
+        }
+        return lines.joined(separator: "\n")
     }
 }
 

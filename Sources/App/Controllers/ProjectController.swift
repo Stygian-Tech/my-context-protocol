@@ -126,6 +126,77 @@ struct ProjectController {
         return projectResponse(project)
     }
 
+    /// Active-release MCP catalog (tools, resources, prompts) for dashboard clients.
+    static func catalog(req: Request) async throws -> ProjectCatalogResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        let mcpUrl = McpUrlBuilder.publicMcpUrl(for: project)
+
+        guard let releaseId = project.activeReleaseId else {
+            return ProjectCatalogResponse(
+                release_id: nil,
+                release_status: nil,
+                mcp_url: mcpUrl,
+                tools: [],
+                resources: [],
+                prompts: []
+            )
+        }
+
+        let release = try await Release.find(releaseId, on: req.db)
+        let compiledIds = try await MCPCatalogService.readyCompiledSkillIds(releaseId: releaseId, db: req.db)
+
+        let toolCaps = try await MCPCatalogService.capabilityDefs(
+            compiledSkillIds: compiledIds,
+            types: ["tool"],
+            db: req.db
+        )
+        let resourceCaps = try await MCPCatalogService.capabilityDefs(
+            compiledSkillIds: compiledIds,
+            types: ["resource"],
+            db: req.db
+        )
+        let promptCaps = try await MCPCatalogService.capabilityDefs(
+            compiledSkillIds: compiledIds,
+            types: ["prompt"],
+            db: req.db
+        )
+
+        let tools = toolCaps.map { cap in
+            ProjectCatalogTool(
+                name: cap.capabilityName,
+                description: cap.compiledSkill.summary,
+                input_schema_json: cap.schemaJson
+            )
+        }
+
+        let resources: [ProjectCatalogResource] = resourceCaps.compactMap { cap in
+            guard let meta = CapabilitySchemaBuilder.parseResourceMeta(cap.schemaJson) else { return nil }
+            return ProjectCatalogResource(
+                uri: meta.uri,
+                name: cap.compiledSkill.name,
+                description: cap.compiledSkill.summary,
+                mime_type: meta.mimeType
+            )
+        }
+
+        let prompts = promptCaps.map { cap in
+            ProjectCatalogPrompt(
+                name: cap.capabilityName,
+                description: cap.compiledSkill.summary
+            )
+        }
+
+        return ProjectCatalogResponse(
+            release_id: releaseId.uuidString,
+            release_status: release?.status,
+            mcp_url: mcpUrl,
+            tools: tools,
+            resources: resources,
+            prompts: prompts
+        )
+    }
+
     static func create(req: Request) async throws -> ProjectResponse {
         let account = try requireAccount(req)
         struct CreateBody: Content {
@@ -476,14 +547,30 @@ struct ProjectController {
         let compiled = try await CompiledSkill.query(on: req.db)
             .filter(\.$release.$id == releaseId)
             .all()
+        let skillIds = compiled.compactMap(\.id)
+        var schemaBySkillId: [UUID: String] = [:]
+        if !skillIds.isEmpty {
+            let caps = try await CapabilityDef.query(on: req.db)
+                .filter(\.$compiledSkill.$id ~~ skillIds)
+                .all()
+            for cap in caps {
+                let sid = cap.$compiledSkill.id
+                if schemaBySkillId[sid] == nil, let sj = cap.schemaJson, !sj.isEmpty {
+                    schemaBySkillId[sid] = sj
+                }
+            }
+        }
         return compiled.map { cs in
-            CompiledSkillResponse(
-                id: cs.id!.uuidString,
+            let sid = cs.id!
+            return CompiledSkillResponse(
+                id: sid.uuidString,
                 release_id: cs.$release.id.uuidString,
                 skill_package_id: cs.$skillPackage.id.uuidString,
                 path: cs.path,
                 name: cs.name,
                 summary: cs.summary,
+                skill_body: cs.skillBody,
+                schema_json: schemaBySkillId[sid],
                 exposure_type: cs.exposureType,
                 risk_level: cs.riskLevel,
                 repo_specific: cs.repoSpecific,
@@ -516,8 +603,16 @@ struct ProjectController {
             let exposure_type: String?
             let risk_level: String?
             let status: String?
+            let summary: String?
+            let skill_body: String?
+            /// When `true`, `schema_json` is applied (empty string → rebuild default from summary/exposure). When `false` or omitted, custom JSON is preserved unless `exposure_type` or `summary` changes (those recompute defaults).
+            let replace_schema: Bool?
+            /// Replaces `capability_defs.schema_json` when `replace_schema` is true (must be valid JSON unless empty).
+            let schema_json: String?
         }
         let body = try req.content.decode(UpdateBody.self)
+        let exposureBefore = compiled.exposureType
+        let summaryBefore = compiled.summary
         if let et = body.exposure_type, ["tool", "resource", "prompt"].contains(et) {
             compiled.exposureType = et
         }
@@ -527,12 +622,41 @@ struct ProjectController {
         if let st = body.status, ["ready", "needs_review", "not_publishable"].contains(st) {
             compiled.status = st
         }
+        if let summary = body.summary {
+            let t = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            compiled.summary = t.isEmpty ? nil : t
+        }
+        if let bodySkill = body.skill_body {
+            let t = bodySkill.trimmingCharacters(in: .whitespacesAndNewlines)
+            compiled.skillBody = t.isEmpty ? nil : bodySkill
+        }
         try await compiled.save(on: req.db)
+        let exposureChanged = compiled.exposureType != exposureBefore
+        let summaryChanged = compiled.summary != summaryBefore
         let caps = try await CapabilityDef.query(on: req.db)
             .filter(\.$compiledSkill.$id == compiled.id!)
             .all()
+        let capType = compiled.exposureType == "guidance" ? "prompt" : compiled.exposureType
+        let existingSchema = caps.first?.schemaJson
+        let newSchema: String?
+        if body.replace_schema == true, let raw = body.schema_json {
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty {
+                newSchema = Compiler.schemaJson(forCapabilityType: capType, compiled: compiled)
+            } else {
+                guard (try? JSONSerialization.jsonObject(with: Data(t.utf8))) != nil else {
+                    throw Abort(.badRequest, reason: "schema_json must be valid JSON")
+                }
+                newSchema = t
+            }
+        } else if exposureChanged || summaryChanged {
+            newSchema = Compiler.schemaJson(forCapabilityType: capType, compiled: compiled)
+        } else {
+            newSchema = existingSchema ?? Compiler.schemaJson(forCapabilityType: capType, compiled: compiled)
+        }
         for cap in caps {
-            cap.type = compiled.exposureType == "guidance" ? "prompt" : compiled.exposureType
+            cap.type = capType
+            cap.schemaJson = newSchema
             try await cap.save(on: req.db)
         }
         return CompiledSkillResponse(
@@ -542,6 +666,8 @@ struct ProjectController {
             path: compiled.path,
             name: compiled.name,
             summary: compiled.summary,
+            skill_body: compiled.skillBody,
+            schema_json: newSchema,
             exposure_type: compiled.exposureType,
             risk_level: compiled.riskLevel,
             repo_specific: compiled.repoSpecific,
@@ -586,7 +712,7 @@ struct ProjectController {
     static func listRequestLogs(req: Request) async throws -> [RequestLogResponse] {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
-        let limit = min(req.query[Int.self, at: "limit"] ?? 50, 100)
+        let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
         let offset = req.query[Int.self, at: "offset"] ?? 0
 
         let logs = try await RequestLog.query(on: req.db)
@@ -607,8 +733,53 @@ struct ProjectController {
                 method: log.method,
                 latency_ms: log.latencyMs,
                 status: statusInt,
-                error_code: log.errorCode
+                error_code: log.errorCode,
+                error_message: log.errorMessage
             )
         }
+    }
+
+    /// Structured validation errors for a release (`skill_packages` / pipeline report).
+    static func releaseValidation(req: Request) async throws -> ReleaseValidationResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        guard let releaseId = req.parameters.get("releaseId", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid release ID")
+        }
+        let release = try await Release.query(on: req.db)
+            .filter(\.$id == releaseId)
+            .filter(\.$project.$id == project.id!)
+            .first()
+        guard let release = release else {
+            throw Abort(.notFound, reason: "Release not found")
+        }
+        guard let record = try await ValidationReportRecord.query(on: req.db)
+            .filter(\.$release.$id == releaseId)
+            .first() else {
+            if release.status == "failed" {
+                let trimmed = release.errorSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let message = trimmed.isEmpty
+                    ? "Release failed; no structured validation report was stored."
+                    : trimmed
+                return ReleaseValidationResponse(is_valid: false, errors: [
+                    ValidationErrorEntry(path: "release", message: message)
+                ])
+            }
+            return ReleaseValidationResponse(is_valid: true, errors: [])
+        }
+        guard let data = record.reportJson.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ReleaseValidationResponse(is_valid: false, errors: [
+                ValidationErrorEntry(path: "report", message: "Could not parse validation report JSON")
+            ])
+        }
+        let isValid = (obj["is_valid"] as? Bool) ?? false
+        let rawErrors = (obj["errors"] as? [[String: Any]]) ?? []
+        let errors: [ValidationErrorEntry] = rawErrors.compactMap { e in
+            guard let path = e["path"] as? String else { return nil }
+            let message = (e["message"] as? String) ?? ""
+            return ValidationErrorEntry(path: path, message: message)
+        }
+        return ReleaseValidationResponse(is_valid: isValid, errors: errors)
     }
 }

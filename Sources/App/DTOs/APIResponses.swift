@@ -121,6 +121,50 @@ struct ApiKeyCreateResponse: Content {
     }
 }
 
+struct ProjectCatalogTool: Content {
+    let name: String
+    let description: String?
+    let input_schema_json: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name, description
+        case input_schema_json = "input_schema_json"
+    }
+}
+
+struct ProjectCatalogResource: Content {
+    let uri: String
+    let name: String?
+    let description: String?
+    let mime_type: String?
+
+    enum CodingKeys: String, CodingKey {
+        case uri, name, description
+        case mime_type = "mime_type"
+    }
+}
+
+struct ProjectCatalogPrompt: Content {
+    let name: String
+    let description: String?
+}
+
+struct ProjectCatalogResponse: Content {
+    let release_id: String?
+    let release_status: String?
+    let mcp_url: String?
+    let tools: [ProjectCatalogTool]
+    let resources: [ProjectCatalogResource]
+    let prompts: [ProjectCatalogPrompt]
+
+    enum CodingKeys: String, CodingKey {
+        case tools, resources, prompts
+        case release_id = "release_id"
+        case release_status = "release_status"
+        case mcp_url = "mcp_url"
+    }
+}
+
 struct CompiledSkillResponse: Content {
     let id: String
     let release_id: String
@@ -128,6 +172,10 @@ struct CompiledSkillResponse: Content {
     let path: String
     let name: String
     let summary: String?
+    /// SKILL.md body used for MCP tool/resource/prompt content.
+    let skill_body: String?
+    /// MCP `inputSchema` / metadata JSON for this skill’s capability (from `capability_defs.schema_json`).
+    let schema_json: String?
     let exposure_type: String
     let risk_level: String
     let repo_specific: Bool
@@ -137,6 +185,8 @@ struct CompiledSkillResponse: Content {
         case id, path, name, summary
         case release_id = "release_id"
         case skill_package_id = "skill_package_id"
+        case skill_body = "skill_body"
+        case schema_json = "schema_json"
         case exposure_type = "exposure_type"
         case risk_level = "risk_level"
         case repo_specific = "repo_specific"
@@ -154,6 +204,7 @@ struct RequestLogResponse: Content {
     let latency_ms: Int?
     let status: Int
     let error_code: String?
+    let error_message: String?
 
     enum CodingKeys: String, CodingKey {
         case id, method
@@ -164,5 +215,21 @@ struct RequestLogResponse: Content {
         case latency_ms = "latency_ms"
         case status = "status"
         case error_code = "error_code"
+        case error_message = "error_message"
     }
+}
+
+struct ReleaseValidationResponse: Content {
+    let is_valid: Bool
+    let errors: [ValidationErrorEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case is_valid = "is_valid"
+        case errors
+    }
+}
+
+struct ValidationErrorEntry: Content {
+    let path: String
+    let message: String
 }

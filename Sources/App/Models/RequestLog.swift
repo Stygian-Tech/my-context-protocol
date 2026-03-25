@@ -31,6 +31,9 @@ final class RequestLog: Model, Content {
     @OptionalField(key: "error_code")
     var errorCode: String?
 
+    @OptionalField(key: "error_message")
+    var errorMessage: String?
+
     init() {}
 
     init(
@@ -41,7 +44,8 @@ final class RequestLog: Model, Content {
         method: String,
         latencyMs: Int? = nil,
         status: String,
-        errorCode: String? = nil
+        errorCode: String? = nil,
+        errorMessage: String? = nil
     ) {
         self.id = id
         self.$project.id = projectId
@@ -51,6 +55,7 @@ final class RequestLog: Model, Content {
         self.latencyMs = latencyMs
         self.status = status
         self.errorCode = errorCode
+        self.errorMessage = errorMessage
     }
 }
 

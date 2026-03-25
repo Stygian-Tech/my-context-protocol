@@ -42,9 +42,8 @@ enum McpUrlBuilder {
     }
 
     private static func normalizedPath() -> String {
-        let raw = Environment.get("SAAS_MCP_PATH")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "/mcp"
-        if raw.isEmpty { return "/mcp" }
-        return raw.hasPrefix("/") ? raw : "/" + raw
+        let parts = McpRoutePath.pathComponents()
+        return "/" + parts.joined(separator: "/")
     }
 
     private static func build(host: String) -> String {

@@ -102,10 +102,17 @@ struct SyncPipeline {
                         validationErrors.append(contentsOf: report.errors.map { ["path": $0.path, "message": $0.message] })
                     }
 
+                    let exposureForIndex = SkillInference.inferExposureType(from: skill)
+                    let indexSchema: String? = exposureForIndex == "tool"
+                        ? CapabilitySchemaBuilder.toolInputSchemaJson(
+                            description: skill.description,
+                            summary: skill.description ?? String(skill.body.prefix(200))
+                        )
+                        : nil
                     let toolIndex = ToolIndex(
                         skillPackageId: skillPackage.id!,
                         toolName: "skill:\(skill.name)",
-                        schemaJson: nil,
+                        schemaJson: indexSchema,
                         handlerType: "platform"
                     )
                     try await toolIndex.save(on: db)

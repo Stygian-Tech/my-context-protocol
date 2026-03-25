@@ -38,6 +38,9 @@ func routes(_ app: Application) throws {
     protected.get("projects", ":id") { req in
         try await ProjectController.get(req: req)
     }
+    protected.get("projects", ":id", "catalog") { req in
+        try await ProjectController.catalog(req: req)
+    }
     protected.get("projects", ":id", "repo-connection") { req in
         try await ProjectController.getRepoConnection(req: req)
     }
@@ -52,6 +55,9 @@ func routes(_ app: Application) throws {
     }
     protected.post("projects", ":id", "releases", ":releaseId", "activate") { req in
         try await ProjectController.activateRelease(req: req)
+    }
+    protected.get("projects", ":id", "releases", ":releaseId", "validation") { req in
+        try await ProjectController.releaseValidation(req: req)
     }
     protected.get("projects", ":id", "releases", ":releaseId", "compiled-skills") { req in
         try await ProjectController.listCompiledSkills(req: req)
@@ -101,7 +107,7 @@ func routes(_ app: Application) throws {
     }
 
     let mcpRoutes = app.grouped(TenantHostMiddleware(), ApiKeyMiddleware())
-    mcpRoutes.post("mcp") { req in
+    McpRoutePath.registerPost(on: mcpRoutes) { req in
         try await MCPController.handle(req: req)
     }
 }

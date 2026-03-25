@@ -49,23 +49,28 @@ struct JSONRPCRequest: Content {
 }
 
 /// `tools/call` params: `arguments` is a JSON object; values are often strings but may be numbers/bools.
+/// `resources/read` includes `uri`. `prompts/get` uses `name` and optional `arguments`.
 struct JSONRPCParams: Content {
     let name: String?
     let arguments: [String: String]?
+    let uri: String?
 
     enum CodingKeys: String, CodingKey {
         case name
         case arguments
+        case uri
     }
 
-    init(name: String?, arguments: [String: String]?) {
+    init(name: String?, arguments: [String: String]?, uri: String? = nil) {
         self.name = name
         self.arguments = arguments
+        self.uri = uri
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.decodeIfPresent(String.self, forKey: .name)
+        uri = try c.decodeIfPresent(String.self, forKey: .uri)
         if let flat = try? c.decode([String: String].self, forKey: .arguments) {
             arguments = flat
         } else if c.contains(.arguments) {
@@ -92,6 +97,7 @@ struct JSONRPCParams: Content {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(arguments, forKey: .arguments)
+        try c.encodeIfPresent(uri, forKey: .uri)
     }
 }
 
@@ -112,9 +118,20 @@ struct InitializeResult: Content {
 
 struct ServerCapabilities: Content {
     let tools: ToolsCapability?
+    let resources: ResourcesCapability?
+    let prompts: PromptsCapability?
 }
 
 struct ToolsCapability: Content {
+    let listChanged: Bool?
+}
+
+struct ResourcesCapability: Content {
+    let subscribe: Bool?
+    let listChanged: Bool?
+}
+
+struct PromptsCapability: Content {
     let listChanged: Bool?
 }
 
@@ -133,14 +150,91 @@ struct MCPTool: Content {
     let inputSchema: InputSchema?
 }
 
-struct InputSchema: Content {
+struct InputSchema: Content, Codable {
     let type: String
     let properties: [String: PropertySchema]?
 }
 
-struct PropertySchema: Content {
+struct PropertySchema: Content, Codable {
     let type: String?
     let description: String?
+}
+
+extension InputSchema {
+    static func fromCapabilitySchemaJson(_ raw: String?) -> InputSchema {
+        guard let raw, let data = raw.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(InputSchema.self, from: data) else {
+            return InputSchema(type: "object", properties: [:])
+        }
+        return decoded
+    }
+}
+
+// MARK: - Resources
+
+struct ResourcesListResult: Content {
+    let resources: [MCPResource]
+    let nextCursor: String?
+}
+
+struct MCPResource: Content {
+    let uri: String
+    let name: String?
+    let description: String?
+    let mimeType: String?
+
+    enum CodingKeys: String, CodingKey {
+        case uri, name, description
+        case mimeType = "mimeType"
+    }
+}
+
+struct ResourceReadResult: Content {
+    let contents: [ResourceContents]
+}
+
+struct ResourceContents: Content {
+    let uri: String
+    let mimeType: String?
+    let text: String?
+
+    enum CodingKeys: String, CodingKey {
+        case uri, text
+        case mimeType = "mimeType"
+    }
+}
+
+// MARK: - Prompts
+
+struct PromptsListResult: Content {
+    let prompts: [MCPPrompt]
+}
+
+struct MCPPrompt: Content {
+    let name: String
+    let description: String?
+    let arguments: [PromptArgument]?
+}
+
+struct PromptArgument: Content {
+    let name: String
+    let description: String?
+    let required: Bool?
+}
+
+struct PromptGetResult: Content {
+    let description: String?
+    let messages: [PromptMessage]
+}
+
+struct PromptMessage: Content {
+    let role: String
+    let content: PromptMessageContent
+}
+
+struct PromptMessageContent: Content {
+    let type: String
+    let text: String?
 }
 
 struct ToolCallResult: Content {

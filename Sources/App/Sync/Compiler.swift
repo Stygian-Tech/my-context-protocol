@@ -28,6 +28,7 @@ struct Compiler {
                 path: package.path,
                 name: package.name,
                 summary: summary,
+                skillBody: parsed.body,
                 exposureType: exposureType,
                 riskLevel: riskLevel,
                 repoSpecific: repoSpecific,
@@ -46,14 +47,46 @@ struct Compiler {
 
             let capabilityName = "skill:\(package.name)"
             let capabilityType = exposureType == "guidance" ? "prompt" : exposureType
+            let schemaJson: String?
+            switch capabilityType {
+            case "tool":
+                schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
+                    description: parsed.description,
+                    summary: summary
+                )
+            case "resource":
+                schemaJson = CapabilitySchemaBuilder.resourceMetaJson(skillName: package.name)
+            case "prompt":
+                schemaJson = CapabilitySchemaBuilder.promptMetaJson()
+            default:
+                schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
+                    description: parsed.description,
+                    summary: summary
+                )
+            }
             let capDef = CapabilityDef(
                 compiledSkillId: compiledSkill.id!,
                 capabilityName: capabilityName,
                 type: capabilityType,
-                schemaJson: nil,
+                schemaJson: schemaJson,
                 sideEffectLevel: sideEffectLevel
             )
             try await capDef.save(on: db)
+        }
+    }
+
+    /// Recomputes `schema_json` when a compiled skill's exposure type is changed via the API.
+    static func schemaJson(forCapabilityType capabilityType: String, compiled: CompiledSkill) -> String? {
+        let summary = compiled.summary
+        switch capabilityType {
+        case "tool":
+            return CapabilitySchemaBuilder.toolInputSchemaJson(description: nil, summary: summary)
+        case "resource":
+            return CapabilitySchemaBuilder.resourceMetaJson(skillName: compiled.name)
+        case "prompt":
+            return CapabilitySchemaBuilder.promptMetaJson()
+        default:
+            return CapabilitySchemaBuilder.toolInputSchemaJson(description: nil, summary: summary)
         }
     }
 }

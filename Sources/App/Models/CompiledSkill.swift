@@ -22,6 +22,10 @@ final class CompiledSkill: Model, Content {
     @OptionalField(key: "summary")
     var summary: String?
 
+    /// Full SKILL.md body (markdown) at compile time — used for MCP resources/prompts and rich tool responses.
+    @OptionalField(key: "skill_body")
+    var skillBody: String?
+
     @Field(key: "exposure_type")
     var exposureType: String
 
@@ -52,6 +56,7 @@ final class CompiledSkill: Model, Content {
         path: String,
         name: String,
         summary: String? = nil,
+        skillBody: String? = nil,
         exposureType: String,
         riskLevel: String,
         repoSpecific: Bool,
@@ -63,6 +68,7 @@ final class CompiledSkill: Model, Content {
         self.path = path
         self.name = name
         self.summary = summary
+        self.skillBody = skillBody
         self.exposureType = exposureType
         self.riskLevel = riskLevel
         self.repoSpecific = repoSpecific
