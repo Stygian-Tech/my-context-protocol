@@ -15,6 +15,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { CopyIcon } from "lucide-react";
+import { copyTextToClipboard } from "@/lib/clipboard";
+
 export default function ProjectDetailPage() {
   const { user } = useAuth();
   const params = useParams();
@@ -65,7 +67,12 @@ export default function ProjectDetailPage() {
               variant="outline"
               size="sm"
               className="shrink-0"
-              onClick={() => void navigator.clipboard.writeText(project.mcp_url!)}
+              onClick={() =>
+                void copyTextToClipboard(project.mcp_url!, {
+                  success: "MCP URL copied to clipboard",
+                  error: "Could not copy MCP URL",
+                })
+              }
             >
               <CopyIcon className="mr-1 h-3.5 w-3.5" />
               Copy MCP URL
@@ -112,7 +119,7 @@ export default function ProjectDetailPage() {
           <ReleaseTable projectId={projectId} />
         </TabsContent>
         <TabsContent value="api-keys">
-          <ApiKeyManager projectId={projectId} />
+          <ApiKeyManager projectId={projectId} mcpUrl={project.mcp_url} />
         </TabsContent>
         <TabsContent value="logs">
           <RequestLogsTable projectId={projectId} />

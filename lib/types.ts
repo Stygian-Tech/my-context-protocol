@@ -62,6 +62,11 @@ export interface ProjectCatalogResource {
   name?: string | null;
   description?: string | null;
   mime_type?: string | null;
+  /** From SKILL.md / routing metadata; surfaced in MCP `resources/list` as `use_when`. */
+  use_when?: string[] | null;
+  avoid_when?: string[] | null;
+  failure_modes?: string[] | null;
+  invoke_first?: boolean | null;
 }
 
 export interface ProjectCatalogPrompt {
@@ -81,6 +86,7 @@ export interface ProjectCatalog {
 export interface ApiKey {
   id: string;
   project_id: string;
+  name?: string | null;
   key_prefix: string;
   status: string;
   created_at: string;
@@ -126,6 +132,11 @@ export interface CompiledSkill {
   risk_level: string;
   repo_specific: boolean;
   status: string;
+  /** From SKILL front matter / routing_rules; MCP resource hints when exposure is `resource`. */
+  use_when?: string[];
+  avoid_when?: string[];
+  failure_modes?: string[];
+  invoke_first?: boolean;
 }
 
 export type AppEnv = "local" | "dev" | "prod";

@@ -120,6 +120,13 @@ export async function updateCompiledSkill(
     status?: string;
     summary?: string | null;
     skill_body?: string | null;
+    /** SKILL routing metadata (lists + invoke_first); persisted and merged into resource MCP schema. */
+    routing?: {
+      use_when?: string[];
+      avoid_when?: string[];
+      failure_modes?: string[];
+      invoke_first?: boolean;
+    };
     /** When true, `schema_json` is applied (use empty string to rebuild defaults). */
     replace_schema?: boolean;
     schema_json?: string | null;
@@ -139,8 +146,14 @@ export async function fetchApiKeys(projectId: string): Promise<ApiKey[]> {
   return response.api_keys ?? [];
 }
 
-export async function createApiKey(projectId: string): Promise<{ key: string; prefix: string }> {
-  return api.post<{ key: string; prefix: string }>(`/projects/${projectId}/api-keys`);
+export async function createApiKey(
+  projectId: string,
+  data?: { name?: string | null }
+): Promise<{ key: string; prefix: string; name?: string | null }> {
+  return api.post<{ key: string; prefix: string; name?: string | null }>(
+    `/projects/${projectId}/api-keys`,
+    data ?? {}
+  );
 }
 
 export async function fetchRequestLogs(

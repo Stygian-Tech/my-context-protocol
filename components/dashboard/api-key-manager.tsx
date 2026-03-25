@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -22,13 +23,22 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CopyIcon, KeyIcon } from "lucide-react";
+import { buildMcpJsonConfig, copyTextToClipboard } from "@/lib/clipboard";
+import { getApiKeyDisplayName } from "@/lib/api-key-utils";
 
 interface ApiKeyManagerProps {
   projectId: string;
+  mcpUrl?: string | null;
 }
 
-export function ApiKeyManager({ projectId }: ApiKeyManagerProps) {
-  const [newKey, setNewKey] = useState<string | null>(null);
+interface CreatedApiKey {
+  key: string;
+  name?: string | null;
+}
+
+export function ApiKeyManager({ projectId, mcpUrl }: ApiKeyManagerProps) {
+  const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
+  const [keyName, setKeyName] = useState("");
   const queryClient = useQueryClient();
 
   const { data: keys, isLoading } = useQuery({
@@ -37,16 +47,13 @@ export function ApiKeyManager({ projectId }: ApiKeyManagerProps) {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createApiKey(projectId),
+    mutationFn: () => createApiKey(projectId, { name: keyName }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["api-keys", projectId] });
-      setNewKey(data.key);
+      setNewKey({ key: data.key, name: data.name });
+      setKeyName("");
     },
   });
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
 
   const closeNewKeyDialog = () => {
     setNewKey(null);
@@ -58,23 +65,32 @@ export function ApiKeyManager({ projectId }: ApiKeyManagerProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <p className="text-muted-foreground text-sm">
           API keys authenticate MCP clients. Store them securely—you won&apos;t
           see the full key again.
         </p>
-        <Button
-          onClick={() => createMutation.mutate()}
-          disabled={createMutation.isPending}
-        >
-          <KeyIcon className="h-4 w-4" />
-          {createMutation.isPending ? "Creating..." : "Create Key"}
-        </Button>
+        <div className="flex w-full max-w-md flex-col gap-2 sm:flex-row">
+          <Input
+            value={keyName}
+            onChange={(event) => setKeyName(event.target.value)}
+            placeholder="Key name (optional)"
+            maxLength={64}
+          />
+          <Button
+            onClick={() => createMutation.mutate()}
+            disabled={createMutation.isPending}
+          >
+            <KeyIcon className="h-4 w-4" />
+            {createMutation.isPending ? "Creating..." : "Create Key"}
+          </Button>
+        </div>
       </div>
       {keys && keys.length > 0 ? (
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Name</TableHead>
               <TableHead>Prefix</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
@@ -84,6 +100,7 @@ export function ApiKeyManager({ projectId }: ApiKeyManagerProps) {
           <TableBody>
             {keys.map((key) => (
               <TableRow key={key.id}>
+                <TableCell>{getApiKeyDisplayName(key.name)}</TableCell>
                 <TableCell className="font-mono text-sm">
                   {key.key_prefix}...
                 </TableCell>
@@ -117,18 +134,61 @@ export function ApiKeyManager({ projectId }: ApiKeyManagerProps) {
               Copy this key now. You won&apos;t be able to see it again.
             </DialogDescription>
           </DialogHeader>
-          {newKey && (
-            <div className="flex items-center gap-2 rounded-lg bg-muted p-4">
-              <code className="flex-1 font-mono text-sm break-all">{newKey}</code>
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => copyToClipboard(newKey)}
-              >
-                <CopyIcon className="h-4 w-4" />
-              </Button>
+          {newKey ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    {getApiKeyDisplayName(newKey.name)}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      void copyTextToClipboard(newKey.key, {
+                        success: "API key copied to clipboard",
+                        error: "Could not copy API key",
+                      })
+                    }
+                  >
+                    <CopyIcon className="h-4 w-4" />
+                    Copy key
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg bg-muted p-4">
+                  <code className="flex-1 break-all font-mono text-sm">{newKey.key}</code>
+                </div>
+              </div>
+              {mcpUrl ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">mcp.json object</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void copyTextToClipboard(buildMcpJsonConfig(mcpUrl, newKey.key), {
+                          success: "mcp.json object copied to clipboard",
+                          error: "Could not copy mcp.json object",
+                        })
+                      }
+                    >
+                      <CopyIcon className="h-4 w-4" />
+                      Copy mcp.json object
+                    </Button>
+                  </div>
+                  <pre className="bg-muted overflow-auto rounded-lg p-4 text-xs leading-relaxed">
+                    {buildMcpJsonConfig(mcpUrl, newKey.key)}
+                  </pre>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  The `mcp.json` snippet will be available once this project has an
+                  MCP URL.
+                </p>
+              )}
             </div>
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

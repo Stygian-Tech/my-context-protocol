@@ -41,6 +41,18 @@ function formatSchemaEditor(raw: string) {
   }
 }
 
+/** One entry per non-empty line (matches SKILL comma-lists after split). */
+function listFromMultiline(text: string): string[] {
+  return text
+    .split("\n")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+function multilineFromList(items: string[] | null | undefined): string {
+  return (items ?? []).join("\n");
+}
+
 interface ReleaseSkillMetadataDialogProps {
   projectId: string;
   releaseId: string | null;
@@ -67,6 +79,16 @@ function SkillEditorRow({
     formatSchemaEditor(skill.schema_json ?? "")
   );
   const [schemaDirty, setSchemaDirty] = useState(false);
+  const [useWhenText, setUseWhenText] = useState(() =>
+    multilineFromList(skill.use_when ?? [])
+  );
+  const [avoidWhenText, setAvoidWhenText] = useState(() =>
+    multilineFromList(skill.avoid_when ?? [])
+  );
+  const [failureModesText, setFailureModesText] = useState(() =>
+    multilineFromList(skill.failure_modes ?? [])
+  );
+  const [invokeFirst, setInvokeFirst] = useState(() => skill.invoke_first ?? false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Sync local editors when the server row updates (refetch after save or dialog reopen).
@@ -79,6 +101,10 @@ function SkillEditorRow({
     setSkillBody(skill.skill_body ?? "");
     setSchemaJson(formatSchemaEditor(skill.schema_json ?? ""));
     setSchemaDirty(false);
+    setUseWhenText(multilineFromList(skill.use_when ?? []));
+    setAvoidWhenText(multilineFromList(skill.avoid_when ?? []));
+    setFailureModesText(multilineFromList(skill.failure_modes ?? []));
+    setInvokeFirst(skill.invoke_first ?? false);
     setSaveError(null);
   }, [skill]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -91,6 +117,12 @@ function SkillEditorRow({
         status,
         summary: summary.trim() || null,
         skill_body: skillBody,
+        routing: {
+          use_when: listFromMultiline(useWhenText),
+          avoid_when: listFromMultiline(avoidWhenText),
+          failure_modes: listFromMultiline(failureModesText),
+          invoke_first: invokeFirst,
+        },
       };
       if (schemaDirty) {
         payload.replace_schema = true;
@@ -196,6 +228,75 @@ function SkillEditorRow({
           </Select>
         </div>
       </div>
+      <div className="space-y-3 rounded-md border border-dashed p-3">
+        <div>
+          <p className="text-xs font-medium">SKILL routing (front matter)</p>
+          <p className="text-muted-foreground mt-0.5 text-xs leading-snug">
+            One phrase per line (same as comma-separated lists in SKILL.md). Shown in MCP{" "}
+            <code className="font-mono text-[0.7rem]">resources/list</code> and at the top of{" "}
+            <code className="font-mono text-[0.7rem]">resources/read</code> when exposure is{" "}
+            <span className="font-medium">resource</span>. Values are stored in the release even
+            for tools/prompts so you can switch exposure without losing them.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">use_when — read when</Label>
+            <textarea
+              value={useWhenText}
+              onChange={(e) => setUseWhenText(e.target.value)}
+              rows={4}
+              placeholder={"Starting implementation\nPlan mode"}
+              className={cn(
+                "w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
+                "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                "outline-none dark:bg-input/30"
+              )}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">avoid_when — skip when</Label>
+            <textarea
+              value={avoidWhenText}
+              onChange={(e) => setAvoidWhenText(e.target.value)}
+              rows={4}
+              placeholder={"Pure Q&A\nNo repository access"}
+              className={cn(
+                "w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
+                "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                "outline-none dark:bg-input/30"
+              )}
+            />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">failure_modes — fallbacks</Label>
+          <textarea
+            value={failureModesText}
+            onChange={(e) => setFailureModesText(e.target.value)}
+            rows={3}
+            placeholder="Issue not linked — document and continue"
+            className={cn(
+              "w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
+              "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+              "outline-none dark:bg-input/30"
+            )}
+          />
+        </div>
+        <div className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            id={`invoke-first-${skill.id}`}
+            checked={invokeFirst}
+            onChange={(e) => setInvokeFirst(e.target.checked)}
+            className="border-input text-primary focus-visible:ring-ring mt-0.5 h-4 w-4 rounded border shadow-xs focus-visible:ring-2 focus-visible:outline-none"
+          />
+          <Label htmlFor={`invoke-first-${skill.id}`} className="text-xs leading-snug font-normal">
+            <span className="font-medium">invoke_first</span> — prefer loading this resource
+            before other skills on the same task
+          </Label>
+        </div>
+      </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Skill body (markdown from SKILL.md — MCP tool/resource/prompt content)</Label>
         {!skill.skill_body?.trim() ? (
@@ -287,8 +388,9 @@ export function ReleaseSkillMetadataDialog({
         <DialogHeader className="shrink-0">
           <DialogTitle>Edit MCP metadata</DialogTitle>
           <DialogDescription>
-            Per-skill exposure (tool / resource / prompt), risk, publish status, and summary.
-            Saving updates the MCP catalog for this release after you activate it.
+            Exposure (tool / resource / prompt), risk, publish status, summary, SKILL routing
+            lists, and MCP capability JSON. Saving updates stored metadata for this release; activate
+            the release to refresh the live MCP catalog.
           </DialogDescription>
         </DialogHeader>
         {!releaseId ? (
