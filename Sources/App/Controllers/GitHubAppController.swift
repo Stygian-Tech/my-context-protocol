@@ -291,6 +291,45 @@ enum GitHubAppController {
             return try redirectInvalidState(req: req)
         }
 
+        // GitHub App “OAuth during installation”: callback includes `code` for user-to-server token.
+        if let oauthCode = mergedInstallOAuthCode(req) {
+            let redirectUri = Environment.get("GITHUB_APP_SETUP_CALLBACK_URL")?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let secretOk = Environment.get("GITHUB_APP_CLIENT_SECRET").map { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? false
+            if redirectUri.isEmpty || !secretOk {
+                req.logger.warning(
+                    "GitHub App install OAuth: callback had code but GITHUB_APP_SETUP_CALLBACK_URL and/or GITHUB_APP_CLIENT_SECRET not configured; skipping token exchange"
+                )
+            } else {
+                do {
+                    let userToken = try await GitHubAppUserOAuthService.exchangeInstallOAuthCode(
+                        code: oauthCode,
+                        redirectUri: redirectUri,
+                        client: req.client,
+                        logger: req.logger
+                    )
+                    let ghUid = try await GitHubAppUserOAuthService.fetchGitHubUserId(
+                        accessToken: userToken,
+                        client: req.client,
+                        logger: req.logger
+                    )
+                    if ghUid == account.githubId {
+                        if let encrypted = try? TokenEncryption.encrypt(userToken) {
+                            account.githubTokenEncrypted = encrypted
+                            try await account.save(on: req.db)
+                            req.logger.info("GitHub App install: stored user-to-server OAuth token for account")
+                        }
+                    } else {
+                        req.logger.warning(
+                            "GitHub App install OAuth: GitHub user id \(ghUid) does not match session account \(account.githubId); not storing token"
+                        )
+                    }
+                } catch {
+                    req.logger.warning("GitHub App install OAuth token exchange failed: \(error)")
+                }
+            }
+        }
+
         func redirectError(_ code: String) throws -> Response {
             let base = returnToEffective.isEmpty ? (fallbackBaseForErrors(req: req) ?? "") : returnToEffective
             if base.isEmpty {
@@ -343,6 +382,15 @@ enum GitHubAppController {
         clearInstallSessionKeys(req)
 
         return req.redirect(to: success, redirectType: .normal)
+    }
+
+    /// `code` from GitHub App user OAuth (install with authorization), if present.
+    private static func mergedInstallOAuthCode(_ req: Request) -> String? {
+        let q = req.query[String.self, at: "code"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let q, !q.isEmpty { return q }
+        let raw = parseQueryParam(req.url.query, name: "code")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return raw.isEmpty ? nil : raw
     }
 
     /// Prefer `req.query`; if `state` is missing, parse `req.url.query` (some proxies differ).
