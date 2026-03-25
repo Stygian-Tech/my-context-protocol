@@ -17,21 +17,24 @@ struct ParsedSkill {
 struct SkillParser {
     static func parse(fileURL: URL, basePath: String) throws -> ParsedSkill {
         let content = try String(contentsOf: fileURL, encoding: .utf8)
-
-        let parts = content.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count >= 1 else {
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SkillParserError.emptyFile
         }
+
+        /// Line-aware parsing so multi-line YAML frontmatter works (`split(maxSplits: 1)` previously broke this).
+        let lines = content.components(separatedBy: .newlines)
 
         var frontmatter: [String: String] = [:]
         var body = ""
 
-        if parts[0].trimmingCharacters(in: .whitespaces) == "---" {
-            var endIndex = 1
-            while endIndex < parts.count {
-                let line = String(parts[endIndex])
+        if lines.first?.trimmingCharacters(in: .whitespaces) == "---" {
+            var i = 1
+            var closed = false
+            while i < lines.count {
+                let line = lines[i]
                 if line.trimmingCharacters(in: .whitespaces) == "---" {
-                    endIndex += 1
+                    i += 1
+                    closed = true
                     break
                 }
                 if let colonIndex = line.firstIndex(of: ":") {
@@ -41,11 +44,12 @@ struct SkillParser {
                         .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
                     frontmatter[key] = value
                 }
-                endIndex += 1
+                i += 1
             }
-            if endIndex < parts.count {
-                body = parts[endIndex...].joined(separator: "\n")
+            guard closed else {
+                throw SkillParserError.unclosedFrontmatter
             }
+            body = lines[i...].joined(separator: "\n")
         } else {
             body = content
         }
@@ -92,7 +96,19 @@ struct SkillParser {
     }
 }
 
-enum SkillParserError: Error {
+enum SkillParserError: Error, LocalizedError {
     case emptyFile
     case missingName
+    case unclosedFrontmatter
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyFile:
+            return "SKILL.md is empty"
+        case .missingName:
+            return "SKILL.md frontmatter is missing required \"name\" field"
+        case .unclosedFrontmatter:
+            return "SKILL.md frontmatter is missing closing --- delimiter"
+        }
+    }
 }
