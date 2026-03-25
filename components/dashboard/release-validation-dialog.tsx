@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchReleaseValidation } from "@/lib/projects-api";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
@@ -20,6 +21,36 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+function ValidationMessageCell({ message }: { message: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = message.split("\n").length;
+  const long = message.length > 320 || lines > 5;
+  if (!long) {
+    return <span className="text-muted-foreground whitespace-pre-wrap">{message}</span>;
+  }
+  return (
+    <div className="space-y-1.5">
+      <p
+        className={cn(
+          "text-muted-foreground break-words",
+          expanded ? "max-h-[min(40vh,16rem)] overflow-y-auto whitespace-pre-wrap" : "line-clamp-4"
+        )}
+      >
+        {message}
+      </p>
+      <button
+        type="button"
+        className="text-primary text-xs font-medium hover:underline"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        {expanded ? "Show less" : "Show full message"}
+      </button>
+    </div>
+  );
+}
 
 interface ReleaseValidationDialogProps {
   projectId: string;
@@ -39,6 +70,8 @@ export function ReleaseValidationDialog({
   open,
   onOpenChange,
 }: ReleaseValidationDialogProps) {
+  const [showFullSummary, setShowFullSummary] = useState(false);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["release-validation", projectId, releaseId],
     queryFn: () => fetchReleaseValidation(projectId, releaseId!),
@@ -46,8 +79,14 @@ export function ReleaseValidationDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[min(56rem,calc(100vw-2rem))]">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setShowFullSummary(false);
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent className="flex max-h-[92vh] w-[min(72rem,calc(100vw-1rem))] flex-col gap-4 overflow-hidden p-6">
         <DialogHeader>
           <DialogTitle>Release errors — {releaseLabel}</DialogTitle>
           <DialogDescription>
@@ -56,15 +95,30 @@ export function ReleaseValidationDialog({
           </DialogDescription>
         </DialogHeader>
         {pipelineSummary?.trim() ? (
-          <div className="space-y-1.5 rounded-lg border bg-muted/40 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Ingest / pipeline summary</p>
-            <pre className="text-muted-foreground max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed">
+          <div className="shrink-0 space-y-2 rounded-lg border bg-muted/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">Ingest / pipeline summary</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setShowFullSummary((v) => !v)}
+              >
+                {showFullSummary ? "Show less" : "Show full text"}
+              </Button>
+            </div>
+            <pre
+              className={`text-muted-foreground overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed ${
+                showFullSummary ? "max-h-[min(50vh,24rem)]" : "line-clamp-2 max-h-[2.75rem]"
+              }`}
+            >
               {pipelineSummary.trim()}
             </pre>
           </div>
         ) : null}
         {!releaseId ? null : isLoading ? (
-          <Skeleton className="h-48" />
+          <Skeleton className="h-48 shrink-0" />
         ) : error ? (
           <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
             <p className="font-medium text-destructive">Could not load validation report.</p>
@@ -75,8 +129,8 @@ export function ReleaseValidationDialog({
             ) : null}
           </div>
         ) : data ? (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <span className="text-sm font-medium">Report</span>
               <Badge variant={data.is_valid ? "default" : "destructive"}>
                 {data.is_valid ? "valid" : "invalid"}
@@ -88,21 +142,23 @@ export function ReleaseValidationDialog({
             {data.errors.length === 0 ? (
               <p className="text-muted-foreground text-sm">No structured errors.</p>
             ) : (
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[40%]">Path / source</TableHead>
-                    <TableHead>Message</TableHead>
+                    <TableHead className="w-[34%] font-medium whitespace-normal">
+                      Path / source
+                    </TableHead>
+                    <TableHead className="font-medium whitespace-normal">Message</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.errors.map((e, i) => (
                     <TableRow key={`${e.path}-${i}`}>
-                      <TableCell className="max-w-[200px] align-top font-mono text-xs break-all">
+                      <TableCell className="w-[34%] min-w-0 align-top whitespace-normal break-all font-mono text-xs">
                         {e.path}
                       </TableCell>
-                      <TableCell className="text-muted-foreground align-top text-sm whitespace-pre-wrap">
-                        {e.message}
+                      <TableCell className="min-w-0 align-top whitespace-normal break-words text-sm leading-snug">
+                        <ValidationMessageCell message={e.message} />
                       </TableCell>
                     </TableRow>
                   ))}

@@ -149,7 +149,7 @@ function SkillEditorRow({
       {saveError ? (
         <p className="text-destructive text-sm">{saveError}</p>
       ) : null}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-3">
         <div className="space-y-1.5">
           <Label className="text-xs">MCP exposure</Label>
           <Select value={exposure} onValueChange={(v) => setExposure(v ?? "tool")}>
@@ -197,26 +197,32 @@ function SkillEditorRow({
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">Summary (shown in MCP tool/resource/prompt metadata)</Label>
+        <Label className="text-xs">Skill body (markdown from SKILL.md — MCP tool/resource/prompt content)</Label>
+        {!skill.skill_body?.trim() ? (
+          <p className="text-amber-600/90 dark:text-amber-500/90 text-xs leading-snug">
+            Empty in the database for this release. Run <span className="font-medium">Sync</span> again so the
+            repo body is ingested, or paste content here and save.
+          </p>
+        ) : null}
         <textarea
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
-          rows={3}
+          value={skillBody}
+          onChange={(e) => setSkillBody(e.target.value)}
+          rows={12}
           className={cn(
-            "w-full min-h-[72px] rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm",
+            "max-h-[min(50vh,28rem)] w-full min-h-[140px] resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs leading-relaxed",
             "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             "outline-none dark:bg-input/30"
           )}
         />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">Skill body (markdown — MCP tool/resource/prompt content)</Label>
+        <Label className="text-xs">Summary (MCP metadata blurb)</Label>
         <textarea
-          value={skillBody}
-          onChange={(e) => setSkillBody(e.target.value)}
-          rows={8}
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          rows={3}
           className={cn(
-            "w-full min-h-[120px] rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
+            "w-full min-h-[72px] rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm",
             "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             "outline-none dark:bg-input/30"
           )}
@@ -244,10 +250,10 @@ function SkillEditorRow({
             setSchemaDirty(true);
             setSchemaJson(e.target.value);
           }}
-          rows={10}
+          rows={8}
           spellCheck={false}
           className={cn(
-            "w-full min-h-[160px] rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
+            "max-h-[min(40vh,22rem)] w-full min-h-[120px] resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
             "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             "outline-none dark:bg-input/30"
           )}
@@ -277,8 +283,8 @@ export function ReleaseSkillMetadataDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[min(88rem,calc(100vw-2rem))]">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[92vh] w-[min(88rem,calc(100vw-1rem))] flex-col gap-4 overflow-hidden p-6">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Edit MCP metadata</DialogTitle>
           <DialogDescription>
             Per-skill exposure (tool / resource / prompt), risk, publish status, and summary.
@@ -299,7 +305,7 @@ export function ReleaseSkillMetadataDialog({
             ) : null}
           </div>
         ) : skills && skills.length > 0 ? (
-          <div className="space-y-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1 [-ms-overflow-style:auto] [scrollbar-gutter:stable]">
             {skills.map((s) => (
               <SkillEditorRow
                 key={s.id}
