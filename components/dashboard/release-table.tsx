@@ -43,7 +43,21 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
   const [validationCtx, setValidationCtx] = useState<{
     id: string;
     label: string;
+    pipelineSummary: string | null;
   } | null>(null);
+
+  function openValidationDialog(release: {
+    id: string;
+    commit_sha: string;
+    error_summary?: string | null;
+  }) {
+    setValidationCtx({
+      id: release.id,
+      label: release.commit_sha.slice(0, 7),
+      pipelineSummary: release.error_summary ?? null,
+    });
+    setValidationOpen(true);
+  }
 
   const { data: releases, isLoading } = useQuery({
     queryKey: ["releases", projectId],
@@ -98,8 +112,31 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
               <TableCell>
                 {new Date(release.created_at).toLocaleString()}
               </TableCell>
-              <TableCell className="max-w-[min(28rem,40vw)] align-top text-muted-foreground text-sm whitespace-pre-wrap break-words">
-                {release.error_summary ?? "—"}
+              <TableCell className="max-w-[14rem] align-top sm:max-w-[18rem]">
+                {release.error_summary?.trim() ? (
+                  <button
+                    type="button"
+                    onClick={() => openValidationDialog(release)}
+                    className="group w-full rounded-md text-left transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <p className="text-muted-foreground line-clamp-2 text-sm leading-snug whitespace-pre-wrap break-words">
+                      {release.error_summary.trim()}
+                    </p>
+                    <span className="mt-1 inline-block text-xs font-medium text-primary underline-offset-4 group-hover:underline">
+                      View full report
+                    </span>
+                  </button>
+                ) : release.status === "failed" ? (
+                  <button
+                    type="button"
+                    onClick={() => openValidationDialog(release)}
+                    className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    View details
+                  </button>
+                ) : (
+                  <span className="text-muted-foreground text-sm">—</span>
+                )}
               </TableCell>
               <TableCell>
                 <div className="flex flex-col gap-1">
@@ -123,18 +160,12 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                   >
                     MCP metadata
                   </Button>
-                  {release.status === "failed" || release.error_summary ? (
+                  {release.status === "failed" && !release.error_summary?.trim() ? (
                     <Button
                       size="sm"
                       variant="secondary"
                       className="border-destructive/30 text-destructive hover:bg-destructive/10"
-                      onClick={() => {
-                        setValidationCtx({
-                          id: release.id,
-                          label: release.commit_sha.slice(0, 7),
-                        });
-                        setValidationOpen(true);
-                      }}
+                      onClick={() => openValidationDialog(release)}
                     >
                       Errors
                     </Button>
@@ -145,14 +176,12 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
           ))}
         </TableBody>
       </Table>
-      {releases.some((r) => r.status === "failed" && r.error_summary) && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4">
-          <h4 className="font-medium text-destructive">Validation Report</h4>
-          <p className="text-muted-foreground text-sm">
-            Failed releases have validation errors. Check the error column for
-            details.
-          </p>
-        </div>
+      {releases.some((r) => r.status === "failed") && (
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          Failed releases show a short error in the table — click{" "}
+          <span className="font-medium text-foreground">View full report</span> to open the validation
+          dialog.
+        </p>
       )}
       <ReleaseSkillMetadataDialog
         projectId={projectId}
@@ -167,6 +196,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
         projectId={projectId}
         releaseId={validationCtx?.id ?? null}
         releaseLabel={validationCtx?.label ?? ""}
+        pipelineSummary={validationCtx?.pipelineSummary ?? null}
         open={validationOpen}
         onOpenChange={(open) => {
           setValidationOpen(open);

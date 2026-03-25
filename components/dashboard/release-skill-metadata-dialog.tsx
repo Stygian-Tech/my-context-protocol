@@ -277,7 +277,7 @@ export function ReleaseSkillMetadataDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[min(88rem,calc(100vw-2rem))]">
         <DialogHeader>
           <DialogTitle>Edit MCP metadata</DialogTitle>
           <DialogDescription>

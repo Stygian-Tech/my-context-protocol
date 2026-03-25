@@ -25,6 +25,8 @@ interface ReleaseValidationDialogProps {
   projectId: string;
   releaseId: string | null;
   releaseLabel: string;
+  /** Short pipeline/ingest summary from the release row (full text shown here; table loads from API). */
+  pipelineSummary?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -33,6 +35,7 @@ export function ReleaseValidationDialog({
   projectId,
   releaseId,
   releaseLabel,
+  pipelineSummary,
   open,
   onOpenChange,
 }: ReleaseValidationDialogProps) {
@@ -44,7 +47,7 @@ export function ReleaseValidationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-[min(56rem,calc(100vw-2rem))]">
         <DialogHeader>
           <DialogTitle>Release errors — {releaseLabel}</DialogTitle>
           <DialogDescription>
@@ -52,6 +55,14 @@ export function ReleaseValidationDialog({
             and sync again, or adjust MCP metadata if exposure is wrong.
           </DialogDescription>
         </DialogHeader>
+        {pipelineSummary?.trim() ? (
+          <div className="space-y-1.5 rounded-lg border bg-muted/40 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Ingest / pipeline summary</p>
+            <pre className="text-muted-foreground max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed">
+              {pipelineSummary.trim()}
+            </pre>
+          </div>
+        ) : null}
         {!releaseId ? null : isLoading ? (
           <Skeleton className="h-48" />
         ) : error ? (
