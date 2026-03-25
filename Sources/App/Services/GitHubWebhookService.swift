@@ -2,6 +2,9 @@ import Foundation
 import Vapor
 
 enum GitHubWebhookService {
+    /// GitHub rejects requests without a non-empty `User-Agent` (HTTP 403).
+    private static let githubUserAgent = "MyContextProtocol/1"
+
     /// Verifies the account has access to the repo and creates a webhook.
     /// Returns (webhookId, webhookSecret) or throws.
     static func createWebhook(
@@ -45,6 +48,7 @@ enum GitHubWebhookService {
             req.headers.bearerAuthorization = BearerAuthorization(token: token)
             req.headers.add(name: "Accept", value: "application/vnd.github+json")
             req.headers.add(name: "X-GitHub-Api-Version", value: "2022-11-28")
+            req.headers.add(name: "User-Agent", value: Self.githubUserAgent)
         }
 
         guard response.status == .created else {
@@ -69,6 +73,7 @@ enum GitHubWebhookService {
             req.headers.bearerAuthorization = BearerAuthorization(token: token)
             req.headers.add(name: "Accept", value: "application/vnd.github+json")
             req.headers.add(name: "X-GitHub-Api-Version", value: "2022-11-28")
+            req.headers.add(name: "User-Agent", value: Self.githubUserAgent)
         }
         if response.status != .noContent && response.status != .notFound {
             let body = response.body.map { String(buffer: $0) } ?? ""
