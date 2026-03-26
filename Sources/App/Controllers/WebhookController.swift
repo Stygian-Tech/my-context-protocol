@@ -10,6 +10,13 @@ struct WebhookController {
         }
         struct Repository: Content {
             let full_name: String?
+            /// GitHub repo default branch (same commit as `HEAD` on the default branch).
+            let default_branch: String?
+
+            enum CodingKeys: String, CodingKey {
+                case full_name
+                case default_branch
+            }
         }
 
         guard let rawBody = req.body.data else {
@@ -54,6 +61,39 @@ struct WebhookController {
             guard signature == expected else {
                 return Response(status: .unauthorized, body: .init(string: "Invalid signature"))
             }
+        }
+
+        /// Auto-sync only when the push updates the repository default branch (GitHub `default_branch` / HEAD).
+        guard let ref = payload.ref, ref.hasPrefix("refs/heads/") else {
+            req.logger.debug(
+                "GitHub webhook ignored for \(owner)/\(repo): ref=\(payload.ref ?? "nil") (not a branch push)"
+            )
+            return Response(status: .ok, body: .init(string: "{\"ok\":true,\"skipped\":\"not_branch\"}"))
+        }
+
+        let fromPayload = payload.repository?.default_branch?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let fromConnection = connection.defaultBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let headBranch = fromPayload.isEmpty ? fromConnection : fromPayload
+
+        guard !headBranch.isEmpty else {
+            req.logger.warning(
+                "GitHub webhook cannot resolve default branch for \(owner)/\(repo); skipping sync"
+            )
+            return Response(status: .ok, body: .init(string: "{\"ok\":true,\"skipped\":\"no_default_branch\"}"))
+        }
+
+        let expectedRef = "refs/heads/\(headBranch)"
+        guard ref == expectedRef else {
+            req.logger.debug(
+                "GitHub webhook ignored for \(owner)/\(repo): ref=\(ref) (expected \(expectedRef) for default branch)"
+            )
+            return Response(status: .ok, body: .init(string: "{\"ok\":true,\"skipped\":\"not_default_branch\"}"))
+        }
+
+        if !fromPayload.isEmpty, connection.defaultBranch != fromPayload {
+            connection.defaultBranch = fromPayload
+            try await connection.save(on: req.db)
         }
 
         let project = connection.project

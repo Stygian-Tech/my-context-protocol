@@ -132,6 +132,7 @@ public func configure(_ app: Application) throws {
     app.migrations.add(AddNameToApiKeys())
     app.migrations.add(AddAgentHintsToRoutingRules())
     app.migrations.add(AddCompiledSkillBodyDiffAndReleaseCounts())
+    app.migrations.add(NormalizeRepoDefaultBranchToMain())
 
     try app.autoMigrate().wait()
 
