@@ -1,3 +1,4 @@
+import { buildAuthConfirmRedirect } from "@/lib/auth-token-handoff";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -13,10 +14,7 @@ export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico
 export function proxy(request: NextRequest) {
   const authToken = request.nextUrl.searchParams.get("auth_token");
   if (authToken) {
-    const returnUrl = new URL(request.url);
-    returnUrl.searchParams.delete("auth_token");
-    const redirectTo = encodeURIComponent(returnUrl.toString());
-    const confirmUrl = `/api/auth/confirm?token=${encodeURIComponent(authToken)}&redirect=${redirectTo}`;
+    const confirmUrl = buildAuthConfirmRedirect(request.url, authToken);
     return NextResponse.redirect(new URL(confirmUrl, request.url));
   }
   return NextResponse.next();

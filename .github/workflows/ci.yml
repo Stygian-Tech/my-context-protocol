@@ -14,16 +14,27 @@ concurrency:
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    env:
+      CI: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+      - name: Cache Bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
       - name: Install
         run: bun install --frozen-lockfile
       - name: Lint
         run: bun run lint
       - name: Typecheck
         run: bun run typecheck
-      - name: Test
-        run: bun run test
+      - name: Unit tests (Vitest, CI mode)
+        run: bun run test:ci

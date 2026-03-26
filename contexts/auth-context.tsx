@@ -13,6 +13,7 @@ import {
   getGitHubLoginUrl,
   logout as apiLogout,
 } from "@/lib/auth";
+import { safeReturnPath } from "@/lib/safe-redirect";
 import type { User } from "@/lib/types";
 
 interface AuthContextValue {
@@ -73,7 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (authToken) {
       const returnUrl = new URL(window.location.href);
       returnUrl.searchParams.delete("auth_token");
-      const redirectTo = encodeURIComponent(returnUrl.toString());
+      const relative = `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`;
+      const redirectTo = encodeURIComponent(relative);
       const confirmUrl = `/api/auth/confirm?token=${encodeURIComponent(authToken)}&redirect=${redirectTo}`;
       window.location.replace(confirmUrl);
       return;
@@ -98,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const loginWithGitHub = useCallback((returnTo = "/") => {
+    returnTo = safeReturnPath(returnTo);
     window.location.href = getGitHubLoginUrl(returnTo);
   }, []);
 

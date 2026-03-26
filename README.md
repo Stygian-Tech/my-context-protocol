@@ -14,8 +14,7 @@ Dashboard for [MyContextProtocol](https://www.notion.so/MyContextProtocol-325f6c
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (v1.0+)
-- Node.js 20+ (if not using Bun)
+- [Bun](https://bun.sh) (v1.1+). This repo uses **`bun.lockb`** only — do not add `package-lock.json` or other package manager lockfiles.
 
 ## Getting Started
 

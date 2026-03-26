@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createCheckoutSession, createPortalSession } from "@/lib/billing-api";
+import { assertStripeRedirectUrl } from "@/lib/trusted-redirect";
 import { useMutation } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -32,6 +33,7 @@ export default function BillingPage() {
         cancel_path: "/billing?billing=cancel",
       }),
     onSuccess: (data) => {
+      assertStripeRedirectUrl(data.url);
       window.location.href = data.url;
     },
   });
@@ -39,6 +41,7 @@ export default function BillingPage() {
   const portal = useMutation({
     mutationFn: createPortalSession,
     onSuccess: (data) => {
+      assertStripeRedirectUrl(data.url);
       window.location.href = data.url;
     },
   });

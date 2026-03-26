@@ -12,6 +12,7 @@ import {
   triggerSync,
 } from "@/lib/projects-api";
 import { ApiError } from "@/lib/api";
+import { assertGitHubInstallUrl } from "@/lib/trusted-redirect";
 import {
   Card,
   CardContent,
@@ -162,6 +163,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
           const installUrl = (err.body as { install_url?: string }).install_url;
           if (installUrl) {
             if (typeof window !== "undefined") {
+              assertGitHubInstallUrl(installUrl);
               sessionStorage.setItem(
                 pendingConnectKey,
                 JSON.stringify({

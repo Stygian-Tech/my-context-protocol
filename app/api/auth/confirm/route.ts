@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { assertSafeRelativeRedirectPath } from "@/lib/safe-redirect";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -7,8 +8,13 @@ export async function GET(request: NextRequest) {
   const token = searchParams.get("token");
   const redirectTo = searchParams.get("redirect");
 
-  if (!token || !redirectTo) {
+  if (!token || redirectTo == null || redirectTo === "") {
     return NextResponse.redirect(new URL("/login?error=missing_params", request.url), 302);
+  }
+  try {
+    assertSafeRelativeRedirectPath(redirectTo);
+  } catch {
+    return NextResponse.redirect(new URL("/login?error=invalid_redirect", request.url), 302);
   }
 
   const backendUrl = `${BACKEND_URL.replace(/\/$/, "")}/auth/confirm?token=${encodeURIComponent(token)}&redirect=${encodeURIComponent(redirectTo)}`;
@@ -55,14 +61,10 @@ export async function GET(request: NextRequest) {
   // 401 = token already consumed. First request succeeded; redirect to return URL (or /) instead of auth_failed.
   if (res.status === 401) {
     try {
-      if (redirectTo) {
-        const url = new URL(redirectTo);
-        if (url.protocol === "http:" || url.protocol === "https:") {
-          return NextResponse.redirect(url, 302);
-        }
-      }
+      assertSafeRelativeRedirectPath(redirectTo);
+      return NextResponse.redirect(new URL(redirectTo, request.url), 302);
     } catch {
-      /* invalid URL */
+      /* invalid */
     }
     return NextResponse.redirect(new URL("/", request.url), 302);
   }

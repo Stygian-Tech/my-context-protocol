@@ -13,6 +13,12 @@ describe("env-banner", () => {
     expect(parseAppEnv("staging")).toBe("prod");
   });
 
+  it("parseAppEnv accepts known envs", () => {
+    expect(parseAppEnv("local")).toBe("local");
+    expect(parseAppEnv(" DEV ")).toBe("dev");
+    expect(parseAppEnv("prod")).toBe("prod");
+  });
+
   it("bannerVisible for local or dev on either side", () => {
     expect(bannerVisible("local", null)).toBe(true);
     expect(bannerVisible("prod", "dev")).toBe(true);
@@ -20,6 +26,7 @@ describe("env-banner", () => {
   });
 
   it("envMismatch when both set and differ", () => {
+    expect(envMismatch("dev", null)).toBe(false);
     expect(envMismatch("dev", "dev")).toBe(false);
     expect(envMismatch("dev", "local")).toBe(true);
   });
@@ -33,5 +40,7 @@ describe("env-banner", () => {
   it("primaryEnvForCopy prefers API non-prod", () => {
     expect(primaryEnvForCopy("prod", "dev")).toBe("dev");
     expect(primaryEnvForCopy("local", null)).toBe("local");
+    expect(primaryEnvForCopy("prod", null)).toBe("prod");
+    expect(primaryEnvForCopy("prod", "prod")).toBe("prod");
   });
 });

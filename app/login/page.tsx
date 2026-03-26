@@ -12,12 +12,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { GithubIcon } from "lucide-react";
+import { safeReturnPath } from "@/lib/safe-redirect";
 
 function LoginContent() {
   const { loginWithGitHub, isLoading: authLoading, user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnTo = searchParams.get("redirect") ?? "/";
+  const returnTo = safeReturnPath(searchParams.get("redirect") ?? "/");
 
   useEffect(() => {
     if (!authLoading && user) {
