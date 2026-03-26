@@ -9,6 +9,8 @@ import type {
   ProjectCatalog,
   ReleaseValidationReport,
   CompiledSkill,
+  AccountDashboardSummary,
+  ProjectDashboardSummary,
 } from "./types";
 
 export async function fetchProjects(): Promise<Project[]> {
@@ -19,6 +21,18 @@ export async function fetchProjects(): Promise<Project[]> {
 
 export async function fetchProject(id: string): Promise<Project> {
   return api.get<Project>(`/projects/${id}`);
+}
+
+export async function fetchAccountDashboardSummary(): Promise<AccountDashboardSummary> {
+  return api.get<AccountDashboardSummary>("/dashboard/summary");
+}
+
+export async function fetchProjectDashboardSummary(
+  projectId: string
+): Promise<ProjectDashboardSummary> {
+  return api.get<ProjectDashboardSummary>(
+    `/projects/${projectId}/dashboard/summary`
+  );
 }
 
 export async function fetchProjectCatalog(projectId: string): Promise<ProjectCatalog> {

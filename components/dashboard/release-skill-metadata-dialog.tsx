@@ -137,6 +137,8 @@ function SkillEditorRow({
         queryKey: ["compiled-skills", projectId, releaseId],
       });
       queryClient.invalidateQueries({ queryKey: ["project-catalog", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-dashboard-summary", projectId] });
     },
     onError: (err) => {
       if (err instanceof ApiError) {
@@ -299,6 +301,21 @@ function SkillEditorRow({
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Skill body (markdown from SKILL.md — MCP tool/resource/prompt content)</Label>
+        {skill.body_diff_unified ? (
+          <details className="rounded-lg border bg-muted/40 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium">
+              Body diff vs prior release
+              {skill.body_diff_prior_release_id ? (
+                <span className="text-muted-foreground ml-1 font-mono font-normal">
+                  ({skill.body_diff_prior_release_id.slice(0, 8)}…)
+                </span>
+              ) : null}
+            </summary>
+            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words border-t border-border/60 pt-2 font-mono text-[0.65rem] leading-snug">
+              {skill.body_diff_unified}
+            </pre>
+          </details>
+        ) : null}
         {!skill.skill_body?.trim() ? (
           <p className="text-amber-600/90 dark:text-amber-500/90 text-xs leading-snug">
             Empty in the database for this release. Run <span className="font-medium">Sync</span> again so the

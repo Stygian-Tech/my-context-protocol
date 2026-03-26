@@ -11,6 +11,7 @@ import { ApiKeyManager } from "@/components/dashboard/api-key-manager";
 import { RequestLogsTable } from "@/components/dashboard/request-logs-table";
 import { CustomDomainSection } from "@/components/dashboard/custom-domain-section";
 import { McpCatalogSection } from "@/components/dashboard/mcp-catalog-section";
+import { ProjectOverviewMetrics } from "@/components/dashboard/project-overview-metrics";
 import { useAuth } from "@/contexts/auth-context";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,7 @@ export default function ProjectDetailPage() {
           <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="space-y-4">
+          <ProjectOverviewMetrics projectId={projectId} />
           <div className="rounded-lg border p-4">
             <h3 className="font-medium">Project Info</h3>
             <dl className="mt-2 space-y-1 text-sm">

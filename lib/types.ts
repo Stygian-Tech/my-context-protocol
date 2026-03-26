@@ -9,6 +9,8 @@ export interface Project {
   created_at: string;
   custom_domain?: string | null;
   custom_domain_verified_at?: string | null;
+  /** Release currently serving MCP traffic. */
+  active_release_id?: string | null;
   /** Full MCP endpoint URL from the API (scheme + host + path). */
   mcp_url?: string | null;
 }
@@ -39,6 +41,8 @@ export interface Release {
   status: ReleaseStatus;
   created_at: string;
   error_summary?: string | null;
+  is_active?: boolean;
+  skill_body_changes_count?: number;
 }
 
 export interface SkillPackage {
@@ -137,6 +141,55 @@ export interface CompiledSkill {
   avoid_when?: string[];
   failure_modes?: string[];
   invoke_first?: boolean;
+  /** Unified line diff vs prior release when SKILL body changed since last active release. */
+  body_diff_unified?: string | null;
+  body_diff_prior_release_id?: string | null;
+}
+
+export interface DashboardMethodCount {
+  method: string;
+  count: number;
+}
+
+export interface DashboardProjectTraffic {
+  project_id: string;
+  project_name: string;
+  request_count: number;
+}
+
+export interface AccountDashboardSummary {
+  total_requests: number;
+  requests_last_24h: number;
+  requests_last_7d: number;
+  success_rate_last_7d: number | null;
+  metrics_sample_size_last_7d: number;
+  avg_latency_ms_last_7d: number | null;
+  p95_latency_ms_last_7d: number | null;
+  projects_total: number;
+  projects_with_active_release: number;
+  active_tools_total: number;
+  active_resources_total: number;
+  active_prompts_total: number;
+  method_breakdown_last_7d: DashboardMethodCount[];
+  top_projects_last_7d: DashboardProjectTraffic[];
+}
+
+export interface ProjectDashboardSummary {
+  project_id: string;
+  total_requests: number;
+  requests_last_24h: number;
+  requests_last_7d: number;
+  success_rate_last_7d: number | null;
+  metrics_sample_size_last_7d: number;
+  avg_latency_ms_last_7d: number | null;
+  p95_latency_ms_last_7d: number | null;
+  method_breakdown_last_7d: DashboardMethodCount[];
+  active_release_id?: string | null;
+  active_commit_sha?: string | null;
+  active_release_status?: string | null;
+  active_tools: number;
+  active_resources: number;
+  active_prompts: number;
 }
 
 export type AppEnv = "local" | "dev" | "prod";

@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ReleaseStatus } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { shortCommitLabel } from "@/lib/commit-display";
 
 interface ReleaseTableProps {
   projectId: string;
@@ -53,7 +55,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
   }) {
     setValidationCtx({
       id: release.id,
-      label: release.commit_sha.slice(0, 7),
+      label: shortCommitLabel(release.commit_sha),
       pipelineSummary: release.error_summary ?? null,
     });
     setValidationOpen(true);
@@ -70,6 +72,8 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
       queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-catalog", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-dashboard-summary", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["account-dashboard-summary"] });
     },
   });
 
@@ -99,28 +103,54 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {releases.map((release) => (
+          {releases.map((release) => {
+            const errSummary = release.error_summary?.trim();
+            const useTopErrorCell = Boolean(errSummary);
+            const bodyChanges = release.skill_body_changes_count ?? 0;
+            return (
             <TableRow key={release.id}>
-              <TableCell className="font-mono text-sm">
-                {release.commit_sha.slice(0, 7)}
+              <TableCell className="font-mono text-sm align-middle">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span>{shortCommitLabel(release.commit_sha)}</span>
+                  {bodyChanges > 0 ? (
+                    <Badge variant="outline" className="h-5 px-1.5 text-[0.65rem] font-normal">
+                      {bodyChanges} body Δ
+                    </Badge>
+                  ) : null}
+                </div>
               </TableCell>
-              <TableCell>
-                <Badge variant={statusVariant(release.status)}>
-                  {release.status}
-                </Badge>
+              <TableCell className="align-middle">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant={statusVariant(release.status)}>
+                    {release.status}
+                  </Badge>
+                  {release.is_active ? (
+                    <Badge
+                      variant="default"
+                      className="border border-primary/30 bg-primary/15 text-primary"
+                    >
+                      Active
+                    </Badge>
+                  ) : null}
+                </div>
               </TableCell>
-              <TableCell>
+              <TableCell className="align-middle">
                 {new Date(release.created_at).toLocaleString()}
               </TableCell>
-              <TableCell className="max-w-[14rem] align-top sm:max-w-[18rem]">
-                {release.error_summary?.trim() ? (
+              <TableCell
+                className={cn(
+                  "max-w-[14rem] sm:max-w-[18rem]",
+                  useTopErrorCell ? "align-top" : "align-middle"
+                )}
+              >
+                {errSummary ? (
                   <button
                     type="button"
                     onClick={() => openValidationDialog(release)}
                     className="group w-full rounded-md text-left transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <p className="text-muted-foreground line-clamp-2 text-sm leading-snug whitespace-pre-wrap break-words">
-                      {release.error_summary.trim()}
+                      {errSummary}
                     </p>
                     <span className="mt-1 inline-block text-xs font-medium text-primary underline-offset-4 group-hover:underline">
                       View full report
@@ -138,9 +168,9 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                   <span className="text-muted-foreground text-sm">—</span>
                 )}
               </TableCell>
-              <TableCell>
+              <TableCell className="align-middle">
                 <div className="flex flex-col gap-1">
-                  {release.status === "ready" ? (
+                  {release.status === "ready" && !release.is_active ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -173,7 +203,8 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                 </div>
               </TableCell>
             </TableRow>
-          ))}
+          );
+          })}
         </TableBody>
       </Table>
       {releases.some((r) => r.status === "failed") && (

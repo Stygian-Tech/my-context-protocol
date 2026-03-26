@@ -184,6 +184,9 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
       if (data == null) return;
       queryClient.invalidateQueries({ queryKey: ["repo-connection", projectId] });
       queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-dashboard-summary", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["account-dashboard-summary"] });
       setShowForm(false);
       setRepoFilter("");
       reset({ full_name: "", branch: "main" });
@@ -204,6 +207,9 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
       queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
       queryClient.invalidateQueries({ queryKey: ["repo-connection", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-catalog", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-dashboard-summary", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["account-dashboard-summary"] });
     },
     onError: (err) => {
       if (err instanceof ApiError && err.status === 429) {
