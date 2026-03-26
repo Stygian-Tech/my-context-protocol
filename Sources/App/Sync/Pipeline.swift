@@ -47,6 +47,8 @@ struct SyncPipeline {
             token = oauthToken
         }
 
+        let priorActiveReleaseId = project.activeReleaseId
+
         let release = Release(
             projectId: projectId,
             commitSha: "pending",
@@ -62,13 +64,25 @@ struct SyncPipeline {
         }
 
         do {
-            let extractPath = try await fetcher.fetch(
+            let outcome = try await fetcher.fetch(
                 owner: connection.repoOwner,
                 repo: connection.repoName,
                 ref: connection.defaultBranch,
                 token: token
             )
-            tempExtractPath = extractPath
+            tempExtractPath = outcome.extractPath
+            let extractPath = outcome.extractPath
+
+            var resolvedSha = outcome.resolvedCommitSha
+            if resolvedSha == nil {
+                resolvedSha = try await fetcher.resolveCommitShaViaApi(
+                    owner: connection.repoOwner,
+                    repo: connection.repoName,
+                    ref: connection.defaultBranch,
+                    token: token
+                )
+            }
+            let commitSha = resolvedSha ?? "unknown"
 
             let repoRoot = try fetcher.resolveRepositoryRoot(extractPath: extractPath)
             let basePath = repoRoot.path
@@ -128,6 +142,12 @@ struct SyncPipeline {
             let compiler = Compiler(db: db)
             try await compiler.compile(releaseId: release.id!, skills: parsedSkills)
 
+            let bodyChangeCount = try await ReleaseMetadataCarryForward.apply(
+                db: db,
+                newReleaseId: release.id!,
+                priorReleaseId: priorActiveReleaseId
+            )
+
             let reportPayload: [String: Any] = [
                 "is_valid": allValid,
                 "errors": validationErrors
@@ -142,7 +162,8 @@ struct SyncPipeline {
 
             release.status = allValid ? "ready" : "failed"
             release.errorSummary = errorSummary
-            release.commitSha = "latest"
+            release.commitSha = commitSha
+            release.skillBodyChangesCount = bodyChangeCount
             try await release.save(on: db)
 
             let compiledSkills = try await CompiledSkill.query(on: db)

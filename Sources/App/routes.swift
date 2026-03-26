@@ -29,11 +29,17 @@ func routes(_ app: Application) throws {
     }
 
     let protected = app.grouped(app.sessions.middleware, SessionAuthMiddleware())
+    protected.get("dashboard", "summary") { req in
+        try await ProjectController.accountDashboardSummary(req: req)
+    }
     protected.get("projects") { req in
         try await ProjectController.list(req: req)
     }
     protected.post("projects") { req in
         try await ProjectController.create(req: req)
+    }
+    protected.get("projects", ":id", "dashboard", "summary") { req in
+        try await ProjectController.projectDashboardSummary(req: req)
     }
     protected.get("projects", ":id") { req in
         try await ProjectController.get(req: req)

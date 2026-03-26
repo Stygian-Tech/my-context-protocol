@@ -38,6 +38,13 @@ final class CompiledSkill: Model, Content {
     @Field(key: "status")
     var status: String
 
+    /// Unified line diff vs `body_diff_prior_release_id` when SKILL body changed between releases.
+    @OptionalField(key: "body_diff_unified")
+    var bodyDiffUnified: String?
+
+    @OptionalField(key: "body_diff_prior_release_id")
+    var bodyDiffPriorReleaseId: UUID?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -60,7 +67,9 @@ final class CompiledSkill: Model, Content {
         exposureType: String,
         riskLevel: String,
         repoSpecific: Bool,
-        status: String
+        status: String,
+        bodyDiffUnified: String? = nil,
+        bodyDiffPriorReleaseId: UUID? = nil
     ) {
         self.id = id
         self.$release.id = releaseId
@@ -73,6 +82,8 @@ final class CompiledSkill: Model, Content {
         self.riskLevel = riskLevel
         self.repoSpecific = repoSpecific
         self.status = status
+        self.bodyDiffUnified = bodyDiffUnified
+        self.bodyDiffPriorReleaseId = bodyDiffPriorReleaseId
     }
 }
 

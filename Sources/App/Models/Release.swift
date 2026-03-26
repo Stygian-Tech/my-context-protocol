@@ -22,6 +22,10 @@ final class Release: Model, Content {
     @OptionalField(key: "error_summary")
     var errorSummary: String?
 
+    /// Number of compiled skills whose `body_diff_unified` is set for this release.
+    @Field(key: "skill_body_changes_count")
+    var skillBodyChangesCount: Int
+
     @Children(for: \.$release)
     var skillPackages: [SkillPackage]
 
@@ -38,13 +42,15 @@ final class Release: Model, Content {
         projectId: UUID,
         commitSha: String,
         status: String,
-        errorSummary: String? = nil
+        errorSummary: String? = nil,
+        skillBodyChangesCount: Int = 0
     ) {
         self.id = id
         self.$project.id = projectId
         self.commitSha = commitSha
         self.status = status
         self.errorSummary = errorSummary
+        self.skillBodyChangesCount = skillBodyChangesCount
     }
 }
 

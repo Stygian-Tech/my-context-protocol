@@ -4,10 +4,16 @@ import FoundationNetworking
 #endif
 import Vapor
 
+struct RepoFetchOutcome {
+    let extractPath: URL
+    /// Resolved full Git SHA when derivable from the archive layout or API.
+    let resolvedCommitSha: String?
+}
+
 struct RepoFetcher {
     let app: Application
 
-    func fetch(owner: String, repo: String, ref: String, token: String? = nil) async throws -> URL {
+    func fetch(owner: String, repo: String, ref: String, token: String? = nil) async throws -> RepoFetchOutcome {
         let urlString = "https://api.github.com/repos/\(owner)/\(repo)/tarball/\(ref)"
         guard let url = URL(string: urlString) else {
             throw RepoFetcherError.invalidURL
@@ -34,7 +40,6 @@ struct RepoFetcher {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             throw RepoFetcherError.fetchFailed(status: code)
         }
-
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -56,7 +61,44 @@ struct RepoFetcher {
             throw RepoFetcherError.extractFailed
         }
 
-        return extractPath
+        let repoRoot = try resolveRepositoryRoot(extractPath: extractPath)
+        let fromArchive = Self.parseCommitShaFromArchiveDirectoryName(repoRoot)
+        return RepoFetchOutcome(extractPath: extractPath, resolvedCommitSha: fromArchive)
+    }
+
+    /// `GET /repos/{owner}/{repo}/commits/{ref}` — used when the archive folder name does not include a full SHA.
+    func resolveCommitShaViaApi(owner: String, repo: String, ref: String, token: String?) async throws -> String? {
+        let encodedRef =
+            ref.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ref
+        let urlString = "https://api.github.com/repos/\(owner)/\(repo)/commits/\(encodedRef)"
+        let uri = URI(string: urlString)
+
+        let response = try await app.client.get(uri) { req in
+            if let token {
+                req.headers.bearerAuthorization = BearerAuthorization(token: token)
+            }
+            req.headers.add(name: "Accept", value: "application/vnd.github+json")
+            req.headers.add(name: "X-GitHub-Api-Version", value: "2022-11-28")
+            req.headers.add(name: "User-Agent", value: "MyContextProtocol/1")
+        }
+        guard response.status == .ok, let body = response.body else {
+            return nil
+        }
+        struct CommitDto: Decodable { let sha: String }
+        let data = Data(buffer: body)
+        return try? JSONDecoder().decode(CommitDto.self, from: data).sha
+    }
+
+    /// GitHub tarball extracts to a single directory named `{owner}-{repo}-{fullSha}`.
+    static func parseCommitShaFromArchiveDirectoryName(_ repoRoot: URL) -> String? {
+        let name = repoRoot.lastPathComponent
+        guard let regex = try? NSRegularExpression(pattern: "[a-f0-9]{40}$", options: .caseInsensitive) else {
+            return nil
+        }
+        let range = NSRange(name.startIndex..., in: name)
+        guard let m = regex.firstMatch(in: name, options: [], range: range),
+              let swiftRange = Range(m.range, in: name) else { return nil }
+        return String(name[swiftRange])
     }
 
     /// Picks the directory GitHub’s tarball uses as the **clone root** so paths don’t start with `{owner}-{repo}-{sha}/`.

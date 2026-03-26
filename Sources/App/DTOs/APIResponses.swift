@@ -10,6 +10,8 @@ struct ProjectResponse: Content {
     let created_at: String
     let custom_domain: String?
     let custom_domain_verified_at: String?
+    /// Release currently serving MCP traffic when set.
+    let active_release_id: String?
     /// Public MCP endpoint (`SAAS_MCP_URL_SCHEME`, host, `SAAS_MCP_PATH`). Nil if tenant base domain unset and no verified custom domain.
     let mcp_url: String?
 
@@ -19,6 +21,7 @@ struct ProjectResponse: Content {
         case created_at = "created_at"
         case custom_domain = "custom_domain"
         case custom_domain_verified_at = "custom_domain_verified_at"
+        case active_release_id = "active_release_id"
         case mcp_url = "mcp_url"
     }
 }
@@ -85,6 +88,8 @@ struct ReleaseResponse: Content {
     let status: String
     let created_at: String
     let error_summary: String?
+    let is_active: Bool
+    let skill_body_changes_count: Int
 
     enum CodingKeys: String, CodingKey {
         case id, status
@@ -92,6 +97,8 @@ struct ReleaseResponse: Content {
         case commit_sha = "commit_sha"
         case created_at = "created_at"
         case error_summary = "error_summary"
+        case is_active = "is_active"
+        case skill_body_changes_count = "skill_body_changes_count"
     }
 }
 
@@ -225,6 +232,9 @@ struct CompiledSkillResponse: Content {
     let avoid_when: [String]
     let failure_modes: [String]
     let invoke_first: Bool
+    /// Unified diff vs prior release when the SKILL body changed.
+    let body_diff_unified: String?
+    let body_diff_prior_release_id: String?
 
     enum CodingKeys: String, CodingKey {
         case id, path, name, summary
@@ -240,6 +250,8 @@ struct CompiledSkillResponse: Content {
         case failure_modes = "failure_modes"
         case invoke_first = "invoke_first"
         case status = "status"
+        case body_diff_unified = "body_diff_unified"
+        case body_diff_prior_release_id = "body_diff_prior_release_id"
     }
 }
 
@@ -275,6 +287,96 @@ struct ReleaseValidationResponse: Content {
     enum CodingKeys: String, CodingKey {
         case is_valid = "is_valid"
         case errors
+    }
+}
+
+// MARK: - Dashboard summaries
+
+struct DashboardMethodCount: Content {
+    let method: String
+    let count: Int
+}
+
+struct DashboardProjectTraffic: Content {
+    let project_id: String
+    let project_name: String
+    let request_count: Int
+
+    enum CodingKeys: String, CodingKey {
+        case project_id = "project_id"
+        case project_name = "project_name"
+        case request_count = "request_count"
+    }
+}
+
+struct AccountDashboardSummaryResponse: Content {
+    let total_requests: Int
+    let requests_last_24h: Int
+    let requests_last_7d: Int
+    /// HTTP status < 400; computed from `metrics_sample_size_last_7d` newest logs (see that field).
+    let success_rate_last_7d: Double?
+    let metrics_sample_size_last_7d: Int
+    let avg_latency_ms_last_7d: Double?
+    let p95_latency_ms_last_7d: Int?
+    let projects_total: Int
+    let projects_with_active_release: Int
+    let active_tools_total: Int
+    let active_resources_total: Int
+    let active_prompts_total: Int
+    let method_breakdown_last_7d: [DashboardMethodCount]
+    let top_projects_last_7d: [DashboardProjectTraffic]
+
+    enum CodingKeys: String, CodingKey {
+        case total_requests = "total_requests"
+        case requests_last_24h = "requests_last_24h"
+        case requests_last_7d = "requests_last_7d"
+        case success_rate_last_7d = "success_rate_last_7d"
+        case metrics_sample_size_last_7d = "metrics_sample_size_last_7d"
+        case avg_latency_ms_last_7d = "avg_latency_ms_last_7d"
+        case p95_latency_ms_last_7d = "p95_latency_ms_last_7d"
+        case projects_total = "projects_total"
+        case projects_with_active_release = "projects_with_active_release"
+        case active_tools_total = "active_tools_total"
+        case active_resources_total = "active_resources_total"
+        case active_prompts_total = "active_prompts_total"
+        case method_breakdown_last_7d = "method_breakdown_last_7d"
+        case top_projects_last_7d = "top_projects_last_7d"
+    }
+}
+
+struct ProjectDashboardSummaryResponse: Content {
+    let project_id: String
+    let total_requests: Int
+    let requests_last_24h: Int
+    let requests_last_7d: Int
+    let success_rate_last_7d: Double?
+    let metrics_sample_size_last_7d: Int
+    let avg_latency_ms_last_7d: Double?
+    let p95_latency_ms_last_7d: Int?
+    let method_breakdown_last_7d: [DashboardMethodCount]
+    let active_release_id: String?
+    let active_commit_sha: String?
+    let active_release_status: String?
+    let active_tools: Int
+    let active_resources: Int
+    let active_prompts: Int
+
+    enum CodingKeys: String, CodingKey {
+        case project_id = "project_id"
+        case total_requests = "total_requests"
+        case requests_last_24h = "requests_last_24h"
+        case requests_last_7d = "requests_last_7d"
+        case success_rate_last_7d = "success_rate_last_7d"
+        case metrics_sample_size_last_7d = "metrics_sample_size_last_7d"
+        case avg_latency_ms_last_7d = "avg_latency_ms_last_7d"
+        case p95_latency_ms_last_7d = "p95_latency_ms_last_7d"
+        case method_breakdown_last_7d = "method_breakdown_last_7d"
+        case active_release_id = "active_release_id"
+        case active_commit_sha = "active_commit_sha"
+        case active_release_status = "active_release_status"
+        case active_tools = "active_tools"
+        case active_resources = "active_resources"
+        case active_prompts = "active_prompts"
     }
 }
 

@@ -21,6 +21,7 @@ struct ProjectController {
             created_at: formatDate(project.createdAt),
             custom_domain: project.customDomain,
             custom_domain_verified_at: project.customDomainVerifiedAt.map { formatDate($0) },
+            active_release_id: project.activeReleaseId?.uuidString,
             mcp_url: McpUrlBuilder.publicMcpUrl(for: project)
         )
     }
@@ -134,7 +135,9 @@ struct ProjectController {
             use_when: h.useWhen ?? [],
             avoid_when: h.avoidWhen ?? [],
             failure_modes: h.failureModes ?? [],
-            invoke_first: h.invokeFirst ?? false
+            invoke_first: h.invokeFirst ?? false,
+            body_diff_unified: cs.bodyDiffUnified,
+            body_diff_prior_release_id: cs.bodyDiffPriorReleaseId?.uuidString
         )
     }
 
@@ -551,7 +554,11 @@ struct ProjectController {
     static func listReleases(req: Request) async throws -> [ReleaseResponse] {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
-        let releases = try await project.$releases.get(on: req.db)
+        let releases = try await Release.query(on: req.db)
+            .filter(\.$project.$id == project.id!)
+            .sort(\.$createdAt, .descending)
+            .all()
+        let activeId = project.activeReleaseId
         return releases.map { r in
             ReleaseResponse(
                 id: r.id!.uuidString,
@@ -559,7 +566,9 @@ struct ProjectController {
                 commit_sha: r.commitSha,
                 status: r.status,
                 created_at: formatDate(r.createdAt),
-                error_summary: r.errorSummary
+                error_summary: r.errorSummary,
+                is_active: activeId == r.id,
+                skill_body_changes_count: r.skillBodyChangesCount
             )
         }
     }
@@ -647,11 +656,10 @@ struct ProjectController {
               let compiledSkillId = req.parameters.get("compiledSkillId", as: UUID.self) else {
             throw Abort(.badRequest, reason: "Invalid release or compiled skill ID")
         }
-        let release = try await Release.query(on: req.db)
+        guard let release = try await Release.query(on: req.db)
             .filter(\.$id == releaseId)
             .filter(\.$project.$id == project.id!)
-            .first()
-        guard release != nil else {
+            .first() else {
             throw Abort(.notFound, reason: "Release not found")
         }
         guard let compiled = try await CompiledSkill.query(on: req.db)
@@ -674,6 +682,8 @@ struct ProjectController {
             let schema_json: String?
         }
         let body = try req.content.decode(UpdateBody.self)
+        let hadBodyDiff = compiled.bodyDiffUnified != nil
+        let skillBodyBefore = compiled.skillBody
         let exposureBefore = compiled.exposureType
         let summaryBefore = compiled.summary
         if let et = body.exposure_type, ["tool", "resource", "prompt"].contains(et) {
@@ -689,11 +699,20 @@ struct ProjectController {
             let t = summary.trimmingCharacters(in: .whitespacesAndNewlines)
             compiled.summary = t.isEmpty ? nil : t
         }
-        if let bodySkill = body.skill_body {
-            let t = bodySkill.trimmingCharacters(in: .whitespacesAndNewlines)
-            compiled.skillBody = t.isEmpty ? nil : bodySkill
+        if let rawBody = body.skill_body {
+            let t = rawBody.trimmingCharacters(in: .whitespacesAndNewlines)
+            compiled.skillBody = t.isEmpty ? nil : rawBody
+        }
+        let bodyTextChanged = body.skill_body != nil && compiled.skillBody != skillBodyBefore
+        if bodyTextChanged {
+            compiled.bodyDiffUnified = nil
+            compiled.bodyDiffPriorReleaseId = nil
         }
         try await compiled.save(on: req.db)
+        if bodyTextChanged, hadBodyDiff {
+            release.skillBodyChangesCount = max(0, release.skillBodyChangesCount - 1)
+            try await release.save(on: req.db)
+        }
         if let routing = body.routing {
             try await Self.applyRoutingPatch(compiledSkillId: compiled.id!, patch: routing, db: req.db)
         }
@@ -843,5 +862,229 @@ struct ProjectController {
             return ValidationErrorEntry(path: path, message: message)
         }
         return ReleaseValidationResponse(is_valid: isValid, errors: errors)
+    }
+
+    // MARK: - Dashboard metrics
+
+    private static let dashboardLogSampleLimit = 10_000
+
+    private static func countRequestLogs(
+        db: Database,
+        projectIds: [UUID],
+        since: Date?
+    ) async throws -> Int {
+        guard !projectIds.isEmpty else { return 0 }
+        var q = RequestLog.query(on: db).filter(\.$project.$id ~~ projectIds)
+        if let since {
+            q = q.filter(\.$timestamp >= since)
+        }
+        return try await q.count()
+    }
+
+    private static func dashboardLogSample(
+        db: Database,
+        projectIds: [UUID],
+        since: Date,
+        limit: Int
+    ) async throws -> [RequestLog] {
+        guard !projectIds.isEmpty else { return [] }
+        return try await RequestLog.query(on: db)
+            .filter(\.$project.$id ~~ projectIds)
+            .filter(\.$timestamp >= since)
+            .sort(\.$timestamp, .descending)
+            .limit(limit)
+            .all()
+    }
+
+    private static func successRateAndLatency(from logs: [RequestLog]) -> (
+        rate: Double?,
+        avg: Double?,
+        p95: Int?
+    ) {
+        guard !logs.isEmpty else { return (nil, nil, nil) }
+        let statuses = logs.compactMap { Int($0.status) }
+        guard !statuses.isEmpty else { return (nil, nil, nil) }
+        let ok = statuses.filter { $0 < 400 }.count
+        let rate = Double(ok) / Double(statuses.count)
+        let latencies = logs.compactMap(\.latencyMs).sorted()
+        let avg: Double? =
+            latencies.isEmpty
+                ? nil : Double(latencies.reduce(0, +)) / Double(latencies.count)
+        let p95: Int? = {
+            guard !latencies.isEmpty else { return nil }
+            let idx = min(latencies.count - 1, Int(floor(Double(latencies.count - 1) * 0.95)))
+            return latencies[idx]
+        }()
+        return (rate, avg, p95)
+    }
+
+    private static func methodBreakdown(from logs: [RequestLog]) -> [DashboardMethodCount] {
+        var tallies: [String: Int] = [:]
+        for log in logs {
+            tallies[log.method, default: 0] += 1
+        }
+        return tallies
+            .map { DashboardMethodCount(method: $0.key, count: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.method < rhs.method
+            }
+    }
+
+    private static func topProjectsByTraffic(
+        logs: [RequestLog],
+        projects: [Project],
+        limit: Int
+    ) -> [DashboardProjectTraffic] {
+        var byProject: [UUID: Int] = [:]
+        for log in logs {
+            let pid = log.$project.id
+            byProject[pid, default: 0] += 1
+        }
+        let names = Dictionary(uniqueKeysWithValues: projects.map { ($0.id!, $0.name) })
+        return byProject
+            .sorted { $0.value > $1.value }
+            .prefix(limit)
+            .compactMap { pair -> DashboardProjectTraffic? in
+                guard let name = names[pair.key] else { return nil }
+                return DashboardProjectTraffic(
+                    project_id: pair.key.uuidString,
+                    project_name: name,
+                    request_count: pair.value
+                )
+            }
+    }
+
+    private static func capabilityCountsForActiveRelease(
+        project: Project,
+        db: Database
+    ) async throws -> (tools: Int, resources: Int, prompts: Int) {
+        guard let rid = project.activeReleaseId else { return (0, 0, 0) }
+        let ids = try await MCPCatalogService.readyCompiledSkillIds(releaseId: rid, db: db)
+        guard !ids.isEmpty else { return (0, 0, 0) }
+        let tools = try await CapabilityDef.query(on: db)
+            .filter(\.$compiledSkill.$id ~~ ids)
+            .filter(\.$type == "tool")
+            .count()
+        let resources = try await CapabilityDef.query(on: db)
+            .filter(\.$compiledSkill.$id ~~ ids)
+            .filter(\.$type == "resource")
+            .count()
+        let prompts = try await CapabilityDef.query(on: db)
+            .filter(\.$compiledSkill.$id ~~ ids)
+            .filter(\.$type == "prompt")
+            .count()
+        return (tools, resources, prompts)
+    }
+
+    private static func sumCapabilityCounts(projects: [Project], db: Database) async throws -> (
+        tools: Int,
+        resources: Int,
+        prompts: Int
+    ) {
+        var tools = 0, resources = 0, prompts = 0
+        for p in projects {
+            let c = try await capabilityCountsForActiveRelease(project: p, db: db)
+            tools += c.tools
+            resources += c.resources
+            prompts += c.prompts
+        }
+        return (tools, resources, prompts)
+    }
+
+    /// Account-wide MCP traffic and catalog totals (for root dashboard).
+    static func accountDashboardSummary(req: Request) async throws -> AccountDashboardSummaryResponse {
+        let account = try requireAccount(req)
+        let projects = try await Project.query(on: req.db)
+            .filter(\.$account.$id == account.id!)
+            .all()
+        let ids = projects.map { $0.id! }
+        let now = Date()
+        let since24h = now.addingTimeInterval(-86400)
+        let since7d = now.addingTimeInterval(-7 * 86400)
+
+        let totalAllTime = try await countRequestLogs(db: req.db, projectIds: ids, since: nil)
+        let requests24h = try await countRequestLogs(db: req.db, projectIds: ids, since: since24h)
+        let requests7d = try await countRequestLogs(db: req.db, projectIds: ids, since: since7d)
+        let sample = try await dashboardLogSample(
+            db: req.db,
+            projectIds: ids,
+            since: since7d,
+            limit: Self.dashboardLogSampleLimit
+        )
+        let (rate, avg, p95) = successRateAndLatency(from: sample)
+        let withActive = projects.filter { $0.activeReleaseId != nil }.count
+        let caps = try await sumCapabilityCounts(projects: projects, db: req.db)
+        let methods = methodBreakdown(from: sample)
+        let top = topProjectsByTraffic(logs: sample, projects: projects, limit: 8)
+
+        return AccountDashboardSummaryResponse(
+            total_requests: totalAllTime,
+            requests_last_24h: requests24h,
+            requests_last_7d: requests7d,
+            success_rate_last_7d: rate,
+            metrics_sample_size_last_7d: sample.count,
+            avg_latency_ms_last_7d: avg,
+            p95_latency_ms_last_7d: p95,
+            projects_total: projects.count,
+            projects_with_active_release: withActive,
+            active_tools_total: caps.tools,
+            active_resources_total: caps.resources,
+            active_prompts_total: caps.prompts,
+            method_breakdown_last_7d: methods,
+            top_projects_last_7d: top
+        )
+    }
+
+    /// Per-project MCP traffic and active catalog counts (for project overview).
+    static func projectDashboardSummary(req: Request) async throws -> ProjectDashboardSummaryResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        guard let pid = project.id else {
+            throw Abort(.internalServerError, reason: "Invalid project")
+        }
+        let ids = [pid]
+        let now = Date()
+        let since24h = now.addingTimeInterval(-86400)
+        let since7d = now.addingTimeInterval(-7 * 86400)
+
+        let totalAllTime = try await countRequestLogs(db: req.db, projectIds: ids, since: nil)
+        let requests24h = try await countRequestLogs(db: req.db, projectIds: ids, since: since24h)
+        let requests7d = try await countRequestLogs(db: req.db, projectIds: ids, since: since7d)
+        let sample = try await dashboardLogSample(
+            db: req.db,
+            projectIds: ids,
+            since: since7d,
+            limit: Self.dashboardLogSampleLimit
+        )
+        let (rate, avg, p95) = successRateAndLatency(from: sample)
+        let caps = try await capabilityCountsForActiveRelease(project: project, db: req.db)
+        let methods = methodBreakdown(from: sample)
+
+        var activeSha: String?
+        var activeStatus: String?
+        if let rid = project.activeReleaseId,
+           let rel = try await Release.find(rid, on: req.db) {
+            activeSha = rel.commitSha
+            activeStatus = rel.status
+        }
+
+        return ProjectDashboardSummaryResponse(
+            project_id: pid.uuidString,
+            total_requests: totalAllTime,
+            requests_last_24h: requests24h,
+            requests_last_7d: requests7d,
+            success_rate_last_7d: rate,
+            metrics_sample_size_last_7d: sample.count,
+            avg_latency_ms_last_7d: avg,
+            p95_latency_ms_last_7d: p95,
+            method_breakdown_last_7d: methods,
+            active_release_id: project.activeReleaseId?.uuidString,
+            active_commit_sha: activeSha,
+            active_release_status: activeStatus,
+            active_tools: caps.tools,
+            active_resources: caps.resources,
+            active_prompts: caps.prompts
+        )
     }
 }

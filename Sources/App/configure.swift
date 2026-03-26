@@ -131,6 +131,7 @@ public func configure(_ app: Application) throws {
     app.migrations.add(AddRequestLogErrorMessage())
     app.migrations.add(AddNameToApiKeys())
     app.migrations.add(AddAgentHintsToRoutingRules())
+    app.migrations.add(AddCompiledSkillBodyDiffAndReleaseCounts())
 
     try app.autoMigrate().wait()
 
