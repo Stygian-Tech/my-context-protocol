@@ -22,6 +22,7 @@ import {
 import { CopyIcon } from "lucide-react";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { pluralEn } from "@/lib/pluralize";
 
 interface McpCatalogSectionProps {
   projectId: string;
@@ -119,7 +120,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
               : ""}
             {total === 0
               ? " · no capabilities in this release (check skill exposure types in compiled skills)."
-              : ` · ${total} capability(ies).`}
+              : ` · ${total} ${pluralEn(total, "capability", "capabilities")}.`}
           </p>
         )}
 

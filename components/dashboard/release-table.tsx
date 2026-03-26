@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { ReleaseStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { shortCommitLabel } from "@/lib/commit-display";
+import { pluralEn } from "@/lib/pluralize";
 
 interface ReleaseTableProps {
   projectId: string;
@@ -90,6 +91,8 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
     );
   }
 
+  const failedReleaseCount = releases.filter((r) => r.status === "failed").length;
+
   return (
     <div className="space-y-4">
       <Table>
@@ -114,7 +117,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                   <span>{shortCommitLabel(release.commit_sha)}</span>
                   {bodyChanges > 0 ? (
                     <Badge variant="outline" className="h-5 px-1.5 text-[0.65rem] font-normal">
-                      {bodyChanges} body Δ
+                      {bodyChanges} {pluralEn(bodyChanges, "body change", "body changes")}
                     </Badge>
                   ) : null}
                 </div>
@@ -207,13 +210,14 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
           })}
         </TableBody>
       </Table>
-      {releases.some((r) => r.status === "failed") && (
+      {failedReleaseCount > 0 ? (
         <p className="text-muted-foreground text-sm leading-relaxed">
-          Failed releases show a short error in the table — click{" "}
+          {failedReleaseCount.toLocaleString()} failed {pluralEn(failedReleaseCount, "release", "releases")}{" "}
+          {pluralEn(failedReleaseCount, "shows", "show")} a short error in the table — click{" "}
           <span className="font-medium text-foreground">View full report</span> to open the validation
           dialog.
         </p>
-      )}
+      ) : null}
       <ReleaseSkillMetadataDialog
         projectId={projectId}
         releaseId={metaReleaseId}

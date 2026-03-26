@@ -7,6 +7,7 @@ import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
 import { DashboardStatCard } from "@/components/dashboard/dashboard-stat-card";
+import { pluralEn } from "@/lib/pluralize";
 
 function formatPct(x: number | null | undefined): string {
   if (x == null) return "—";
@@ -46,10 +47,19 @@ export function AccountOverview() {
 
   if (!data) return null;
 
+  const logWord = pluralEn(data.metrics_sample_size_last_7d, "log", "logs");
   const successHint =
     data.requests_last_7d > data.metrics_sample_size_last_7d
-      ? `Based on newest ${data.metrics_sample_size_last_7d.toLocaleString()} logs in the last 7 days.`
+      ? `Based on newest ${data.metrics_sample_size_last_7d.toLocaleString()} ${logWord} in the last 7 days.`
       : "Based on MCP request logs (HTTP status < 400 = success).";
+
+  const publishedCapsHint = [
+    `${data.active_tools_total.toLocaleString()} ${pluralEn(data.active_tools_total, "tool", "tools")}`,
+    `${data.active_resources_total.toLocaleString()} ${pluralEn(data.active_resources_total, "resource", "resources")}`,
+    `${data.active_prompts_total.toLocaleString()} ${pluralEn(data.active_prompts_total, "prompt", "prompts")}`,
+  ].join(" · ");
+
+  const projectsHint = `${data.projects_with_active_release.toLocaleString()} ${pluralEn(data.projects_with_active_release, "project", "projects")} with an active release · ${data.projects_total.toLocaleString()} total ${pluralEn(data.projects_total, "project", "projects")}`;
 
   return (
     <div className="space-y-8">
@@ -90,12 +100,12 @@ export function AccountOverview() {
         <DashboardStatCard
           title="Projects"
           value={`${data.projects_with_active_release} / ${data.projects_total}`}
-          hint="With active release / total"
+          hint={projectsHint}
         />
         <DashboardStatCard
           title="Published capabilities"
           value={`${data.active_tools_total + data.active_resources_total + data.active_prompts_total}`}
-          hint={`${data.active_tools_total} tools · ${data.active_resources_total} resources · ${data.active_prompts_total} prompts (active releases)`}
+          hint={`${publishedCapsHint} (active releases)`}
         />
       </div>
 

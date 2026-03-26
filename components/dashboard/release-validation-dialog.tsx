@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { pluralEn } from "@/lib/pluralize";
 
 function ValidationMessageCell({ message }: { message: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -136,7 +137,8 @@ export function ReleaseValidationDialog({
                 {data.is_valid ? "valid" : "invalid"}
               </Badge>
               <span className="text-muted-foreground text-sm">
-                {data.errors.length} entr{data.errors.length === 1 ? "y" : "ies"}
+                {data.errors.length.toLocaleString()}{" "}
+                {pluralEn(data.errors.length, "entry", "entries")}
               </span>
             </div>
             {data.errors.length === 0 ? (

@@ -6,6 +6,7 @@ import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
 import { DashboardStatCard } from "@/components/dashboard/dashboard-stat-card";
+import { pluralEn } from "@/lib/pluralize";
 
 function shortSha(sha: string | null | undefined): string {
   if (!sha?.trim()) return "—";
@@ -51,10 +52,13 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
 
   if (!data) return null;
 
+  const logWord = pluralEn(data.metrics_sample_size_last_7d, "log", "logs");
   const successHint =
     data.requests_last_7d > data.metrics_sample_size_last_7d
-      ? `Success rate from newest ${data.metrics_sample_size_last_7d.toLocaleString()} logs (7d).`
+      ? `Success rate from newest ${data.metrics_sample_size_last_7d.toLocaleString()} ${logWord} (7d).`
       : "Based on MCP request logs (HTTP status < 400 = success).";
+
+  const activeCapsSummary = `${data.active_tools} ${pluralEn(data.active_tools, "tool", "tools")}, ${data.active_resources} ${pluralEn(data.active_resources, "resource", "resources")}, ${data.active_prompts} ${pluralEn(data.active_prompts, "prompt", "prompts")}`;
 
   return (
     <div className="space-y-4">
@@ -75,8 +79,7 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
         )}
         <span className="text-muted-foreground">
           {" "}
-          · {data.active_tools} tools, {data.active_resources} resources, {data.active_prompts}{" "}
-          prompts
+          · {activeCapsSummary}
         </span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
