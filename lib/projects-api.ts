@@ -12,6 +12,11 @@ import type {
   AccountDashboardSummary,
   ProjectDashboardSummary,
 } from "./types";
+import type {
+  AccountDashboardTimeseries,
+  DashboardTimeseriesRange,
+  ProjectDashboardTimeseries,
+} from "./dashboard-timeseries";
 
 export async function fetchProjects(): Promise<Project[]> {
   const response = await api.get<Project[] | { projects: Project[] }>("/projects");
@@ -32,6 +37,23 @@ export async function fetchProjectDashboardSummary(
 ): Promise<ProjectDashboardSummary> {
   return api.get<ProjectDashboardSummary>(
     `/projects/${projectId}/dashboard/summary`
+  );
+}
+
+export async function fetchAccountDashboardTimeseries(
+  range: DashboardTimeseriesRange = "24h"
+): Promise<AccountDashboardTimeseries> {
+  const q = encodeURIComponent(range);
+  return api.get<AccountDashboardTimeseries>(`/dashboard/timeseries?range=${q}`);
+}
+
+export async function fetchProjectDashboardTimeseries(
+  projectId: string,
+  range: DashboardTimeseriesRange = "24h"
+): Promise<ProjectDashboardTimeseries> {
+  const q = encodeURIComponent(range);
+  return api.get<ProjectDashboardTimeseries>(
+    `/projects/${projectId}/dashboard/timeseries?range=${q}`
   );
 }
 

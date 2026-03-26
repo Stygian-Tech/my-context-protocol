@@ -5,26 +5,8 @@ import Link from "next/link";
 import { fetchAccountDashboardSummary } from "@/lib/projects-api";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
-
-function StatCard({
-  title,
-  value,
-  hint,
-}: {
-  title: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className="rounded-lg border bg-card/50 p-4 shadow-xs">
-      <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-        {title}
-      </p>
-      <p className="mt-1 font-mono text-2xl font-semibold tabular-nums">{value}</p>
-      {hint ? <p className="text-muted-foreground mt-1 text-xs leading-snug">{hint}</p> : null}
-    </div>
-  );
-}
+import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
+import { DashboardStatCard } from "@/components/dashboard/dashboard-stat-card";
 
 function formatPct(x: number | null | undefined): string {
   if (x == null) return "—";
@@ -72,24 +54,24 @@ export function AccountOverview() {
   return (
     <div className="space-y-8">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
+        <DashboardStatCard
           title="Total MCP requests"
           value={data.total_requests.toLocaleString()}
         />
-        <StatCard
+        <DashboardStatCard
           title="Last 24 hours"
           value={data.requests_last_24h.toLocaleString()}
         />
-        <StatCard
+        <DashboardStatCard
           title="Last 7 days"
           value={data.requests_last_7d.toLocaleString()}
         />
-        <StatCard
+        <DashboardStatCard
           title="Success rate (7d)"
           value={formatPct(data.success_rate_last_7d)}
           hint={successHint}
         />
-        <StatCard
+        <DashboardStatCard
           title="Avg latency (7d)"
           value={
             data.avg_latency_ms_last_7d != null
@@ -97,7 +79,7 @@ export function AccountOverview() {
               : "—"
           }
         />
-        <StatCard
+        <DashboardStatCard
           title="p95 latency (7d)"
           value={
             data.p95_latency_ms_last_7d != null
@@ -105,12 +87,12 @@ export function AccountOverview() {
               : "—"
           }
         />
-        <StatCard
+        <DashboardStatCard
           title="Projects"
           value={`${data.projects_with_active_release} / ${data.projects_total}`}
           hint="With active release / total"
         />
-        <StatCard
+        <DashboardStatCard
           title="Published capabilities"
           value={`${data.active_tools_total + data.active_resources_total + data.active_prompts_total}`}
           hint={`${data.active_tools_total} tools · ${data.active_resources_total} resources · ${data.active_prompts_total} prompts (active releases)`}
@@ -159,6 +141,8 @@ export function AccountOverview() {
           </ul>
         </div>
       </div>
+
+      <MetricsTimeseriesCharts variant="account" />
     </div>
   );
 }
