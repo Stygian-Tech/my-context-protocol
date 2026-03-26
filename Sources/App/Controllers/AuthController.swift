@@ -17,7 +17,7 @@ private func userResponse(for account: Account, suggestedGithubAppInstall: Bool 
 }
 
 struct AuthController {
-    /// Space-separated GitHub OAuth scopes (authorize URL). Keep in sync with `Docs/GITHUB_OAUTH_AND_APP.md`.
+    /// Space-separated GitHub OAuth scopes (authorize URL). Keep in sync with Notion “GitHub OAuth scopes & GitHub App permissions” (spec child page).
     /// - `read:user` / `user:email`: profile for login.
     /// - `repo`: private repos, contents, and **repository webhooks** (REST `POST /repos/{owner}/{repo}/hooks`).
     /// - `read:org`: org membership / listing org-owned repos (still subject to org SAML SSO on GitHub’s side).
@@ -212,8 +212,7 @@ struct AuthController {
         req.session.data["accountId"] = account.id?.uuidString
         // Token-based handoff: 302 redirect with one-time token. Using 302 (not HTML meta refresh)
         // ensures a single navigation so the frontend middleware sees auth_token exactly once.
-        let handoffToken = UUID().uuidString
-        AuthTokenStore.put(handoffToken, accountId: account.id!.uuidString)
+        let handoffToken = try await OAuthHandoffService.issue(accountId: account.id!, on: req.db)
         let successUrl = returnTo + (returnTo.contains("?") ? "&" : "?") + "auth_token=" + handoffToken
         return req.redirect(to: successUrl, redirectType: .normal)
     }
@@ -254,17 +253,21 @@ struct AuthController {
         guard let token = req.query[String.self, at: "token"], !token.isEmpty else {
             throw Abort(.badRequest, reason: "Missing token")
         }
-        guard let accountId = AuthTokenStore.consume(token) else {
+        guard let accountUUID = try await OAuthHandoffService.consume(token, on: req.db) else {
             throw Abort(.unauthorized, reason: "Invalid or expired token")
         }
-        guard let account = try await Account.find(UUID(uuidString: accountId), on: req.db) else {
+        let accountId = accountUUID.uuidString
+        guard let account = try await Account.find(accountUUID, on: req.db) else {
             throw Abort(.unauthorized, reason: "Account not found")
         }
         req.session.data["accountId"] = accountId
 
-        if let redirectTo = req.query[String.self, at: "redirect"], !redirectTo.isEmpty,
-           let url = URL(string: redirectTo), url.scheme == "http" || url.scheme == "https" {
-            return req.redirect(to: redirectTo, redirectType: .normal)
+        if let redirectRaw = req.query[String.self, at: "redirect"], !redirectRaw.isEmpty {
+            let path = try AppFrontendURL.validateRelativeBrowserPath(redirectRaw, label: "redirect")
+            guard let base = AppFrontendURL.normalizedBase() else {
+                throw Abort(.internalServerError, reason: "FRONTEND_URL or CORS_ORIGIN must be set for redirect")
+            }
+            return req.redirect(to: base + path, redirectType: .normal)
         }
 
         let suggest = try await Self.suggestedGithubAppMe(account: account, db: req.db)
@@ -318,5 +321,59 @@ struct UserResponse: Content {
         case suggested_github_app_install = "suggested_github_app_install"
         case app_env = "app_env"
         case non_production_bypasses = "non_production_bypasses"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(email, forKey: .email)
+        try c.encodeIfPresent(login, forKey: .login)
+        try c.encodeIfPresent(avatar_url, forKey: .avatar_url)
+        try c.encode(plan, forKey: .plan)
+        try c.encode(can_manage_subscription, forKey: .can_manage_subscription)
+        try c.encode(suggested_github_app_install, forKey: .suggested_github_app_install)
+        try c.encode(app_env, forKey: .app_env)
+        if AppEnvironment.exposeUserDebugFields {
+            try c.encode(internal_pro_bypass, forKey: .internal_pro_bypass)
+            try c.encode(non_production_bypasses, forKey: .non_production_bypasses)
+        }
+    }
+
+    init(
+        id: String,
+        email: String?,
+        login: String?,
+        avatar_url: String?,
+        plan: String,
+        internal_pro_bypass: Bool,
+        can_manage_subscription: Bool,
+        suggested_github_app_install: Bool,
+        app_env: String,
+        non_production_bypasses: Bool
+    ) {
+        self.id = id
+        self.email = email
+        self.login = login
+        self.avatar_url = avatar_url
+        self.plan = plan
+        self.internal_pro_bypass = internal_pro_bypass
+        self.can_manage_subscription = can_manage_subscription
+        self.suggested_github_app_install = suggested_github_app_install
+        self.app_env = app_env
+        self.non_production_bypasses = non_production_bypasses
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        email = try c.decodeIfPresent(String.self, forKey: .email)
+        login = try c.decodeIfPresent(String.self, forKey: .login)
+        avatar_url = try c.decodeIfPresent(String.self, forKey: .avatar_url)
+        plan = try c.decode(String.self, forKey: .plan)
+        internal_pro_bypass = try c.decodeIfPresent(Bool.self, forKey: .internal_pro_bypass) ?? false
+        can_manage_subscription = try c.decodeIfPresent(Bool.self, forKey: .can_manage_subscription) ?? false
+        suggested_github_app_install = try c.decodeIfPresent(Bool.self, forKey: .suggested_github_app_install) ?? false
+        app_env = try c.decodeIfPresent(String.self, forKey: .app_env) ?? "prod"
+        non_production_bypasses = try c.decodeIfPresent(Bool.self, forKey: .non_production_bypasses) ?? false
     }
 }

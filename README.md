@@ -94,7 +94,7 @@ Sources/MyContextProtocol/
 
 ## CI/CD
 
-- Backend GitHub Actions + Depot: see [`Docs/CI_CD.md`](Docs/CI_CD.md).
+- Backend GitHub Actions + Depot: see [CI/CD (Notion)](https://www.notion.so/32ff6c1638ed81ad8b66dd9c6f66faa2).
 
 ## License
 
