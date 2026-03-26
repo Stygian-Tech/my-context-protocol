@@ -380,6 +380,54 @@ struct ProjectDashboardSummaryResponse: Content {
     }
 }
 
+// MARK: - Dashboard timeseries
+
+struct DashboardTimeseriesBucketDTO: Content {
+    let label: String
+    let start: String
+    let end: String
+    let request_count: Int
+    let success_count: Int
+    let avg_latency_ms: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case label, start, end
+        case request_count = "request_count"
+        case success_count = "success_count"
+        case avg_latency_ms = "avg_latency_ms"
+    }
+}
+
+struct AccountDashboardTimeseriesResponse: Content {
+    let range_key: String
+    let range_start: String
+    let range_end: String
+    let buckets: [DashboardTimeseriesBucketDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case range_key = "range_key"
+        case range_start = "range_start"
+        case range_end = "range_end"
+        case buckets
+    }
+}
+
+struct ProjectDashboardTimeseriesResponse: Content {
+    let project_id: String
+    let range_key: String
+    let range_start: String
+    let range_end: String
+    let buckets: [DashboardTimeseriesBucketDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case project_id = "project_id"
+        case range_key = "range_key"
+        case range_start = "range_start"
+        case range_end = "range_end"
+        case buckets
+    }
+}
+
 struct ValidationErrorEntry: Content {
     let path: String
     let message: String

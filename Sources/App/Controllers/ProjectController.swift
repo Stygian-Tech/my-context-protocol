@@ -1087,4 +1087,87 @@ struct ProjectController {
             active_prompts: caps.prompts
         )
     }
+
+    // MARK: - Dashboard timeseries
+
+    static func accountDashboardTimeseries(req: Request) async throws -> AccountDashboardTimeseriesResponse {
+        let account = try requireAccount(req)
+        let rangeKey = try DashboardTimeseriesService.normalizeRangeKey(req.query[String.self, at: "range"])
+        if DashboardTimeseriesService.rangeRequiresPro(rangeKey), !account.hasProEntitlements {
+            throw Abort(
+                .paymentRequired,
+                reason: "Upgrade to Pro for dashboard ranges longer than 7 days."
+            )
+        }
+        let projects = try await Project.query(on: req.db)
+            .filter(\.$account.$id == account.id!)
+            .all()
+        let ids = projects.map(\.id!)
+        let firstLog: RequestLog? =
+            ids.isEmpty
+                ? nil
+                : try await RequestLog.query(on: req.db)
+                .filter(\.$project.$id ~~ ids)
+                .sort(\.$timestamp, .ascending)
+                .first()
+        let earliest = firstLog?.timestamp
+        let now = Date()
+        let buckets = try DashboardTimeseriesService.buildBucketDefs(
+            rangeKey: rangeKey,
+            now: now,
+            earliestLog: earliest
+        )
+        let series = try await DashboardTimeseriesService.aggregate(
+            db: req.db,
+            projectIds: ids,
+            buckets: buckets,
+            rangeEndInclusive: now
+        )
+        let rangeStart = buckets.first?.start ?? now
+        return AccountDashboardTimeseriesResponse(
+            range_key: rangeKey,
+            range_start: formatDate(rangeStart),
+            range_end: formatDate(now),
+            buckets: series
+        )
+    }
+
+    static func projectDashboardTimeseries(req: Request) async throws -> ProjectDashboardTimeseriesResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        let rangeKey = try DashboardTimeseriesService.normalizeRangeKey(req.query[String.self, at: "range"])
+        if DashboardTimeseriesService.rangeRequiresPro(rangeKey), !account.hasProEntitlements {
+            throw Abort(
+                .paymentRequired,
+                reason: "Upgrade to Pro for dashboard ranges longer than 7 days."
+            )
+        }
+        guard let pid = project.id else {
+            throw Abort(.internalServerError, reason: "Invalid project")
+        }
+        let firstLog = try await RequestLog.query(on: req.db)
+            .filter(\.$project.$id == pid)
+            .sort(\.$timestamp, .ascending)
+            .first()
+        let now = Date()
+        let buckets = try DashboardTimeseriesService.buildBucketDefs(
+            rangeKey: rangeKey,
+            now: now,
+            earliestLog: firstLog?.timestamp
+        )
+        let series = try await DashboardTimeseriesService.aggregate(
+            db: req.db,
+            projectIds: [pid],
+            buckets: buckets,
+            rangeEndInclusive: now
+        )
+        let rangeStart = buckets.first?.start ?? now
+        return ProjectDashboardTimeseriesResponse(
+            project_id: pid.uuidString,
+            range_key: rangeKey,
+            range_start: formatDate(rangeStart),
+            range_end: formatDate(now),
+            buckets: series
+        )
+    }
 }

@@ -32,6 +32,9 @@ func routes(_ app: Application) throws {
     protected.get("dashboard", "summary") { req in
         try await ProjectController.accountDashboardSummary(req: req)
     }
+    protected.get("dashboard", "timeseries") { req in
+        try await ProjectController.accountDashboardTimeseries(req: req)
+    }
     protected.get("projects") { req in
         try await ProjectController.list(req: req)
     }
@@ -40,6 +43,9 @@ func routes(_ app: Application) throws {
     }
     protected.get("projects", ":id", "dashboard", "summary") { req in
         try await ProjectController.projectDashboardSummary(req: req)
+    }
+    protected.get("projects", ":id", "dashboard", "timeseries") { req in
+        try await ProjectController.projectDashboardTimeseries(req: req)
     }
     protected.get("projects", ":id") { req in
         try await ProjectController.get(req: req)

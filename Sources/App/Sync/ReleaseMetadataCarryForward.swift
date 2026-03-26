@@ -21,7 +21,7 @@ enum ReleaseMetadataCarryForward {
         var oldByKey: [String: CompiledSkill] = [:]
         oldByKey.reserveCapacity(oldSkills.count)
         for cs in oldSkills {
-            oldByKey[key(cs)] = cs
+            oldByKey[matchKey(cs)] = cs
         }
 
         let newSkills = try await CompiledSkill.query(on: db)
@@ -33,7 +33,7 @@ enum ReleaseMetadataCarryForward {
         var changeCount = 0
 
         for newCS in newSkills {
-            guard let oldCS = oldByKey[key(newCS)] else { continue }
+            guard let oldCS = oldByKey[matchKey(newCS)] else { continue }
 
             let oldBody = oldCS.skillBody ?? ""
             let newBody = newCS.skillBody ?? ""
@@ -47,6 +47,8 @@ enum ReleaseMetadataCarryForward {
             newCS.riskLevel = oldCS.riskLevel
             newCS.status = oldCS.status
             newCS.repoSpecific = oldCS.repoSpecific
+            /// Preserve dashboard / MCP exposure from the prior release even when the compiler inferred a different type.
+            newCS.exposureType = oldCS.exposureType
 
             try await newCS.save(on: db)
 
@@ -78,7 +80,8 @@ enum ReleaseMetadataCarryForward {
         return changeCount
     }
 
-    private static func key(_ cs: CompiledSkill) -> String {
-        "\(cs.path)\u{0}\(cs.name)\u{0}\(cs.exposureType)"
+    /// Match by repo path + skill name only so carry-forward still applies when inference changes `exposure_type`.
+    private static func matchKey(_ cs: CompiledSkill) -> String {
+        "\(cs.path)\u{0}\(cs.name)"
     }
 }
