@@ -4,7 +4,7 @@ import Vapor
 // MARK: - JSON-RPC 2.0 id (number, string, or null)
 
 /// JSON-RPC 2.0 `id` — clients may send an integer, string, or null; decoding must accept all of them.
-enum JSONRPCId: Content {
+enum JSONRPCId: Content, Equatable {
     case int(Int)
     case string(String)
     case null

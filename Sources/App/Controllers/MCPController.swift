@@ -182,7 +182,14 @@ struct MCPController {
         } catch let ToolHandlerError.unknownTool(name: unknown) {
             return try await serveRpcError(id: id, code: -32601, message: "Unknown tool: \(unknown)", req: req)
         } catch {
-            return try await serveRpcError(id: id, code: -32603, message: error.localizedDescription, req: req)
+            let message: String
+            if AppEnvironment.deployKind() == .prod {
+                message = "Internal error"
+                req.logger.error("MCP tools/call failed: \(String(reflecting: error))")
+            } else {
+                message = error.localizedDescription
+            }
+            return try await serveRpcError(id: id, code: -32603, message: message, req: req)
         }
     }
 

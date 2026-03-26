@@ -49,4 +49,42 @@ enum AppEnvironment {
     static var appEnvString: String {
         deployKind().rawValue
     }
+
+    /// When true, `internal_pro_bypass` / `non_production_bypasses` are included in `/auth/me`.
+    static var exposeUserDebugFields: Bool {
+        deployKind() != .prod
+    }
+
+    /// Production defaults to requiring subdomain or verified custom domain for MCP ingress.
+    static var requireMcpTenantHostBinding: Bool {
+        switch deployKind() {
+        case .prod:
+            return true
+        case .local, .dev:
+            if let raw = Environment.get("REQUIRE_MCP_TENANT_HOST")?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                return raw == "1" || raw == "true" || raw == "yes"
+            }
+            return false
+        }
+    }
+
+    /// Opt-in memory sessions (e.g. tests). Default is database-backed sessions.
+    static var useMemorySessions: Bool {
+        envFlag("USE_MEMORY_SESSIONS")
+    }
+
+    static var rateLimitMcpEnabled: Bool {
+        switch deployKind() {
+        case .prod:
+            return true
+        case .local, .dev:
+            return envFlag("RATE_LIMIT_MCP_ENABLED")
+        }
+    }
+
+    private static func envFlag(_ key: String) -> Bool {
+        guard let raw = Environment.get(key) else { return false }
+        let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return v == "1" || v == "true" || v == "yes"
+    }
 }

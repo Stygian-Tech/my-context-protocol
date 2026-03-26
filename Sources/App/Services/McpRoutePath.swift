@@ -13,21 +13,25 @@ enum McpRoutePath {
     }
 
     /// Registers `POST` for the configured MCP path on `builder` (already grouped with MCP middleware).
-    static func registerPost(on builder: RoutesBuilder, handler: @escaping @Sendable (Request) async throws -> Response) {
+    static func registerPost(
+        on builder: RoutesBuilder,
+        body: HTTPBodyStreamStrategy = .collect(maxSize: ByteCount(value: 2 * 1024 * 1024)),
+        handler: @escaping @Sendable (Request) async throws -> Response
+    ) {
         let segments = pathComponents()
         guard !segments.isEmpty else {
-            builder.post("mcp", use: handler)
+            builder.on(.POST, "mcp", body: body, use: handler)
             return
         }
         let path: [PathComponent] = segments.map { PathComponent(stringLiteral: $0) }
         if path.count == 1 {
-            builder.post(path[0], use: handler)
+            builder.on(.POST, path[0], body: body, use: handler)
             return
         }
         var group: RoutesBuilder = builder
         for i in 0 ..< (path.count - 1) {
             group = group.grouped(path[i])
         }
-        group.post(path[path.count - 1], use: handler)
+        group.on(.POST, path[path.count - 1], body: body, use: handler)
     }
 }

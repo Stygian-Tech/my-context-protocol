@@ -40,6 +40,10 @@ struct RepoFetcher {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             throw RepoFetcherError.fetchFailed(status: code)
         }
+        let maxBytes = Self.maxTarballBytes()
+        guard data.count <= maxBytes else {
+            throw RepoFetcherError.tarballTooLarge(maxBytes: maxBytes)
+        }
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -125,6 +129,8 @@ struct RepoFetcher {
 
     func findSkillFiles(in directory: URL) -> [URL] {
         var results: [URL] = []
+        let root = directory.standardizedFileURL
+        let maxSkills = Environment.get("REPO_MAX_SKILL_FILES").flatMap(Int.init) ?? 5000
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey],
@@ -132,15 +138,30 @@ struct RepoFetcher {
         ) else { return results }
 
         for case let fileURL as URL in enumerator {
+            if results.count >= maxSkills {
+                break
+            }
             guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
                   resourceValues.isRegularFile == true
             else { continue }
 
             if fileURL.lastPathComponent == "SKILL.md" {
+                let std = fileURL.standardizedFileURL
+                let rp = root.path
+                let fp = std.path
+                guard fp == rp || fp.hasPrefix(rp + "/") else {
+                    continue
+                }
                 results.append(fileURL)
             }
         }
         return results
+    }
+
+    /// Default 150 MiB cap on downloaded tarball size (ZIP-bomb / memory abuse mitigation).
+    private static func maxTarballBytes() -> Int {
+        let mb = Environment.get("REPO_TARBALL_MAX_MB").flatMap(Int.init) ?? 150
+        return max(10, mb) * 1024 * 1024
     }
 }
 
@@ -148,4 +169,5 @@ enum RepoFetcherError: Error {
     case invalidURL
     case fetchFailed(status: Int)
     case extractFailed
+    case tarballTooLarge(maxBytes: Int)
 }

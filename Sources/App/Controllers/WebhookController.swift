@@ -1,4 +1,3 @@
-import Crypto
 import Fluent
 import Vapor
 
@@ -51,16 +50,15 @@ struct WebhookController {
             return Response(status: .ok, body: .init(string: "{\"ok\":true}"))
         }
 
-        if let secret = connection.webhookSecret, !secret.isEmpty {
-            guard let signature = req.headers.first(name: "X-Hub-Signature-256") else {
-                return Response(status: .badRequest, body: .init(string: "Missing signature"))
-            }
-            let key = SymmetricKey(data: Data(secret.utf8))
-            let mac = HMAC<SHA256>.authenticationCode(for: bodyData, using: key)
-            let expected = "sha256=" + mac.map { String(format: "%02x", $0) }.joined()
-            guard signature == expected else {
-                return Response(status: .unauthorized, body: .init(string: "Invalid signature"))
-            }
+        guard let secret = connection.webhookSecret, !secret.isEmpty else {
+            req.logger.warning("GitHub webhook rejected: missing webhook secret for \(owner)/\(repo)")
+            return Response(status: .unauthorized, body: .init(string: "Webhook secret not configured for this repository"))
+        }
+        guard let signature = req.headers.first(name: "X-Hub-Signature-256") else {
+            return Response(status: .badRequest, body: .init(string: "Missing signature"))
+        }
+        guard GitHubWebhookHMAC.isValid(signatureHeader: signature, body: bodyData, secret: secret) else {
+            return Response(status: .unauthorized, body: .init(string: "Invalid signature"))
         }
 
         /// Auto-sync only when the push updates the repository default branch (GitHub `default_branch` / HEAD).

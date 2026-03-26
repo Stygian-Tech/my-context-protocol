@@ -1,4 +1,3 @@
-import Crypto
 import Fluent
 import Vapor
 
@@ -14,15 +13,11 @@ enum GitHubAppWebhookController {
         }
         let bodyData = Data(buffer: rawBody)
 
-        if let signature = req.headers.first(name: "X-Hub-Signature-256") {
-            let key = SymmetricKey(data: Data(secret.utf8))
-            let mac = HMAC<SHA256>.authenticationCode(for: bodyData, using: key)
-            let expected = "sha256=" + mac.map { String(format: "%02x", $0) }.joined()
-            guard signature == expected else {
-                return Response(status: .unauthorized, body: .init(string: "Invalid signature"))
-            }
-        } else {
+        guard let signature = req.headers.first(name: "X-Hub-Signature-256") else {
             return Response(status: .unauthorized, body: .init(string: "Missing signature"))
+        }
+        guard GitHubWebhookHMAC.isValid(signatureHeader: signature, body: bodyData, secret: secret) else {
+            return Response(status: .unauthorized, body: .init(string: "Invalid signature"))
         }
 
         let event = req.headers.first(name: "X-GitHub-Event") ?? ""

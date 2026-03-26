@@ -21,8 +21,8 @@ enum AppFrontendURL {
         return base + "/"
     }
 
-    /// Distinct allowed origins (e.g. FRONTEND and CORS may differ).
-    private static func allowedOriginBases() -> [String] {
+    /// Distinct allowed frontend base URLs without trailing slash (e.g. FRONTEND and CORS may differ).
+    static func allowedOriginBases() -> [String] {
         var bases: [String] = []
         for key in ["FRONTEND_URL", "CORS_ORIGIN"] {
             if let raw = Environment.get(key) {
@@ -49,8 +49,13 @@ enum AppFrontendURL {
         }
         let allowed = allowedOriginBases()
         if allowed.isEmpty {
-            // Local dev: no FRONTEND_URL / CORS_ORIGIN — allow any http(s) URL.
-            return trimmed
+            if AppEnvironment.deployKind() == .local {
+                return trimmed
+            }
+            throw Abort(
+                .badRequest,
+                reason: "FRONTEND_URL or CORS_ORIGIN must be configured for return_to validation"
+            )
         }
         for origin in allowed {
             if trimmed == origin || trimmed.hasPrefix(origin + "/") || trimmed.hasPrefix(origin + "?") {
@@ -67,6 +72,33 @@ enum AppFrontendURL {
             return nil
         }
         return try validateReturnTo(s, for: req)
+    }
+
+    /// Rejects open redirects: path only, must start with `/`, not `//`, no control characters.
+    static func validateRelativeBrowserPath(_ raw: String, label: String = "redirect") throws -> String {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.hasPrefix("/") else {
+            throw Abort(.badRequest, reason: "\(label) must be a relative path starting with /")
+        }
+        guard !t.hasPrefix("//") else {
+            throw Abort(.badRequest, reason: "Invalid \(label)")
+        }
+        if t.contains("\r") || t.contains("\n") || t.contains("\0") {
+            throw Abort(.badRequest, reason: "Invalid \(label)")
+        }
+        guard t.count <= 4096 else {
+            throw Abort(.badRequest, reason: "\(label) is too long")
+        }
+        return t
+    }
+
+    /// Stripe checkout success/cancel paths (relative only).
+    static func validateCheckoutRelativePath(_ raw: String?, default defaultPath: String) throws -> String {
+        let trimmedDefault = defaultPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let r = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !r.isEmpty else {
+            return try validateRelativeBrowserPath(trimmedDefault, label: "billing_path")
+        }
+        return try validateRelativeBrowserPath(r, label: "billing_path")
     }
 
     /// `/login?error=...` on the configured frontend, for OAuth failures when `return_to` is unknown.

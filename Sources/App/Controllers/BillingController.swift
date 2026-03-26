@@ -45,10 +45,10 @@ struct BillingController {
                 : "STRIPE_PRICE_PRO_MONTHLY or STRIPE_PRICE_PRO is not configured"
             throw Abort(.serviceUnavailable, reason: hint)
         }
-        let successPath = body?.success_path ?? "/?billing=success"
-        let cancelPath = body?.cancel_path ?? "/?billing=cancel"
-        let successURL = "\(base)\(successPath.hasPrefix("/") ? successPath : "/" + successPath)"
-        let cancelURL = "\(base)\(cancelPath.hasPrefix("/") ? cancelPath : "/" + cancelPath)"
+        let successPath = try AppFrontendURL.validateCheckoutRelativePath(body?.success_path, default: "/?billing=success")
+        let cancelPath = try AppFrontendURL.validateCheckoutRelativePath(body?.cancel_path, default: "/?billing=cancel")
+        let successURL = "\(base)\(successPath)"
+        let cancelURL = "\(base)\(cancelPath)"
 
         let customerId = try await StripeClient.createCustomer(account: account, client: req.client, req: req)
         let url = try await StripeClient.createCheckoutSession(

@@ -108,17 +108,22 @@ func routes(_ app: Application) throws {
         try await GitHubAppController.installRedirect(req: req)
     }
 
-    app.post("webhooks", "github") { req in
+    app.on(.POST, ["webhooks", "github"], body: .collect(maxSize: ByteCount(value: 512 * 1024))) { req in
         try await WebhookController.github(req: req)
     }
-    app.post("webhooks", "github-app") { req in
+    app.on(.POST, ["webhooks", "github-app"], body: .collect(maxSize: ByteCount(value: 512 * 1024))) { req in
         try await GitHubAppWebhookController.handle(req: req)
     }
-    app.post("webhooks", "stripe") { req in
+    app.on(.POST, ["webhooks", "stripe"], body: .collect(maxSize: ByteCount(value: 1024 * 1024))) { req in
         try await StripeWebhookController.handle(req: req)
     }
 
-    let mcpRoutes = app.grouped(TenantHostMiddleware(), ApiKeyMiddleware())
+    let mcpRoutes = app.grouped(
+        TenantHostMiddleware(),
+        McpTenantHostRequiredMiddleware(),
+        McpIpRateLimitMiddleware(),
+        ApiKeyMiddleware()
+    )
     McpRoutePath.registerPost(on: mcpRoutes) { req in
         try await MCPController.handle(req: req)
     }

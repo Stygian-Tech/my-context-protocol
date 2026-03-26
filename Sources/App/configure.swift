@@ -19,10 +19,14 @@ public func configure(_ app: Application) throws {
         "APP_ENV=\(deploy.rawValue) non_production_bypasses=\(bypass) STRICT_PRO_GATING=\(strict)"
     )
 
+    app.middleware.use(SecurityHeadersMiddleware(), at: .beginning)
+    app.middleware.use(BrowserOriginValidationMiddleware(), at: .beginning)
+
     let corsOrigin = Environment.get("FRONTEND_URL") ?? Environment.get("CORS_ORIGIN") ?? "http://localhost:3000"
-    // Use .originBased in dev to echo the request's Origin—avoids mismatch (localhost vs 127.0.0.1)
-    // and ensures CORS headers are correct for credentials: include.
-    let allowedOrigin: CORSMiddleware.AllowOriginSetting = corsOrigin.contains("localhost")
+    // Echo Sec-Fetch / localhost origins only in local dev; staging/prod must use an explicit allow-list.
+    // Non-prod + localhost in config: echo request Origin (localhost vs 127.0.0.1). Prod uses fixed allow-list.
+    let allowedOrigin: CORSMiddleware.AllowOriginSetting =
+        (AppEnvironment.isNonProduction && corsOrigin.contains("localhost"))
         ? .originBased
         : .custom(corsOrigin)
     let corsConfig = CORSMiddleware.Configuration(
@@ -34,9 +38,13 @@ public func configure(_ app: Application) throws {
     app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
 
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
-    app.routes.defaultMaxBodySize = "10mb"
+    app.routes.defaultMaxBodySize = "5mb"
 
-    app.sessions.use(.memory)
+    if AppEnvironment.useMemorySessions {
+        app.sessions.use(.memory)
+    } else {
+        app.sessions.use { _ in FluentSessionDriver() }
+    }
     // Allow session cookie over HTTP on localhost (isSecure: false) so OAuth redirect flow works
     let isLocalhost = corsOrigin.contains("localhost")
     // When the browser hits both the app host (e.g. testing.app.com) and the API host (e.g. api.testing.app.com),
@@ -133,6 +141,8 @@ public func configure(_ app: Application) throws {
     app.migrations.add(AddAgentHintsToRoutingRules())
     app.migrations.add(AddCompiledSkillBodyDiffAndReleaseCounts())
     app.migrations.add(NormalizeRepoDefaultBranchToMain())
+    app.migrations.add(CreateAppSessions())
+    app.migrations.add(CreateOAuthHandoffTokens())
 
     try app.autoMigrate().wait()
 
