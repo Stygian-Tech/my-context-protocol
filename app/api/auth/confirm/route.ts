@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { forwardBackendResponseCookies } from "@/lib/forward-backend-response-cookies";
 import { assertSafeRelativeRedirectPath } from "@/lib/safe-redirect";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -34,23 +35,9 @@ export async function GET(request: NextRequest) {
 
   if (isBackendRedirect && location) {
     const requestUrl = new URL(request.url);
-    const isInsecureContext = requestUrl.protocol === "http:";
     // Use 302 to the browser even when Vapor returns 303 — avoids rare clients mishandling Set-Cookie on 303.
     const response = NextResponse.redirect(location, 302);
-    const setCookies = (res.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? res.headers.get("set-cookie");
-    if (setCookies) {
-      const cookies = Array.isArray(setCookies) ? setCookies : [setCookies];
-      cookies.forEach((c) => {
-        let rewritten = c.replace(/;\s*Domain=[^;]+/gi, "").replace(/;\s*$/g, "");
-        if (isInsecureContext) {
-          rewritten = rewritten.replace(/;\s*Secure\b/gi, "");
-        }
-        if (!rewritten.includes("SameSite=")) {
-          rewritten += "; SameSite=Lax";
-        }
-        response.headers.append("Set-Cookie", rewritten);
-      });
-    }
+    forwardBackendResponseCookies(res, response, requestUrl);
     return response;
   }
 
