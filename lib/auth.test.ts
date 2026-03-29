@@ -16,6 +16,7 @@ vi.mock("./api", () => ({
   },
 }));
 
+import { stubNextPublicAuthDefaultsUnset } from "@/lib/testing/stub-public-env";
 import { ApiError } from "./api";
 import { confirmAuth, getCurrentUser, getGitHubLoginUrl, logout } from "./auth";
 
@@ -46,8 +47,7 @@ describe("getGitHubLoginUrl (server / no window)", () => {
   });
 
   it("defaults to localhost when env vars are absent", () => {
-    vi.stubEnv("NEXT_PUBLIC_API_URL", undefined);
-    vi.stubEnv("NEXT_PUBLIC_APP_URL", undefined);
+    stubNextPublicAuthDefaultsUnset();
     const u = getGitHubLoginUrl("/");
     expect(u.startsWith("http://localhost:8080/auth/github?return_to=")).toBe(true);
     expect(u).toContain(encodeURIComponent("http://localhost:3000/"));
@@ -125,7 +125,7 @@ describe("auth api wrappers", () => {
   });
 
   it("getCurrentUser returns null on 401", async () => {
-    get.mockRejectedValueOnce(new ApiError(401, "nope"));
+    get.mockRejectedValueOnce(new ApiError("nope", 401));
     expect(await getCurrentUser()).toBeNull();
   });
 

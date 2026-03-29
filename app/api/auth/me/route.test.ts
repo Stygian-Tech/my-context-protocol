@@ -1,8 +1,9 @@
+import { stubNextPublicApiUrlUnset } from "@/lib/testing/stub-public-env";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 describe("GET /api/auth/me", () => {
-  const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>();
+  const fetchMock = vi.fn<typeof fetch>();
 
   beforeEach(() => {
     vi.resetModules();
@@ -53,7 +54,7 @@ describe("GET /api/auth/me", () => {
   });
 
   it("defaults to localhost:8080 when NEXT_PUBLIC_API_URL is unset", async () => {
-    vi.stubEnv("NEXT_PUBLIC_API_URL", undefined);
+    stubNextPublicApiUrlUnset();
     const { GET } = await import("./route");
     fetchMock.mockResolvedValueOnce({
       ok: true,

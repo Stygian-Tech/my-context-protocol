@@ -7,7 +7,7 @@ function request(url: string, cookie?: string) {
 }
 
 describe("GET /api/auth/confirm", () => {
-  const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>();
+  const fetchMock = vi.fn<typeof fetch>();
 
   beforeEach(() => {
     vi.resetModules();

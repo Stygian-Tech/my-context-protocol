@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { stubNextPublicApiUrlUnset } from "@/lib/testing/stub-public-env";
 import { ApiError, api, apiFetch, formatApiErrorDetail } from "./api";
 
 afterEach(() => {
@@ -204,7 +205,7 @@ describe("api", () => {
   });
 
   it("defaults API host to localhost:8080 without env or window", async () => {
-    vi.stubEnv("NEXT_PUBLIC_API_URL", undefined);
+    stubNextPublicApiUrlUnset();
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,

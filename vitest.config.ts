@@ -13,10 +13,13 @@ const coverageInclude = [
 const coverageExclude = [
   "**/*.{test,spec}.{ts,tsx}",
   "**/*.config.{ts,mts,mjs}",
+  "lib/testing/**",
   "lib/types.ts",
   "next-env.d.ts",
 ];
 
+// Keep options aligned with Vitest 4 typings — `next build` typechecks app TS only
+// (see tsconfig.json exclude); `bun run typecheck` also runs tsconfig.vitest.json.
 export default defineConfig({
   test: {
     environment: "node",
@@ -34,11 +37,6 @@ export default defineConfig({
       include: coverageInclude,
       exclude: coverageExclude,
     },
-    // Use jsdom only for React component tests (*.test.tsx).
-    environmentMatchGlobs: [
-      ["**/*.test.tsx", "jsdom"],
-      ["components/**/*.test.tsx", "jsdom"],
-    ],
   },
   resolve: {
     alias: {

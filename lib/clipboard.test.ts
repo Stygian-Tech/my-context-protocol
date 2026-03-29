@@ -35,7 +35,7 @@ describe("clipboard helpers", () => {
       toastError.mockReset();
       vi.stubGlobal("navigator", {
         clipboard: { writeText },
-      } as Navigator);
+      } as unknown as Navigator);
     });
 
     afterEach(() => {
