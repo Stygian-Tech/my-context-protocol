@@ -27,10 +27,29 @@ import { PanelLeftIcon } from "lucide-react"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+const SIDEBAR_WIDTH_STORAGE_KEY = "sidebar_width_px"
+const DEFAULT_SIDEBAR_WIDTH_PX = 256
+const MIN_SIDEBAR_WIDTH_PX = 200
+const MAX_SIDEBAR_WIDTH_PX = 480
+
+function clampSidebarWidth(px: number) {
+  return Math.min(
+    MAX_SIDEBAR_WIDTH_PX,
+    Math.max(MIN_SIDEBAR_WIDTH_PX, Math.round(px))
+  )
+}
+
+function readStoredSidebarWidth(): number | null {
+  if (typeof window === "undefined") return null
+  const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
+  if (!stored) return null
+  const n = Number.parseInt(stored, 10)
+  if (Number.isNaN(n)) return null
+  return clampSidebarWidth(n)
+}
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -40,6 +59,8 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
   toggleSidebar: () => void
+  sidebarWidthPx: number
+  setSidebarWidthPx: React.Dispatch<React.SetStateAction<number>>
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -68,6 +89,35 @@ function SidebarProvider({
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
+
+  const [sidebarWidthPx, setSidebarWidthPxState] = React.useState(
+    DEFAULT_SIDEBAR_WIDTH_PX
+  )
+  const [sidebarWidthHydrated, setSidebarWidthHydrated] = React.useState(false)
+
+  React.useEffect(() => {
+    const stored = readStoredSidebarWidth()
+    if (stored !== null) setSidebarWidthPxState(stored)
+    setSidebarWidthHydrated(true)
+  }, [])
+
+  const setSidebarWidthPx = React.useCallback(
+    (value: React.SetStateAction<number>) => {
+      setSidebarWidthPxState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value
+        return clampSidebarWidth(next)
+      })
+    },
+    []
+  )
+
+  React.useEffect(() => {
+    if (!sidebarWidthHydrated || typeof window === "undefined") return
+    window.localStorage.setItem(
+      SIDEBAR_WIDTH_STORAGE_KEY,
+      String(sidebarWidthPx)
+    )
+  }, [sidebarWidthPx, sidebarWidthHydrated])
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -122,8 +172,20 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      sidebarWidthPx,
+      setSidebarWidthPx,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [
+      state,
+      open,
+      setOpen,
+      isMobile,
+      openMobile,
+      setOpenMobile,
+      toggleSidebar,
+      sidebarWidthPx,
+      setSidebarWidthPx,
+    ]
   )
 
   return (
@@ -132,7 +194,7 @@ function SidebarProvider({
         data-slot="sidebar-wrapper"
         style={
           {
-            "--sidebar-width": SIDEBAR_WIDTH,
+            "--sidebar-width": `${sidebarWidthPx}px`,
             "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
             ...style,
           } as React.CSSProperties
@@ -242,12 +304,80 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          className="relative flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
         >
           {children}
         </div>
       </div>
     </div>
+  )
+}
+
+function SidebarResizeHandle({
+  className,
+  side = "left",
+  ...props
+}: React.ComponentProps<"button"> & {
+  side?: "left" | "right"
+}) {
+  const { sidebarWidthPx, setSidebarWidthPx, state, isMobile } = useSidebar()
+
+  React.useEffect(() => {
+    return () => {
+      document.documentElement.classList.remove("sidebar-resize-dragging")
+    }
+  }, [])
+
+  if (isMobile || state === "collapsed") return null
+
+  return (
+    <button
+      type="button"
+      aria-label="Resize sidebar"
+      tabIndex={-1}
+      data-slot="sidebar-resize-handle"
+      className={cn(
+        "absolute inset-y-0 z-50 cursor-col-resize touch-none border-0 bg-transparent p-0 select-none",
+        "w-3 hover:bg-sidebar-border/50",
+        "focus-visible:bg-sidebar-border/50 focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none",
+        side === "left"
+          ? "-right-1.5 translate-x-1/2"
+          : "-left-1.5 -translate-x-1/2",
+        className
+      )}
+      onPointerDown={(e) => {
+        e.preventDefault()
+        if (e.button !== 0) return
+        const startX = e.clientX
+        const startW = sidebarWidthPx
+        const el = e.currentTarget
+        el.setPointerCapture(e.pointerId)
+        document.documentElement.classList.add("sidebar-resize-dragging")
+
+        const onMove = (ev: PointerEvent) => {
+          const dx = ev.clientX - startX
+          const next = side === "left" ? startW + dx : startW - dx
+          setSidebarWidthPx(next)
+        }
+
+        const end = (ev: PointerEvent) => {
+          document.documentElement.classList.remove("sidebar-resize-dragging")
+          try {
+            el.releasePointerCapture(ev.pointerId)
+          } catch {
+            /* already released */
+          }
+          el.removeEventListener("pointermove", onMove)
+          el.removeEventListener("pointerup", end)
+          el.removeEventListener("pointercancel", end)
+        }
+
+        el.addEventListener("pointermove", onMove)
+        el.addEventListener("pointerup", end)
+        el.addEventListener("pointercancel", end)
+      }}
+      {...props}
+    />
   )
 }
 
@@ -717,6 +847,7 @@ export {
   SidebarMenuSubItem,
   SidebarProvider,
   SidebarRail,
+  SidebarResizeHandle,
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,

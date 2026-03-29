@@ -126,3 +126,9 @@
     @apply bg-background text-foreground font-sans;
   }
 }
+
+/* Smooth follow while dragging sidebar width (width var updates every move) */
+.sidebar-resize-dragging [data-slot="sidebar-gap"],
+.sidebar-resize-dragging [data-slot="sidebar-container"] {
+  transition: none !important;
+}

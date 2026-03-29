@@ -12,6 +12,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarResizeHandle,
 } from "@/components/ui/sidebar";
 import { LayoutDashboardIcon, FolderIcon, CreditCardIcon } from "lucide-react";
 
@@ -58,6 +59,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarResizeHandle />
     </Sidebar>
   );
 }
