@@ -148,5 +148,7 @@ public func configure(_ app: Application) throws {
 
     try app.autoMigrate().wait()
 
+    app.lifecycle.use(AdminAnalyticsRollupLifecycle())
+
     try routes(app)
 }

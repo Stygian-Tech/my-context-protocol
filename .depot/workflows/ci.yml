@@ -132,6 +132,8 @@ jobs:
           # Prevent inherited runner/org secrets from forcing Postgres during `swift test` (hang risk on autoMigrate).
           DATABASE_URL: ""
           SUPABASE_DB_URL: ""
+          # avoid background rollup + hourly sleep during unit tests (scheduler runs on real --env testing deploys)
+          DISABLE_ADMIN_ANALYTICS_ROLLUP_SCHEDULER: "1"
         run: |
           set -euxo pipefail
           mkdir -p .build/ci-logs
@@ -229,6 +231,7 @@ jobs:
         env:
           DATABASE_URL: ""
           SUPABASE_DB_URL: ""
+          DISABLE_ADMIN_ANALYTICS_ROLLUP_SCHEDULER: "1"
         run: |
           set -euxo pipefail
           mkdir -p .build/ci-logs
