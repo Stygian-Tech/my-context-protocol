@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Prefer this repo as Turbopack root when other lockfiles exist higher in the tree. */
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const rawApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
 const apiUrl = (rawApiUrl || "http://localhost:8080").replace(/\/$/, "");
@@ -29,6 +34,9 @@ const proxiedApiPrefixes = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: projectRoot,
+  },
   async rewrites() {
     return [
       { source: "/api/health", destination: `${apiUrl}/health` },
