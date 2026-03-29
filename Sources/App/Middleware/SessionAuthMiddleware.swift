@@ -5,16 +5,19 @@ struct SessionAuthMiddleware: AsyncMiddleware {
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
         guard let accountIdString = request.session.data["accountId"],
               let accountId = UUID(uuidString: accountIdString) else {
+            request.logger.devTrace("session_auth missing_or_invalid_accountId path=\(request.url.path)")
             return jsonError(status: .unauthorized, message: "Not authenticated")
         }
 
         let account = try await Account.find(accountId, on: request.db)
         guard account != nil else {
             request.session.destroy()
+            request.logger.devTrace("session_auth account_not_found destroyed_session id=\(accountId) path=\(request.url.path)")
             return jsonError(status: .unauthorized, message: "Invalid session")
         }
 
         request.storage[AccountKey.self] = account
+        request.logger.devTrace("session_auth ok accountId=\(accountId) path=\(request.url.path)")
         return try await next.respond(to: request)
     }
 }

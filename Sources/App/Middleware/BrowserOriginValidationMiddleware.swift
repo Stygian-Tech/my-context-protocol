@@ -4,6 +4,7 @@ import Vapor
 struct BrowserOriginValidationMiddleware: AsyncMiddleware {
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
         if Self.shouldSkip(path: request.url.path, method: request.method) {
+            request.logger.devTrace("origin_check skipped path=\(request.url.path) method=\(request.method)")
             return try await next.respond(to: request)
         }
         guard [.POST, .PUT, .PATCH, .DELETE].contains(request.method) else {
@@ -12,6 +13,7 @@ struct BrowserOriginValidationMiddleware: AsyncMiddleware {
 
         let bases = AppFrontendURL.allowedOriginBases()
         if bases.isEmpty, AppEnvironment.deployKind() == .local {
+            request.logger.devTrace("origin_check bypass local_no_frontend_url path=\(request.url.path)")
             return try await next.respond(to: request)
         }
         guard !bases.isEmpty else {
@@ -20,9 +22,11 @@ struct BrowserOriginValidationMiddleware: AsyncMiddleware {
         }
 
         if let origin = request.headers.first(name: .origin), Self.originMatches(origin, bases: bases) {
+            request.logger.devTrace("origin_check ok via Origin path=\(request.url.path)")
             return try await next.respond(to: request)
         }
         if let referer = request.headers.first(name: .referer), Self.refererMatches(referer, bases: bases) {
+            request.logger.devTrace("origin_check ok via Referer path=\(request.url.path)")
             return try await next.respond(to: request)
         }
 

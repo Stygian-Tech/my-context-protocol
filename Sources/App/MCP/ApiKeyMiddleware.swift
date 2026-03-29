@@ -10,10 +10,12 @@ struct ApiKeyMiddleware: AsyncMiddleware {
         } else if let apiKey = request.headers.first(name: "X-API-Key") {
             key = apiKey
         } else {
+            request.logger.devTrace("api_key_auth missing")
             return Response(status: .unauthorized, body: .init(string: "Missing API key"))
         }
 
         guard let key = key, !key.isEmpty else {
+            request.logger.devTrace("api_key_auth empty")
             return Response(status: .unauthorized, body: .init(string: "Invalid API key"))
         }
 
@@ -27,12 +29,14 @@ struct ApiKeyMiddleware: AsyncMiddleware {
             .first()
 
         guard let apiKey = apiKey else {
+            request.logger.devTrace("api_key_auth no_matching_active_key")
             return Response(status: .unauthorized, body: .init(string: "Invalid API key"))
         }
 
         if let hostProject = request.storage[ResolvedHostProjectKey.self],
            let hostPid = hostProject.id {
             guard apiKey.$project.id == hostPid else {
+                request.logger.devTrace("api_key_auth host_mismatch tenantProject=\(hostPid) keyProject=\(apiKey.$project.id)")
                 return Response(status: .forbidden, body: .init(string: "API key does not match host"))
             }
         }
@@ -41,6 +45,9 @@ struct ApiKeyMiddleware: AsyncMiddleware {
         try await apiKey.save(on: request.db)
 
         request.storage[ProjectKey.self] = apiKey.project
+        let pid = apiKey.project.id?.uuidString ?? "nil"
+        let kid = apiKey.id?.uuidString ?? "nil"
+        request.logger.devTrace("api_key_auth ok keyId=\(kid) projectId=\(pid)")
         return try await next.respond(to: request)
     }
 }

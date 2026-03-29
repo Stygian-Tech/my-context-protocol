@@ -21,6 +21,7 @@ struct MCPController {
         let body: JSONRPCRequest
         do {
             body = try req.content.decode(JSONRPCRequest.self)
+            req.logger.devTrace("mcp_rpc decoded method=\(body.method) projectId=\(projectId.uuidString)")
         } catch {
             let res = try await jsonRPCError(id: nil, code: -32700, message: "Parse error").encodeResponse(for: req)
             let latencyMs = Int(Date().timeIntervalSince(start) * 1000)

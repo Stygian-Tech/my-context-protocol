@@ -1,6 +1,7 @@
 import Fluent
 import FluentPostgresDriver
 import FluentSQLiteDriver
+import Logging
 import NIOSSL
 import PostgresKit
 import Vapor
@@ -18,6 +19,14 @@ public func configure(_ app: Application) throws {
     app.logger.info(
         "APP_ENV=\(deploy.rawValue) non_production_bypasses=\(bypass) STRICT_PRO_GATING=\(strict)"
     )
+
+    if DevLoggingConfig.verboseHttpEnabled {
+        app.logger.info("Verbose HTTP request tracing on (non-production default; set DEV_LOG_HTTP=0 to disable)")
+        app.middleware.use(VerboseRequestLoggingMiddleware(), at: .beginning)
+    }
+    if AppEnvironment.isNonProduction, DevLoggingConfig.envTruthy("DEV_LOG_SQL") {
+        app.logger.info("DEV_LOG_SQL enabled: Fluent SQL logging at debug (set LOG_LEVEL=debug to see queries)")
+    }
 
     app.middleware.use(SecurityHeadersMiddleware(), at: .beginning)
     app.middleware.use(BrowserOriginValidationMiddleware(), at: .beginning)
@@ -73,13 +82,16 @@ public func configure(_ app: Application) throws {
     /// When `true`, integration tests may use `DATABASE_URL` / `SUPABASE_DB_URL` instead of in-memory SQLite.
     let usePostgresInTests = isTruthyEnv("TEST_USE_POSTGRES")
 
+    let sqlLiteLevel = DevLoggingConfig.sqliteSqlLogLevel
+    let sqlPostgresLevel = DevLoggingConfig.postgresSqlLogLevel
+
     if app.environment == .testing, !usePostgresInTests {
-        app.databases.use(.sqlite(.memory), as: .sqlite)
+        app.databases.use(.sqlite(.memory, sqlLogLevel: sqlLiteLevel), as: .sqlite)
     } else if isTruthyEnv("USE_SQLITE") {
         // Local dev: file-backed SQLite (leave DATABASE_URL empty). Path is relative to the process working directory.
         let rawPath = Environment.get("SQLITE_PATH") ?? "db.sqlite"
         let sqlitePath = rawPath.hasPrefix("/") ? rawPath : app.directory.workingDirectory + rawPath
-        app.databases.use(.sqlite(.file(sqlitePath)), as: .sqlite)
+        app.databases.use(.sqlite(.file(sqlitePath), sqlLogLevel: sqlLiteLevel), as: .sqlite)
         app.logger.info("Using SQLite database at \(sqlitePath)")
     } else if let databaseURL = Environment.get("DATABASE_URL"), !databaseURL.isEmpty {
         let useInsecureTLS = Environment.get("DATABASE_INSECURE_TLS").map { $0.lowercased() }.map { $0 == "1" || $0 == "true" } ?? false
@@ -88,14 +100,14 @@ public func configure(_ app: Application) throws {
             var tlsConfig = TLSConfiguration.makeClientConfiguration()
             tlsConfig.certificateVerification = .none
             config.coreConfiguration.tls = .require(try NIOSSLContext(configuration: tlsConfig))
-            app.databases.use(.postgres(configuration: config), as: .psql)
+            app.databases.use(.postgres(configuration: config, sqlLogLevel: sqlPostgresLevel), as: .psql)
         } else {
-            app.databases.use(try .postgres(url: databaseURL), as: .psql)
+            app.databases.use(try .postgres(url: databaseURL, sqlLogLevel: sqlPostgresLevel), as: .psql)
         }
     } else if let url = Environment.get("SUPABASE_DB_URL"), !url.isEmpty {
-        app.databases.use(try .postgres(url: url), as: .psql)
+        app.databases.use(try .postgres(url: url, sqlLogLevel: sqlPostgresLevel), as: .psql)
     } else if app.environment == .testing {
-        app.databases.use(.sqlite(.memory), as: .sqlite)
+        app.databases.use(.sqlite(.memory, sqlLogLevel: sqlLiteLevel), as: .sqlite)
     } else {
         let hostname = Environment.get("DATABASE_HOST") ?? "localhost"
         let username = Environment.get("DATABASE_USERNAME") ?? "vapor_username"
@@ -111,7 +123,7 @@ public func configure(_ app: Application) throws {
             database: database,
             tls: .disable
         )
-        app.databases.use(.postgres(configuration: pgConfig), as: .psql)
+        app.databases.use(.postgres(configuration: pgConfig, sqlLogLevel: sqlPostgresLevel), as: .psql)
     }
 
     app.migrations.add(CreateAccounts())

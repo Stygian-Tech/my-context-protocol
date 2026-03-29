@@ -42,6 +42,8 @@ final class McpIpRateLimitMiddleware: AsyncMiddleware, @unchecked Sendable {
         }
 
         guard allowed else {
+            let trace = request.storage[RequestTraceIDKey.self].map { " traceId=\($0)" } ?? ""
+            request.logger.devTrace("mcp_rate_limit blocked\(trace) clientKey=\(key)")
             return Response(status: .tooManyRequests, body: .init(string: "Rate limited"))
         }
         return try await next.respond(to: request)
