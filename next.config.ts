@@ -30,10 +30,13 @@ const proxiedApiPrefixes = [
 
 const nextConfig: NextConfig = {
   async rewrites() {
-    return proxiedApiPrefixes.map((prefix) => ({
-      source: `/api/${prefix}/:path*`,
-      destination: `${apiUrl}/${prefix}/:path*`,
-    }));
+    return [
+      { source: "/api/health", destination: `${apiUrl}/health` },
+      ...proxiedApiPrefixes.map((prefix) => ({
+        source: `/api/${prefix}/:path*`,
+        destination: `${apiUrl}/${prefix}/:path*`,
+      })),
+    ];
   },
   async headers() {
     return [
