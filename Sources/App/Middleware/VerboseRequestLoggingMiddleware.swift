@@ -18,7 +18,7 @@ struct VerboseRequestLoggingMiddleware: AsyncMiddleware {
 
         let path = request.url.path
         let queryRedacted = DevLogRedaction.redactedQueryString(request.url.query)
-        let method = request.method.string
+        let method = request.method.rawValue
         let peer = request.peerAddress?.description ?? "unknown"
         let host = request.headers.first(name: .host) ?? "-"
         let contentType = request.headers.contentType?.description ?? "-"
