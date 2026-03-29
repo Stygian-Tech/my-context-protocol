@@ -86,7 +86,7 @@ enum AdminAnalyticsTimeseriesService {
         }
 
         let series = zip(buckets, accs).map { b, a -> DashboardTimeseriesBucketDTO in
-            var rc = Int(a.req.rounded())
+            let rc = Int(a.req.rounded())
             var sc = Int(a.succ.rounded())
             sc = min(sc, rc)
             let avg: Double? =
