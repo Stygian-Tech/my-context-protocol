@@ -17,6 +17,10 @@ services:
     build: .
     ports:
       - "8080:8080"
+    # Loads host `.env` into the container (INTERNAL_ADMIN_*, GITHUB_*, ENCRYPTION_KEY, etc.).
+    # Explicit `environment:` entries below override keys from the file.
+    env_file:
+      - .env
     environment:
       APP_ENV: local
       DATABASE_HOST: db
