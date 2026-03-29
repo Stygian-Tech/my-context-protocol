@@ -143,6 +143,7 @@ public func configure(_ app: Application) throws {
     app.migrations.add(NormalizeRepoDefaultBranchToMain())
     app.migrations.add(CreateAppSessions())
     app.migrations.add(CreateOAuthHandoffTokens())
+    app.migrations.add(AddAdminFlagsToAccounts())
 
     try app.autoMigrate().wait()
 

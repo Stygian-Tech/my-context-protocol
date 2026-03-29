@@ -8,12 +8,23 @@ private func userResponse(for account: Account, suggestedGithubAppInstall: Bool 
         login: account.login,
         avatar_url: account.avatarUrl,
         plan: account.hasProEntitlements ? "pro" : "free",
+        is_admin: account.isAdmin,
         internal_pro_bypass: InternalProBypass.matches(login: account.login, githubId: account.githubId),
         can_manage_subscription: account.hasStripeCustomerRecord,
         suggested_github_app_install: suggestedGithubAppInstall,
         app_env: AppEnvironment.appEnvString,
         non_production_bypasses: AppEnvironment.nonProductionBypassesActive
     )
+}
+
+/// Marks account as admin when `INTERNAL_ADMIN_GITHUB_*` env lists match (idempotent).
+private func syncEnvAdminBootstrap(account: Account, db: Database) async throws {
+    guard InternalAdminBootstrap.matches(login: account.login, githubId: account.githubId) else {
+        return
+    }
+    guard !account.isAdmin else { return }
+    account.isAdmin = true
+    try await account.save(on: db)
 }
 
 struct AuthController {
@@ -209,6 +220,8 @@ struct AuthController {
             account = newAccount
         }
 
+        try await syncEnvAdminBootstrap(account: account, db: req.db)
+
         req.session.data["accountId"] = account.id?.uuidString
         // Token-based handoff: 302 redirect with one-time token. Using 302 (not HTML meta refresh)
         // ensures a single navigation so the frontend middleware sees auth_token exactly once.
@@ -226,6 +239,7 @@ struct AuthController {
             req.session.destroy()
             throw Abort(.unauthorized, reason: "Invalid session")
         }
+        try await syncEnvAdminBootstrap(account: account, db: req.db)
         let suggest = try await Self.suggestedGithubAppMe(account: account, db: req.db)
         return userResponse(for: account, suggestedGithubAppInstall: suggest)
     }
@@ -260,6 +274,7 @@ struct AuthController {
         guard let account = try await Account.find(accountUUID, on: req.db) else {
             throw Abort(.unauthorized, reason: "Account not found")
         }
+        try await syncEnvAdminBootstrap(account: account, db: req.db)
         req.session.data["accountId"] = accountId
 
         if let redirectRaw = req.query[String.self, at: "redirect"], !redirectRaw.isEmpty {
@@ -302,6 +317,8 @@ struct UserResponse: Content {
     let login: String?
     let avatar_url: String?
     let plan: String
+    /// Platform admin (DB flag and/or env bootstrap). Always exposed for nav gating.
+    let is_admin: Bool
     /// True when this account matches `INTERNAL_PRO_GITHUB_*` env allowlists.
     let internal_pro_bypass: Bool
     /// True when a Stripe Customer exists (Customer Portal / paid subscription management).
@@ -316,6 +333,7 @@ struct UserResponse: Content {
     enum CodingKeys: String, CodingKey {
         case id, email, login, plan
         case avatar_url = "avatar_url"
+        case is_admin = "is_admin"
         case internal_pro_bypass = "internal_pro_bypass"
         case can_manage_subscription = "can_manage_subscription"
         case suggested_github_app_install = "suggested_github_app_install"
@@ -330,6 +348,7 @@ struct UserResponse: Content {
         try c.encodeIfPresent(login, forKey: .login)
         try c.encodeIfPresent(avatar_url, forKey: .avatar_url)
         try c.encode(plan, forKey: .plan)
+        try c.encode(is_admin, forKey: .is_admin)
         try c.encode(can_manage_subscription, forKey: .can_manage_subscription)
         try c.encode(suggested_github_app_install, forKey: .suggested_github_app_install)
         try c.encode(app_env, forKey: .app_env)
@@ -345,6 +364,7 @@ struct UserResponse: Content {
         login: String?,
         avatar_url: String?,
         plan: String,
+        is_admin: Bool,
         internal_pro_bypass: Bool,
         can_manage_subscription: Bool,
         suggested_github_app_install: Bool,
@@ -356,6 +376,7 @@ struct UserResponse: Content {
         self.login = login
         self.avatar_url = avatar_url
         self.plan = plan
+        self.is_admin = is_admin
         self.internal_pro_bypass = internal_pro_bypass
         self.can_manage_subscription = can_manage_subscription
         self.suggested_github_app_install = suggested_github_app_install
@@ -370,6 +391,7 @@ struct UserResponse: Content {
         login = try c.decodeIfPresent(String.self, forKey: .login)
         avatar_url = try c.decodeIfPresent(String.self, forKey: .avatar_url)
         plan = try c.decode(String.self, forKey: .plan)
+        is_admin = try c.decodeIfPresent(Bool.self, forKey: .is_admin) ?? false
         internal_pro_bypass = try c.decodeIfPresent(Bool.self, forKey: .internal_pro_bypass) ?? false
         can_manage_subscription = try c.decodeIfPresent(Bool.self, forKey: .can_manage_subscription) ?? false
         suggested_github_app_install = try c.decodeIfPresent(Bool.self, forKey: .suggested_github_app_install) ?? false

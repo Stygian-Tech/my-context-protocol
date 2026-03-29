@@ -39,10 +39,21 @@ final class Account: Model, Content {
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
+    /// Platform admin (aggregate metrics + grant/revoke). Also via `INTERNAL_ADMIN_GITHUB_*` env bootstrap.
+    @Field(key: "is_admin")
+    var isAdmin: Bool
+
+    /// Paywall / Pro feature bypass without Stripe or internal Pro env list.
+    @Field(key: "paywall_bypass")
+    var paywallBypass: Bool
+
     @Children(for: \.$account)
     var projects: [Project]
 
-    init() {}
+    init() {
+        self.isAdmin = false
+        self.paywallBypass = false
+    }
 
     init(
         id: UUID? = nil,
@@ -56,6 +67,8 @@ final class Account: Model, Content {
         self.login = login
         self.avatarUrl = avatarUrl
         self.email = email
+        self.isAdmin = false
+        self.paywallBypass = false
     }
 }
 
@@ -68,8 +81,9 @@ extension Account {
         return s == "active" || s == "trialing"
     }
 
-    /// Pro feature gate: non-production bypass, active Stripe subscription, or internal env allowlist (`INTERNAL_PRO_*`).
+    /// Pro feature gate: non-production bypass, paywall bypass flag, active Stripe subscription, or internal env allowlist (`INTERNAL_PRO_*`).
     var hasProEntitlements: Bool {
+        if paywallBypass { return true }
         if AppEnvironment.nonProductionBypassesActive { return true }
         if hasActiveProSubscription { return true }
         return InternalProBypass.matches(login: login, githubId: githubId)

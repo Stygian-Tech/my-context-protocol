@@ -108,6 +108,18 @@ func routes(_ app: Application) throws {
         try await GitHubAppController.installRedirect(req: req)
     }
 
+    let adminProtected = protected.grouped(AdminAuthMiddleware())
+    adminProtected.get("admin", "metrics") { req in
+        try await AdminController.platformMetrics(req: req)
+    }
+    adminProtected.post("admin", "lookup") { req in
+        try await AdminController.lookup(req: req)
+    }
+    adminProtected.post("admin", "account-flags") { req in
+        let status = try await AdminController.updateFlags(req: req)
+        return Response(status: status)
+    }
+
     app.on(.POST, ["webhooks", "github"], body: .collect(maxSize: ByteCount(value: 512 * 1024))) { req in
         try await WebhookController.github(req: req)
     }
