@@ -112,6 +112,12 @@ func routes(_ app: Application) throws {
     adminProtected.get("admin", "metrics") { req in
         try await AdminController.platformMetrics(req: req)
     }
+    adminProtected.get("admin", "timeseries") { req in
+        try await AdminController.adminDashboardTimeseries(req: req)
+    }
+    adminProtected.post("admin", "analytics", "rollup-refresh") { req in
+        try await AdminController.rollupRefresh(req: req)
+    }
     adminProtected.post("admin", "lookup") { req in
         try await AdminController.lookup(req: req)
     }

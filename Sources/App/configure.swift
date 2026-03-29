@@ -144,6 +144,7 @@ public func configure(_ app: Application) throws {
     app.migrations.add(CreateAppSessions())
     app.migrations.add(CreateOAuthHandoffTokens())
     app.migrations.add(AddAdminFlagsToAccounts())
+    app.migrations.add(CreateAdminAnalyticsHourly())
 
     try app.autoMigrate().wait()
 

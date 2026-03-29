@@ -428,6 +428,26 @@ struct ProjectDashboardTimeseriesResponse: Content {
     }
 }
 
+/// Platform-wide dashboard timeseries for admins; backed by hourly rollup (`admin_analytics_hourly`).
+struct AdminDashboardTimeseriesResponse: Content {
+    let range_key: String
+    let range_start: String
+    let range_end: String
+    let buckets: [DashboardTimeseriesBucketDTO]
+    /// Latest `updated_at` from rollup rows contributing to this response, if any.
+    let rollup_updated_at: String?
+    let data_source_note: String
+
+    enum CodingKeys: String, CodingKey {
+        case range_key = "range_key"
+        case range_start = "range_start"
+        case range_end = "range_end"
+        case buckets
+        case rollup_updated_at = "rollup_updated_at"
+        case data_source_note = "data_source_note"
+    }
+}
+
 struct ValidationErrorEntry: Content {
     let path: String
     let message: String

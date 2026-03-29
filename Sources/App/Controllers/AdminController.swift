@@ -108,4 +108,18 @@ enum AdminController {
         try await account.save(on: req.db)
         return .noContent
     }
+
+    // MARK: - Analytics (hourly rollup)
+
+    static func adminDashboardTimeseries(req: Request) async throws -> AdminDashboardTimeseriesResponse {
+        try await AdminAnalyticsTimeseriesService.adminDashboardTimeseries(
+            db: req.db,
+            rangeKey: req.query[String.self, at: "range"]
+        )
+    }
+
+    static func rollupRefresh(req: Request) async throws -> HTTPStatus {
+        try await AdminAnalyticsRollupService.refresh(db: req.db, logger: req.logger)
+        return .noContent
+    }
 }
