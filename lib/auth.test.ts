@@ -46,7 +46,8 @@ describe("getGitHubLoginUrl (server / no window)", () => {
   });
 
   it("defaults to localhost when env vars are absent", () => {
-    vi.unstubAllEnvs();
+    vi.stubEnv("NEXT_PUBLIC_API_URL", undefined);
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", undefined);
     const u = getGitHubLoginUrl("/");
     expect(u.startsWith("http://localhost:8080/auth/github?return_to=")).toBe(true);
     expect(u).toContain(encodeURIComponent("http://localhost:3000/"));

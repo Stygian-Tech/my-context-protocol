@@ -53,6 +53,7 @@ describe("GET /api/auth/me", () => {
   });
 
   it("defaults to localhost:8080 when NEXT_PUBLIC_API_URL is unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_URL", undefined);
     const { GET } = await import("./route");
     fetchMock.mockResolvedValueOnce({
       ok: true,

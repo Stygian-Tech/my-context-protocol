@@ -204,6 +204,7 @@ describe("api", () => {
   });
 
   it("defaults API host to localhost:8080 without env or window", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_URL", undefined);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
