@@ -20,6 +20,7 @@ import type { ReleaseStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { shortCommitLabel } from "@/lib/commit-display";
 import { pluralEn } from "@/lib/pluralize";
+import { formatLocalDateTime } from "@/lib/format-local-time";
 
 interface ReleaseTableProps {
   projectId: string;
@@ -138,7 +139,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                 </div>
               </TableCell>
               <TableCell className="align-middle">
-                {new Date(release.created_at).toLocaleString()}
+                {formatLocalDateTime(release.created_at)}
               </TableCell>
               <TableCell
                 className={cn(

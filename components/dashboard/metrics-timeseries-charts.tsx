@@ -25,6 +25,10 @@ import {
   DASHBOARD_TIMESERIES_OPTIONS,
   type DashboardTimeseriesRange,
 } from "@/lib/dashboard-timeseries";
+import {
+  formatDashboardBucketLabel,
+  formatLocalBucketRangeTooltip,
+} from "@/lib/format-local-time";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import {
   Select,
@@ -68,6 +72,8 @@ export function MetricsTimeseriesCharts({
     enabled: variant === "account" || !!projectId,
   });
 
+  const hourAxisLabels = range === "1h" || range === "24h";
+
   const chartRows = useMemo(() => {
     const buckets = query.data?.buckets ?? [];
     return buckets.map((b) => {
@@ -77,7 +83,9 @@ export function MetricsTimeseriesCharts({
           ? Math.round((1000 * b.success_count) / b.request_count) / 10
           : null;
       return {
-        label: b.label,
+        label: formatDashboardBucketLabel(b.start, hourAxisLabels),
+        startIso: b.start,
+        endIso: b.end,
         requests: b.request_count,
         ok: b.success_count,
         err: fail,
@@ -85,7 +93,15 @@ export function MetricsTimeseriesCharts({
         latency: b.avg_latency_ms != null ? Math.round(b.avg_latency_ms) : null,
       };
     });
-  }, [query.data?.buckets]);
+  }, [query.data?.buckets, hourAxisLabels]);
+
+  const tooltipLabel = (label: string, payload: readonly { payload?: { startIso?: string; endIso?: string } }[]) => {
+    const row = payload[0]?.payload;
+    if (row?.startIso && row?.endIso) {
+      return formatLocalBucketRangeTooltip(row.startIso, row.endIso);
+    }
+    return label;
+  };
 
   const upgradeHint =
     !isPro && (
@@ -188,6 +204,7 @@ export function MetricsTimeseriesCharts({
                   allowDecimals={false}
                 />
                 <Tooltip
+                  labelFormatter={tooltipLabel}
                   contentStyle={{
                     background: "hsl(0 0% 10%)",
                     border: "1px solid hsl(240 5% 26%)",
@@ -225,6 +242,7 @@ export function MetricsTimeseriesCharts({
                 />
                 <YAxis tick={{ fill: axisMuted, fontSize: 10 }} width={40} allowDecimals={false} />
                 <Tooltip
+                  labelFormatter={tooltipLabel}
                   contentStyle={{
                     background: "hsl(0 0% 10%)",
                     border: "1px solid hsl(240 5% 26%)",
@@ -276,6 +294,7 @@ export function MetricsTimeseriesCharts({
                 }}
               />
               <Tooltip
+                labelFormatter={tooltipLabel}
                 contentStyle={{
                   background: "hsl(0 0% 10%)",
                   border: "1px solid hsl(240 5% 26%)",

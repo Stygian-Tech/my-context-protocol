@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CopyIcon, KeyIcon } from "lucide-react";
+import { formatLocalDateTime } from "@/lib/format-local-time";
 import { buildMcpJsonConfig, copyTextToClipboard } from "@/lib/clipboard";
 import { getApiKeyDisplayName } from "@/lib/api-key-utils";
 
@@ -110,11 +111,11 @@ export function ApiKeyManager({ projectId, mcpUrl }: ApiKeyManagerProps) {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  {new Date(key.created_at).toLocaleString()}
+                  {formatLocalDateTime(key.created_at)}
                 </TableCell>
                 <TableCell>
                   {key.last_used_at
-                    ? new Date(key.last_used_at).toLocaleString()
+                    ? formatLocalDateTime(key.last_used_at)
                     : "Never"}
                 </TableCell>
               </TableRow>

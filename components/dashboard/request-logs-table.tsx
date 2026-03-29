@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
+import { formatLocalDateTime } from "@/lib/format-local-time";
 
 interface RequestLogsTableProps {
   projectId: string;
@@ -67,7 +68,7 @@ export function RequestLogsTable({ projectId }: RequestLogsTableProps) {
         {logs.map((log) => (
           <TableRow key={log.id}>
             <TableCell className="text-sm">
-              {new Date(log.timestamp).toLocaleString()}
+              {formatLocalDateTime(log.timestamp)}
             </TableCell>
             <TableCell className="font-mono text-sm">{log.method}</TableCell>
             <TableCell>
