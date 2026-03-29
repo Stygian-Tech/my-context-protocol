@@ -24,8 +24,17 @@ import {
 import { fetchAdminDashboardTimeseries } from "@/lib/admin-api";
 import {
   DASHBOARD_TIMESERIES_OPTIONS,
+  type AdminDashboardTimeseries,
+  type AccountDashboardTimeseries,
   type DashboardTimeseriesRange,
+  type ProjectDashboardTimeseries,
 } from "@/lib/dashboard-timeseries";
+
+/** Union of account / project / admin timeseries API responses for chart queries. */
+type DashboardTimeseriesPayload =
+  | AccountDashboardTimeseries
+  | ProjectDashboardTimeseries
+  | AdminDashboardTimeseries;
 import {
   formatDashboardBucketLabel,
   formatLocalBucketRangeTooltip,
@@ -62,7 +71,7 @@ export function MetricsTimeseriesCharts({
   const isPro = user?.plan === "pro";
   const [range, setRange] = useState<DashboardTimeseriesRange>("24h");
 
-  const query = useQuery({
+  const query = useQuery<DashboardTimeseriesPayload>({
     queryKey:
       variant === "account"
         ? ["account-dashboard-timeseries", range]
@@ -188,7 +197,7 @@ export function MetricsTimeseriesCharts({
         </Select>
       </div>
       {upgradeHint}
-      {variant === "admin" && query.data ? (
+      {variant === "admin" && query.data && isAdminTimeseriesPayload(query.data) ? (
         <div className="text-muted-foreground space-y-1 text-xs">
           <p>{query.data.data_source_note}</p>
           {query.data.rollup_updated_at ? (
@@ -356,4 +365,10 @@ export function MetricsTimeseriesCharts({
       </div>
     </div>
   );
+}
+
+function isAdminTimeseriesPayload(
+  data: DashboardTimeseriesPayload
+): data is AdminDashboardTimeseries {
+  return "data_source_note" in data && "rollup_updated_at" in data;
 }
