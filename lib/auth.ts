@@ -23,6 +23,7 @@ function normalizeUser(u: {
   login?: string | null;
   avatar_url?: string | null;
   plan?: string | null;
+  is_admin?: boolean | null;
   internal_pro_bypass?: boolean | null;
   can_manage_subscription?: boolean | null;
   app_env?: string | null;
@@ -37,6 +38,7 @@ function normalizeUser(u: {
     login: u.login ?? undefined,
     avatar_url: u.avatar_url ?? undefined,
     plan: u.plan === "pro" ? "pro" : "free",
+    is_admin: Boolean(u.is_admin),
     internal_pro_bypass: Boolean(u.internal_pro_bypass),
     can_manage_subscription: Boolean(u.can_manage_subscription),
     app_env,

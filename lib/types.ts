@@ -200,6 +200,8 @@ export interface User {
   login?: string;
   avatar_url?: string;
   plan: "free" | "pro";
+  /** Platform admin (aggregate tools + grants). */
+  is_admin?: boolean;
   /** Server env allowlist (`INTERNAL_PRO_GITHUB_*`); not a Stripe subscription. */
   internal_pro_bypass?: boolean;
   /** Stripe Customer on file — Customer Portal works. */

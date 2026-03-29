@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
 import {
   Sidebar,
   SidebarContent,
@@ -14,7 +15,12 @@ import {
   SidebarMenuItem,
   SidebarResizeHandle,
 } from "@/components/ui/sidebar";
-import { LayoutDashboardIcon, FolderIcon, CreditCardIcon } from "lucide-react";
+import {
+  LayoutDashboardIcon,
+  FolderIcon,
+  CreditCardIcon,
+  ShieldIcon,
+} from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboardIcon },
@@ -24,6 +30,14 @@ const navItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { user } = useAuth();
+
+  const items = user?.is_admin
+    ? [
+        ...navItems,
+        { href: "/admin", label: "Admin", icon: ShieldIcon } as const,
+      ]
+    : navItems;
 
   return (
     <Sidebar>
@@ -35,7 +49,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {items.map((item) => {
                 const isActive =
                   item.href === "/"
                     ? pathname === "/"
