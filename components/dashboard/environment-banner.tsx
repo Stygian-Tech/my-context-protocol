@@ -8,6 +8,7 @@ import {
   parseAppEnv,
   primaryEnvForCopy,
 } from "@/lib/env-banner";
+import { cn } from "@/lib/utils";
 
 export function EnvironmentBanner() {
   const { user } = useAuth();
@@ -26,13 +27,14 @@ export function EnvironmentBanner() {
   return (
     <div
       role="status"
-      className={
+      className={cn(
+        "sticky top-0 z-50",
         mismatch
           ? "border-b border-amber-500/80 bg-amber-500/10 px-5 py-2.5 text-sm text-amber-950 dark:border-amber-400/60 dark:bg-amber-500/15 dark:text-amber-50"
           : devLike
             ? "border-b border-red-600/90 bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-sm dark:border-red-500 dark:bg-red-700 dark:text-white"
             : "border-b border-amber-400/60 bg-amber-400/10 px-5 py-2.5 text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-400/10 dark:text-amber-50"
-      }
+      )}
     >
       <p className="font-medium">{body}</p>
       {mismatch ? (

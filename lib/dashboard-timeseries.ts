@@ -29,6 +29,12 @@ export interface ProjectDashboardTimeseries extends AccountDashboardTimeseries {
   project_id: string;
 }
 
+/** Admin platform charts from hourly rollup (`GET /admin/timeseries`). */
+export interface AdminDashboardTimeseries extends AccountDashboardTimeseries {
+  rollup_updated_at: string | null;
+  data_source_note: string;
+}
+
 export const DASHBOARD_TIMESERIES_OPTIONS: {
   value: DashboardTimeseriesRange;
   label: string;

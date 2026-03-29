@@ -21,6 +21,7 @@ import {
   fetchAccountDashboardTimeseries,
   fetchProjectDashboardTimeseries,
 } from "@/lib/projects-api";
+import { fetchAdminDashboardTimeseries } from "@/lib/admin-api";
 import {
   DASHBOARD_TIMESERIES_OPTIONS,
   type DashboardTimeseriesRange,
@@ -28,6 +29,7 @@ import {
 import {
   formatDashboardBucketLabel,
   formatLocalBucketRangeTooltip,
+  formatLocalDateTime,
 } from "@/lib/format-local-time";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import {
@@ -47,7 +49,7 @@ const okFill = "hsl(142 71% 45% / 0.85)";
 const errFill = "hsl(0 84% 60% / 0.55)";
 const latencyStroke = "hsl(262 83% 58%)";
 
-type Variant = "account" | "project";
+type Variant = "account" | "project" | "admin";
 
 export function MetricsTimeseriesCharts({
   variant,
@@ -64,12 +66,15 @@ export function MetricsTimeseriesCharts({
     queryKey:
       variant === "account"
         ? ["account-dashboard-timeseries", range]
-        : ["project-dashboard-timeseries", projectId, range],
-    queryFn: () =>
-      variant === "account"
-        ? fetchAccountDashboardTimeseries(range)
-        : fetchProjectDashboardTimeseries(projectId!, range),
-    enabled: variant === "account" || !!projectId,
+        : variant === "admin"
+          ? ["admin-dashboard-timeseries", range]
+          : ["project-dashboard-timeseries", projectId, range],
+    queryFn: () => {
+      if (variant === "account") return fetchAccountDashboardTimeseries(range);
+      if (variant === "admin") return fetchAdminDashboardTimeseries(range);
+      return fetchProjectDashboardTimeseries(projectId!, range);
+    },
+    enabled: variant === "account" || variant === "admin" || !!projectId,
   });
 
   const hourAxisLabels = range === "1h" || range === "24h";
@@ -104,6 +109,7 @@ export function MetricsTimeseriesCharts({
   };
 
   const upgradeHint =
+    variant !== "admin" &&
     !isPro && (
       <p className="text-muted-foreground mt-2 text-xs">
         Longer history (beyond 7 days) is available on{" "}
@@ -124,7 +130,7 @@ export function MetricsTimeseriesCharts({
 
   if (query.error) {
     const err = query.error;
-    if (err instanceof ApiError && err.status === 402) {
+    if (variant !== "admin" && err instanceof ApiError && err.status === 402) {
       return (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
           <p className="font-medium text-amber-700 dark:text-amber-400">
@@ -172,16 +178,37 @@ export function MetricsTimeseriesCharts({
               <SelectItem
                 key={opt.value}
                 value={opt.value}
-                disabled={opt.proOnly && !isPro}
+                disabled={variant !== "admin" && opt.proOnly && !isPro}
               >
                 {opt.label}
-                {opt.proOnly ? " (Pro)" : ""}
+                {opt.proOnly && variant !== "admin" ? " (Pro)" : ""}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
       {upgradeHint}
+      {variant === "admin" && query.data ? (
+        <div className="text-muted-foreground space-y-1 text-xs">
+          <p>{query.data.data_source_note}</p>
+          {query.data.rollup_updated_at ? (
+            <p>
+              Last aggregate refresh:{" "}
+              <span className="text-foreground font-medium">
+                {formatLocalDateTime(query.data.rollup_updated_at)}
+              </span>
+            </p>
+          ) : (
+            <p>
+              No rollup rows yet. Run{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-[0.7rem]">
+                POST /admin/analytics/rollup-refresh
+              </code>{" "}
+              (admin) or schedule the SQL job described in the backend docs.
+            </p>
+          )}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-lg border p-3 pt-4">

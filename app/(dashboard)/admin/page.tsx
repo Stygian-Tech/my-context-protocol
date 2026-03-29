@@ -31,6 +31,7 @@ import {
 } from "@/lib/admin-api";
 import Link from "next/link";
 import { ShieldAlertIcon } from "lucide-react";
+import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
 
 type IdKind = "github_login" | "github_id" | "email";
 
@@ -185,7 +186,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="mx-auto max-w-6xl space-y-8">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Admin</h1>
         <p className="text-muted-foreground mt-1">
@@ -235,6 +236,16 @@ export default function AdminPage() {
             hint="Count of rows in request logs (includes parse errors logged as MCP traffic)."
           />
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Platform traffic</h2>
+        <p className="text-muted-foreground text-sm">
+          Same charts as the dashboard, sourced from hourly aggregates (not live
+          per-request scans). Refresh cadence is configured on the backend —
+          see docs for scheduling rollup jobs.
+        </p>
+        <MetricsTimeseriesCharts variant="admin" />
       </section>
 
       <Card>
