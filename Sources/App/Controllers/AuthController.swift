@@ -327,7 +327,7 @@ struct UserResponse: Content {
     let suggested_github_app_install: Bool
     /// Backend `APP_ENV`: `local`, `dev`, or `prod`.
     let app_env: String
-    /// True when non-production Pro/rate-limit bypasses are active (`APP_ENV` local/dev and `STRICT_PRO_GATING` unset).
+    /// True when local-only Pro/rate-limit bypasses are active (`APP_ENV=local` and `strictProGating` is off).
     let non_production_bypasses: Bool
 
     enum CodingKeys: String, CodingKey {

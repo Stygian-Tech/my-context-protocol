@@ -19,18 +19,24 @@ struct ProcessEnvSecurityTests {
         AppEnvironment._testOverrideAppEnv = nil
         AppEnvironment._testOverrideStrict = nil
         #expect(AppEnvironment.deployKind() == .prod)
+        #expect(AppEnvironment.strictProGating == true)
         #expect(AppEnvironment.nonProductionBypassesActive == false)
 
         AppEnvironment._testOverrideStrict = nil
         AppEnvironment._testOverrideAppEnv = "LOCAL"
         #expect(AppEnvironment.deployKind() == .local)
+        #expect(AppEnvironment.strictProGating == false)
         #expect(AppEnvironment.nonProductionBypassesActive == true)
 
         AppEnvironment._testOverrideAppEnv = "dev"
         #expect(AppEnvironment.deployKind() == .dev)
+        #expect(AppEnvironment.strictProGating == true)
+        #expect(AppEnvironment.nonProductionBypassesActive == false)
 
         AppEnvironment._testOverrideAppEnv = "prod"
         #expect(AppEnvironment.deployKind() == .prod)
+        #expect(AppEnvironment.strictProGating == true)
+        #expect(AppEnvironment.nonProductionBypassesActive == false)
 
         AppEnvironment._testOverrideAppEnv = "local"
         AppEnvironment._testOverrideStrict = true

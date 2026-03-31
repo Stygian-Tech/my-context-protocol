@@ -27,11 +27,31 @@ enum AppEnvironment {
     }
 
     /// When true, non-production Pro and sync rate-limit bypasses are **disabled** (Stripe + `INTERNAL_PRO_*` still apply).
+    ///
+    /// Defaults: **local** → off unless `STRICT_PRO_GATING` is set truthy; **dev** and **prod** → on unless set falsy
+    /// (`0` / `false` / `no`). Unrecognized non-empty values fail closed in dev/prod, relaxed in local.
     static var strictProGating: Bool {
         if let o = _testOverrideStrict { return o }
-        guard let s = Environment.get("STRICT_PRO_GATING"), !s.isEmpty else { return false }
-        let v = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return v == "1" || v == "true" || v == "yes"
+        if let raw = Environment.get("STRICT_PRO_GATING") {
+            let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty {
+                let v = s.lowercased()
+                if v == "0" || v == "false" || v == "no" {
+                    return false
+                }
+                if v == "1" || v == "true" || v == "yes" {
+                    return true
+                }
+                switch deployKind() {
+                case .local: return false
+                case .dev, .prod: return true
+                }
+            }
+        }
+        switch deployKind() {
+        case .local: return false
+        case .dev, .prod: return true
+        }
     }
 
     static var isNonProduction: Bool {
@@ -41,9 +61,9 @@ enum AppEnvironment {
         }
     }
 
-    /// Pro entitlement + sync rate-limit relaxations apply only in local/dev when not strict.
+    /// Pro entitlement + sync rate-limit relaxations apply only on **local** when `strictProGating` is off.
     static var nonProductionBypassesActive: Bool {
-        isNonProduction && !strictProGating
+        deployKind() == .local && !strictProGating
     }
 
     static var appEnvString: String {
