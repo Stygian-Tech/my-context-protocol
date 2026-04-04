@@ -909,10 +909,8 @@ struct ProjectController {
         p95: Int?
     ) {
         guard !logs.isEmpty else { return (nil, nil, nil) }
-        let statuses = logs.compactMap { Int($0.status) }
-        guard !statuses.isEmpty else { return (nil, nil, nil) }
-        let ok = statuses.filter { $0 < 400 }.count
-        let rate = Double(ok) / Double(statuses.count)
+        let ok = logs.filter(\.countsAsSuccessfulRequestMetric).count
+        let rate = Double(ok) / Double(logs.count)
         let latencies = logs.compactMap(\.latencyMs).sorted()
         let avg: Double? =
             latencies.isEmpty

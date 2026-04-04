@@ -318,7 +318,7 @@ struct AccountDashboardSummaryResponse: Content {
     let total_requests: Int
     let requests_last_24h: Int
     let requests_last_7d: Int
-    /// HTTP status < 400; computed from `metrics_sample_size_last_7d` newest logs (see that field).
+    /// Successful MCP calls: HTTP 2xx/3xx **and** no JSON-RPC error (`error_code` empty). RPC errors often use HTTP 200.
     let success_rate_last_7d: Double?
     let metrics_sample_size_last_7d: Int
     let avg_latency_ms_last_7d: Double?

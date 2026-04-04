@@ -13,6 +13,17 @@ private func isTruthyEnv(_ key: String) -> Bool {
 }
 
 public func configure(_ app: Application) throws {
+    // Non-production: default root log level to `.debug` so MCP handler traces (`mcpTrace`) are visible unless LOG_LEVEL is set.
+    if AppEnvironment.isNonProduction {
+        let raw = Environment.get("LOG_LEVEL")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if raw.isEmpty {
+            app.logger.logLevel = .debug
+            app.logger.info(
+                "Non-production: LOG_LEVEL unset; using debug (MCP RPC traces via DEV_LOG_MCP). Set LOG_LEVEL=info to quiet down."
+            )
+        }
+    }
+
     let deploy = AppEnvironment.deployKind()
     let bypass = AppEnvironment.nonProductionBypassesActive
     let strict = AppEnvironment.strictProGating

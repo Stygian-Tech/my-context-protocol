@@ -146,7 +146,7 @@ enum DashboardTimeseriesService {
                 guard let ix = Self.bucketIndex(for: ts, buckets: buckets, rangeEndInclusive: rangeEndInclusive)
                 else { continue }
                 bins[ix].requests += 1
-                if let code = Int(log.status), (200 ..< 400).contains(code) {
+                if log.countsAsSuccessfulRequestMetric {
                     bins[ix].successes += 1
                 }
                 if let lat = log.latencyMs {

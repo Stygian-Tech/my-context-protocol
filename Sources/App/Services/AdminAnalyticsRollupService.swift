@@ -51,6 +51,7 @@ enum AdminAnalyticsRollupService {
                 SUM(
                   CASE
                     WHEN status ~ '^[0-9]+$' AND (CAST(status AS INTEGER) >= 200 AND CAST(status AS INTEGER) < 400)
+                      AND (error_code IS NULL OR TRIM(BOTH FROM error_code) = '')
                     THEN 1 ELSE 0
                   END
                 )::int AS success_count,
@@ -85,7 +86,7 @@ enum AdminAnalyticsRollupService {
             ) ?? ts
             var b = bins[hour] ?? Bin()
             b.requestCount += 1
-            if isSuccessStatus(log.status) {
+            if log.countsAsSuccessfulRequestMetric {
                 b.successCount += 1
             }
             if let lat = log.latencyMs {
@@ -122,8 +123,4 @@ enum AdminAnalyticsRollupService {
         return c
     }()
 
-    private static func isSuccessStatus(_ status: String) -> Bool {
-        guard let code = Int(status) else { return false }
-        return (200 ..< 400).contains(code)
-    }
 }
