@@ -37,13 +37,15 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
 
   if (isLoading) {
     return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
-        <div className="grid grid-cols-2 gap-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[4.25rem] rounded-lg" />
-          ))}
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+        <div className="rounded-lg border bg-card/50 p-2 shadow-xs">
+          <div className="grid grid-cols-2 gap-2 items-start">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-[3.25rem] rounded-md" />
+            ))}
+          </div>
         </div>
-        <Skeleton className="hidden h-full min-h-48 rounded-lg lg:block" />
+        <Skeleton className="hidden min-h-48 rounded-lg lg:block" />
       </div>
     );
   }
@@ -96,59 +98,43 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
       <div
         className={
           data.method_breakdown_last_7d.length > 0
-            ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] lg:items-stretch"
+            ? "grid min-w-0 gap-4 lg:grid-cols-2 lg:items-stretch"
             : "contents"
         }
       >
-        <div className="grid grid-cols-2 gap-2">
-          <DashboardStatCard
-            compact
-            title="Total requests"
-            value={data.total_requests.toLocaleString()}
-            valueClassName="text-lg"
-          />
-          <DashboardStatCard
-            compact
-            title="Last 24h"
-            value={data.requests_last_24h.toLocaleString()}
-            valueClassName="text-lg"
-          />
-          <DashboardStatCard
-            compact
-            title="Last 7d"
-            value={data.requests_last_7d.toLocaleString()}
-            valueClassName="text-lg"
-          />
-          <DashboardStatCard
-            compact
-            title="Success (7d)"
-            value={formatPct(data.success_rate_last_7d)}
-            hint={successHint}
-            valueClassName="text-lg"
-          />
-          <DashboardStatCard
-            compact
-            title="Avg latency"
-            value={
-              data.avg_latency_ms_last_7d != null
-                ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
-                : "—"
-            }
-            valueClassName="text-lg"
-          />
-          <DashboardStatCard
-            compact
-            title="p95 latency"
-            value={
-              data.p95_latency_ms_last_7d != null ? `${data.p95_latency_ms_last_7d} ms` : "—"
-            }
-            valueClassName="text-lg"
-          />
+        <div className="min-w-0 rounded-lg border bg-card/50 p-2 shadow-xs">
+          <div className="grid grid-cols-2 gap-2 items-start">
+            <DashboardStatCard compact title="Total requests" value={data.total_requests.toLocaleString()} />
+            <DashboardStatCard compact title="Last 24h" value={data.requests_last_24h.toLocaleString()} />
+            <DashboardStatCard compact title="Last 7d" value={data.requests_last_7d.toLocaleString()} />
+            <DashboardStatCard
+              compact
+              title="Success (7d)"
+              value={formatPct(data.success_rate_last_7d)}
+              hint={successHint}
+            />
+            <DashboardStatCard
+              compact
+              title="Avg latency"
+              value={
+                data.avg_latency_ms_last_7d != null
+                  ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
+                  : "—"
+              }
+            />
+            <DashboardStatCard
+              compact
+              title="p95 latency"
+              value={
+                data.p95_latency_ms_last_7d != null ? `${data.p95_latency_ms_last_7d} ms` : "—"
+              }
+            />
+          </div>
         </div>
         {data.method_breakdown_last_7d.length > 0 ? (
           <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card/50 shadow-xs">
-            <div className="border-b px-3 py-2.5">
-              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            <div className="border-b px-2 py-2">
+              <p className="text-muted-foreground text-[10px] font-medium leading-none tracking-wide uppercase">
                 Methods (7d sample)
               </p>
             </div>

@@ -26,14 +26,18 @@ export function DashboardStatCard({
     <div
       className={cn(
         "rounded-lg border bg-card/50 shadow-xs",
-        compact ? "p-2.5" : "p-4"
+        compact
+          ? "flex min-h-0 min-w-0 flex-col gap-0.5 p-2"
+          : "p-4"
       )}
     >
-      <div className="flex items-start justify-between gap-1.5">
+      <div className="flex items-center justify-between gap-1">
         <p
           className={cn(
             "text-muted-foreground min-w-0 flex-1 font-medium tracking-wide uppercase",
-            compact ? "text-[10px] leading-tight" : "text-xs"
+            compact
+              ? "text-[10px] leading-none"
+              : "text-xs"
           )}
         >
           {title}
@@ -42,8 +46,8 @@ export function DashboardStatCard({
           <Tooltip>
             <TooltipTrigger
               className={cn(
-                "text-muted-foreground hover:text-foreground inline-flex shrink-0 rounded-sm p-0.5 outline-none",
-                compact ? "-mr-0.5 -mt-0.5" : "-mr-1 -mt-0.5",
+                "text-muted-foreground hover:text-foreground inline-flex shrink-0 rounded-sm p-0 outline-none",
+                compact ? "translate-x-0.5" : "-mr-1 -mt-0.5 p-0.5",
                 "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               )}
               aria-label={`About ${title}`}
@@ -67,9 +71,10 @@ export function DashboardStatCard({
       </div>
       <p
         className={cn(
-          "font-mono font-semibold tabular-nums",
-          compact ? "mt-0.5" : "mt-1",
-          valueClassName
+          "min-w-0 font-mono font-semibold tabular-nums tracking-tight",
+          compact
+            ? "text-xl leading-none sm:text-2xl sm:leading-none"
+            : cn("mt-1", valueClassName)
         )}
       >
         {value}
