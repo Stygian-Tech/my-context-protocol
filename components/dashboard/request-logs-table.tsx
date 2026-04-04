@@ -17,6 +17,12 @@ import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { formatLocalDateTime } from "@/lib/format-local-time";
 import type { RequestLog } from "@/lib/types";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
 interface RequestLogsTableProps {
   projectId: string;
@@ -74,6 +80,14 @@ export function RequestLogsTable({ projectId }: RequestLogsTableProps) {
     });
   };
 
+  const copyRow = (log: RequestLog) => {
+    const text = formatRequestLogsTsv([log], true);
+    void copyTextToClipboard(text, {
+      success: "Copied log row to clipboard",
+      error: "Could not copy row",
+    });
+  };
+
   if (isLoading) {
     return <Skeleton className="h-48" />;
   }
@@ -105,8 +119,9 @@ export function RequestLogsTable({ projectId }: RequestLogsTableProps) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-muted-foreground text-xs leading-snug">
-          Right-click a row to copy that row (tab-separated). Use the button to copy every loaded
-          row with a header line for spreadsheets.
+          Right-click a row to open the menu, then choose <span className="text-foreground">Copy row</span>{" "}
+          (tab-separated, includes header). Use the button to copy every loaded row with a header for
+          spreadsheets.
         </p>
         <Button type="button" variant="outline" size="sm" onClick={copyAll}>
           Copy all logs
@@ -125,42 +140,38 @@ export function RequestLogsTable({ projectId }: RequestLogsTableProps) {
         </TableHeader>
         <TableBody>
           {logs.map((log) => (
-            <TableRow
-              key={log.id}
-              className="cursor-context-menu"
-              title="Right-click to copy this row (TSV)"
-              onContextMenu={(e) => {
-                e.preventDefault();
-                const text = formatRequestLogsTsv([log], true);
-                void copyTextToClipboard(text, {
-                  success: "Copied log row to clipboard",
-                  error: "Could not copy row",
-                });
-              }}
-            >
-              <TableCell className="text-sm">
-                {formatLocalDateTime(log.timestamp)}
-              </TableCell>
-              <TableCell className="font-mono text-sm">{log.method}</TableCell>
-              <TableCell>
-                <Badge variant={statusBadgeVariant(log.status)}>{log.status}</Badge>
-              </TableCell>
-              <TableCell>{log.latency_ms ?? "-"} ms</TableCell>
-              <TableCell className="font-mono text-sm">{log.client_id ?? "-"}</TableCell>
-              <TableCell className="max-w-[280px] align-top text-sm">
-                <span className="text-muted-foreground block font-mono text-xs">
-                  {log.error_code ?? "—"}
-                </span>
-                {log.error_message ? (
-                  <span
-                    className="text-destructive mt-0.5 line-clamp-4 whitespace-pre-wrap break-words"
-                    title={log.error_message}
-                  >
-                    {log.error_message}
+            <ContextMenu key={log.id}>
+              <ContextMenuTrigger
+                title="Right-click for row actions"
+                render={<TableRow className="cursor-context-menu" />}
+              >
+                <TableCell className="text-sm">
+                  {formatLocalDateTime(log.timestamp)}
+                </TableCell>
+                <TableCell className="font-mono text-sm">{log.method}</TableCell>
+                <TableCell>
+                  <Badge variant={statusBadgeVariant(log.status)}>{log.status}</Badge>
+                </TableCell>
+                <TableCell>{log.latency_ms ?? "-"} ms</TableCell>
+                <TableCell className="font-mono text-sm">{log.client_id ?? "-"}</TableCell>
+                <TableCell className="max-w-[280px] align-top text-sm">
+                  <span className="text-muted-foreground block font-mono text-xs">
+                    {log.error_code ?? "—"}
                   </span>
-                ) : null}
-              </TableCell>
-            </TableRow>
+                  {log.error_message ? (
+                    <span
+                      className="text-destructive mt-0.5 line-clamp-4 whitespace-pre-wrap break-words"
+                      title={log.error_message}
+                    >
+                      {log.error_message}
+                    </span>
+                  ) : null}
+                </TableCell>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onClick={() => copyRow(log)}>Copy row</ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           ))}
         </TableBody>
       </Table>
