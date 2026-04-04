@@ -14,12 +14,12 @@ struct RequestLogMetricsTests {
         #expect(log.countsAsSuccessfulRequestMetric == true)
     }
 
-    @Test func http200WithJsonRpcErrorCountsAsFailure() {
+    @Test func http404WithJsonRpcErrorCountsAsFailure() {
         let log = RequestLog(
             projectId: UUID(),
             method: "unknown/method",
             latencyMs: 2,
-            status: "200",
+            status: "404",
             errorCode: "-32601",
             errorMessage: "Method not found"
         )

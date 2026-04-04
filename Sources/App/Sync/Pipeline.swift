@@ -176,6 +176,7 @@ struct SyncPipeline {
             if allReady {
                 project.activeReleaseId = release.id
                 try await project.save(on: db)
+                app.mcpCatalogNotifications.bumpCatalog(for: projectId)
             }
         } catch {
             release.status = "failed"

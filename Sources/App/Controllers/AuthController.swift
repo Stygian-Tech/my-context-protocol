@@ -24,6 +24,7 @@ private func syncEnvAdminBootstrap(account: Account, db: Database) async throws 
     }
     guard !account.isAdmin else { return }
     account.isAdmin = true
+    account.adminGrantedAt = Date()
     try await account.save(on: db)
 }
 

@@ -89,12 +89,12 @@ Sources/MyContextProtocol/
 
 ## Spec & Plan
 
-- [Notion spec](https://www.notion.so/MyContextProtocol-325f6c1638ed80568b93dc8e6abba384)
+- Product specs and planning notes live in the team’s internal wiki (not linked here—this repo is open source).
 - Implementation plan: see `.cursor/plans/` for phased rollout
 
 ## CI/CD
 
-- Backend GitHub Actions + Depot: see [CI/CD (Notion)](https://www.notion.so/32ff6c1638ed81ad8b66dd9c6f66faa2).
+- Backend GitHub Actions + Depot: workflow definitions are in `.github/workflows/`; extended runbooks stay in the team’s internal wiki.
 
 ## License
 

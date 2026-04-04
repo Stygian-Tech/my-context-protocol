@@ -62,8 +62,8 @@ final class RequestLog: Model, Content {
 extension RequestLog: @unchecked Sendable {}
 
 extension RequestLog {
-    /// For dashboards: HTTP 2xx/3xx **and** no JSON-RPC error. MCP returns HTTP 200 with `error` for RPC failures
-    /// (`-32601` method not found, etc.); those rows set `error_code` and must not count as successes on charts.
+    /// For dashboards: HTTP 2xx/3xx **and** no JSON-RPC error in the logged row.
+    /// MCP failures use non-success HTTP status and still set `error_code` / `error_message` when applicable.
     var countsAsSuccessfulRequestMetric: Bool {
         guard let code = Int(status), (200 ..< 400).contains(code) else { return false }
         if let ec = errorCode?.trimmingCharacters(in: .whitespacesAndNewlines), !ec.isEmpty {

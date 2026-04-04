@@ -28,7 +28,23 @@ struct AdminAccountFlagsRequest: Content {
     var paywall_bypass: Bool?
 }
 
+/// Admin-only directory row: accounts with platform admin and/or paywall bypass overrides.
+struct AdminPrivilegedAccountRow: Content {
+    let account_id: String
+    let github_login: String
+    let is_admin: Bool
+    let paywall_bypass: Bool
+    let admin_granted_at: String?
+    let paywall_bypass_granted_at: String?
+}
+
 enum AdminController {
+    private static func rfc3339(_ date: Date?) -> String? {
+        guard let date else { return nil }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.string(from: date)
+    }
     static func platformMetrics(req: Request) async throws -> AdminPlatformMetricsResponse {
         AdminPlatformMetricsResponse(
             total_users: Int(try await Account.query(on: req.db).count()),
@@ -81,7 +97,7 @@ enum AdminController {
         )
     }
 
-    static func updateFlags(req: Request) async throws -> HTTPStatus {
+    static func updateFlags(req: Request) async throws -> Response {
         let body = try req.content.decode(AdminAccountFlagsRequest.self)
         let hasAdmin = body.is_admin != nil
         let hasBypass = body.paywall_bypass != nil
@@ -89,7 +105,7 @@ enum AdminController {
             throw Abort(.badRequest, reason: "Set at least one of is_admin or paywall_bypass")
         }
 
-        guard let account = try await Account.find(body.account_id, on: req.db) else {
+        guard let account = try await Account.find(body.account_id, on: req.db), let id = account.id else {
             throw Abort(.notFound, reason: "Account not found")
         }
 
@@ -101,12 +117,40 @@ enum AdminController {
                 throw Abort(.badRequest, reason: "Cannot remove your own admin access")
             }
             account.isAdmin = v
+            account.adminGrantedAt = v ? Date() : nil
         }
         if let v = body.paywall_bypass {
             account.paywallBypass = v
+            account.paywallBypassGrantedAt = v ? Date() : nil
         }
         try await account.save(on: req.db)
-        return .noContent
+        let payload = AdminLookupResponse(
+            account_id: id.uuidString,
+            is_admin: account.isAdmin,
+            paywall_bypass: account.paywallBypass
+        )
+        return try await payload.encodeResponse(status: .ok, for: req)
+    }
+
+    static func listPrivilegedAccounts(req: Request) async throws -> [AdminPrivilegedAccountRow] {
+        let accounts = try await Account.query(on: req.db)
+            .group(.or) { group in
+                group.filter(\.$isAdmin == true)
+                group.filter(\.$paywallBypass == true)
+            }
+            .sort(\.$login, .ascending)
+            .all()
+        return accounts.compactMap { acct in
+            guard let aid = acct.id else { return nil }
+            return AdminPrivilegedAccountRow(
+                account_id: aid.uuidString,
+                github_login: acct.login,
+                is_admin: acct.isAdmin,
+                paywall_bypass: acct.paywallBypass,
+                admin_granted_at: Self.rfc3339(acct.adminGrantedAt),
+                paywall_bypass_granted_at: Self.rfc3339(acct.paywallBypassGrantedAt)
+            )
+        }
     }
 
     // MARK: - Analytics (hourly rollup)

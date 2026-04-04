@@ -44,6 +44,7 @@ struct ApiKeyMiddleware: AsyncMiddleware {
         apiKey.lastUsedAt = Date()
         try await apiKey.save(on: request.db)
 
+        request.storage[McpApiKeyRecordKey.self] = apiKey
         request.storage[ProjectKey.self] = apiKey.project
         let pid = apiKey.project.id?.uuidString ?? "nil"
         let kid = apiKey.id?.uuidString ?? "nil"
@@ -54,4 +55,9 @@ struct ApiKeyMiddleware: AsyncMiddleware {
 
 struct ProjectKey: StorageKey {
     typealias Value = Project
+}
+
+/// Active `ApiKey` model for MCP subscription bookkeeping (same lifetime as `ProjectKey`).
+struct McpApiKeyRecordKey: StorageKey {
+    typealias Value = ApiKey
 }

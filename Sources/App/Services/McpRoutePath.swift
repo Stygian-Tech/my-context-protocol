@@ -34,4 +34,18 @@ enum McpRoutePath {
         }
         group.on(.POST, path[path.count - 1], body: body, use: handler)
     }
+
+    /// Registers `GET …/events` under the same base path as `registerPost` (SSE for MCP list_changed).
+    static func registerGetEvents(on builder: RoutesBuilder, handler: @escaping @Sendable (Request) async throws -> Response) {
+        let segments = pathComponents()
+        guard !segments.isEmpty else {
+            builder.on(.GET, "mcp", "events", use: handler)
+            return
+        }
+        var group: RoutesBuilder = builder
+        for seg in segments {
+            group = group.grouped(PathComponent(stringLiteral: seg))
+        }
+        group.on(.GET, "events", use: handler)
+    }
 }

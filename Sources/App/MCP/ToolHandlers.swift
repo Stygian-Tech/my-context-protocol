@@ -3,6 +3,9 @@ import Vapor
 
 struct ToolHandlers {
     static func handle(name: String, arguments: [String: String], db: Database, projectId: UUID) async throws -> String {
+        if name == MCPConstants.catalogToolName {
+            return try await McpCatalogMarkdown.build(db: db, projectId: projectId)
+        }
         if name.hasPrefix("skill:") {
             return try await handleSkillTool(name: name, arguments: arguments, db: db, projectId: projectId)
         }

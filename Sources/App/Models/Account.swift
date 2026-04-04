@@ -47,6 +47,14 @@ final class Account: Model, Content {
     @Field(key: "paywall_bypass")
     var paywallBypass: Bool
 
+    /// Set when `is_admin` becomes true; cleared when revoked.
+    @OptionalField(key: "admin_granted_at")
+    var adminGrantedAt: Date?
+
+    /// Set when `paywall_bypass` becomes true; cleared when revoked.
+    @OptionalField(key: "paywall_bypass_granted_at")
+    var paywallBypassGrantedAt: Date?
+
     @Children(for: \.$account)
     var projects: [Project]
 

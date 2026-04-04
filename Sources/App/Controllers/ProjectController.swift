@@ -599,6 +599,9 @@ struct ProjectController {
         }
         project.activeReleaseId = releaseId
         try await project.save(on: req.db)
+        if let pid = project.id {
+            req.application.mcpCatalogNotifications.bumpCatalog(for: pid)
+        }
         return Response(status: .noContent)
     }
 
@@ -749,6 +752,9 @@ struct ProjectController {
             cap.type = capType
             cap.schemaJson = newSchema
             try await cap.save(on: req.db)
+        }
+        if releaseId == project.activeReleaseId, let pid = project.id {
+            req.application.mcpCatalogNotifications.bumpCatalog(for: pid)
         }
         return Self.compiledSkillResponse(compiled, schemaJson: newSchema, routingRule: routingRule)
     }

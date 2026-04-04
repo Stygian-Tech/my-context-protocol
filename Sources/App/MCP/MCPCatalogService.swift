@@ -24,7 +24,9 @@ enum MCPCatalogService {
         return try await CapabilityDef.query(on: db)
             .filter(\.$compiledSkill.$id ~~ compiledSkillIds)
             .filter(\.$type ~~ types)
-            .with(\.$compiledSkill)
+            .with(\.$compiledSkill) { skill in
+                skill.with(\.$routingRules)
+            }
             .all()
     }
 }

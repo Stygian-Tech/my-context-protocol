@@ -54,23 +54,33 @@ struct JSONRPCParams: Content {
     let name: String?
     let arguments: [String: String]?
     let uri: String?
+    /// `initialize` request params include `protocolVersion`.
+    let protocolVersion: String?
 
     enum CodingKeys: String, CodingKey {
         case name
         case arguments
         case uri
+        case protocolVersion
     }
 
-    init(name: String?, arguments: [String: String]?, uri: String? = nil) {
+    init(
+        name: String?,
+        arguments: [String: String]?,
+        uri: String? = nil,
+        protocolVersion: String? = nil
+    ) {
         self.name = name
         self.arguments = arguments
         self.uri = uri
+        self.protocolVersion = protocolVersion
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.decodeIfPresent(String.self, forKey: .name)
         uri = try c.decodeIfPresent(String.self, forKey: .uri)
+        protocolVersion = try c.decodeIfPresent(String.self, forKey: .protocolVersion)
         if let flat = try? c.decode([String: String].self, forKey: .arguments) {
             arguments = flat
         } else if c.contains(.arguments) {
@@ -98,6 +108,7 @@ struct JSONRPCParams: Content {
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(arguments, forKey: .arguments)
         try c.encodeIfPresent(uri, forKey: .uri)
+        try c.encodeIfPresent(protocolVersion, forKey: .protocolVersion)
     }
 }
 
@@ -114,6 +125,7 @@ struct InitializeResult: Content {
     let protocolVersion: String
     let capabilities: ServerCapabilities
     let serverInfo: ServerInfo
+    let instructions: String?
 }
 
 struct ServerCapabilities: Content {
@@ -138,6 +150,17 @@ struct PromptsCapability: Content {
 struct ServerInfo: Content {
     let name: String
     let version: String
+    let title: String?
+    let description: String?
+    let websiteUrl: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case title
+        case description
+        case websiteUrl
+    }
 }
 
 struct ToolsListResult: Content {

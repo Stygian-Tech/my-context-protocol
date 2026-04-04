@@ -24,7 +24,11 @@ struct MCPController {
             req.logger.devTrace("mcp_rpc decoded method=\(body.method) projectId=\(projectId.uuidString)")
         } catch {
             req.logger.mcpTrace("mcp_rpc decode_failed projectId=\(projectId.uuidString)")
-            let res = try await jsonRPCError(id: nil, code: -32700, message: "Parse error").encodeResponse(for: req)
+            let res = try await jsonRPCError(id: nil, code: -32700, message: "Parse error").encodeResponse(
+                status: .badRequest,
+                for: req
+            )
+            req.attachMcpCatalogRevisionHeader(to: res)
             let latencyMs = Int(Date().timeIntervalSince(start) * 1000)
             try? await RequestLog(
                 projectId: projectId,
@@ -43,7 +47,7 @@ struct MCPController {
         switch body.method {
         case "initialize":
             req.logger.mcpTrace("mcp dispatch handler=initialize projectId=\(projectId.uuidString)")
-            out = try await handleInitialize(req: req, id: body.id)
+            out = try await handleInitialize(req: req, project: project, params: body.params, id: body.id)
         case "tools/list":
             req.logger.mcpTrace("mcp dispatch handler=tools/list projectId=\(projectId.uuidString)")
             out = try await handleToolsList(req: req, projectId: projectId, id: body.id)
@@ -56,6 +60,12 @@ struct MCPController {
         case "resources/read":
             req.logger.mcpTrace("mcp dispatch handler=resources/read projectId=\(projectId.uuidString)")
             out = try await handleResourcesRead(req: req, projectId: projectId, params: body.params, id: body.id)
+        case "resources/subscribe":
+            req.logger.mcpTrace("mcp dispatch handler=resources/subscribe projectId=\(projectId.uuidString)")
+            out = try await handleResourcesSubscribe(req: req, params: body.params, id: body.id)
+        case "resources/unsubscribe":
+            req.logger.mcpTrace("mcp dispatch handler=resources/unsubscribe projectId=\(projectId.uuidString)")
+            out = try await handleResourcesUnsubscribe(req: req, params: body.params, id: body.id)
         case "prompts/list":
             req.logger.mcpTrace("mcp dispatch handler=prompts/list projectId=\(projectId.uuidString)")
             out = try await handlePromptsList(req: req, projectId: projectId, id: body.id)
@@ -86,6 +96,7 @@ struct MCPController {
             errorMessage: out.jsonRpcErrorMessage
         ).save(on: req.db)
 
+        req.attachMcpCatalogRevisionHeader(to: out.response)
         return out.response
     }
 
@@ -99,9 +110,27 @@ struct MCPController {
         )
     }
 
-    private static func serveRpcError(id: JSONRPCId?, code: Int, message: String, req: Request) async throws -> MCPDispatchOutput {
+    /// HTTP status for JSON-RPC error payloads so proxies and logs reflect failure (not only `error` in the body).
+    private static func httpStatusForJsonRpcError(code: Int) -> HTTPStatus {
+        switch code {
+        case -32700, -32600: return .badRequest
+        case -32601: return .notFound
+        case -32602: return .badRequest
+        case -32603: return .internalServerError
+        default: return .badRequest
+        }
+    }
+
+    private static func serveRpcError(
+        id: JSONRPCId?,
+        code: Int,
+        message: String,
+        req: Request,
+        httpStatus: HTTPStatus? = nil
+    ) async throws -> MCPDispatchOutput {
         req.logger.mcpTrace("mcp rpc_error jsonRpcCode=\(code) message=\(message)")
-        let response = try await jsonRPCError(id: id, code: code, message: message).encodeResponse(for: req)
+        let status = httpStatus ?? httpStatusForJsonRpcError(code: code)
+        let response = try await jsonRPCError(id: id, code: code, message: message).encodeResponse(status: status, for: req)
         return MCPDispatchOutput(
             response: response,
             httpStatus: Int(response.status.code),
@@ -119,22 +148,57 @@ struct MCPController {
         return ErrorPayload(jsonrpc: "2.0", id: id, error: JSONRPCError(code: code, message: message))
     }
 
-    private static func handleInitialize(req: Request, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handleInitialize(
+        req: Request,
+        project: Project,
+        params: JSONRPCParams?,
+        id: JSONRPCId?
+    ) async throws -> MCPDispatchOutput {
         struct InitPayload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
             let result: InitializeResult
         }
+        guard let projectId = project.id else {
+            return try await serveRpcError(id: id, code: -32603, message: "Invalid project", req: req)
+        }
+        let negotiated = MCPProtocolVersion.negotiated(requested: params?.protocolVersion)
+        let dash = projectDashboardURL(projectId: projectId)
+        let instructions = MCPAgentCopy.initializeInstructions(projectName: project.name, projectDashboardURL: dash)
         let result = InitializeResult(
-            protocolVersion: "2024-11-05",
+            protocolVersion: negotiated,
             capabilities: ServerCapabilities(
-                tools: ToolsCapability(listChanged: false),
-                resources: ResourcesCapability(subscribe: false, listChanged: false),
-                prompts: PromptsCapability(listChanged: false)
+                tools: ToolsCapability(listChanged: true),
+                resources: ResourcesCapability(subscribe: true, listChanged: true),
+                prompts: PromptsCapability(listChanged: true)
             ),
-            serverInfo: ServerInfo(name: "MyContextProtocol", version: "1.0.0")
+            serverInfo: ServerInfo(
+                name: "MyContextProtocol",
+                version: MCPConstants.serverVersion,
+                title: "MyContextProtocol — \(project.name)",
+                description: MCPAgentCopy.serverDescription(projectName: project.name),
+                websiteUrl: dash
+            ),
+            instructions: instructions
         )
         return try await serveSuccess(InitPayload(jsonrpc: "2.0", id: id, result: result), req: req)
+    }
+
+    private static func projectDashboardURL(projectId: UUID) -> String? {
+        guard let base = AppFrontendURL.normalizedBase() else { return nil }
+        return "\(base)/projects/\(projectId.uuidString)"
+    }
+
+    private static func syntheticCatalogTool() -> MCPTool {
+        let schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
+            description: "Returns a markdown overview of tools, resources, and prompts for this project.",
+            summary: nil
+        )
+        return MCPTool(
+            name: MCPConstants.catalogToolName,
+            description: "Overview of this project’s MCP catalog—call first when unsure which skill to use.",
+            inputSchema: InputSchema.fromCapabilitySchemaJson(schemaJson)
+        )
     }
 
     private static func handleToolsList(req: Request, projectId: UUID, id: JSONRPCId?) async throws -> MCPDispatchOutput {
@@ -144,19 +208,21 @@ struct MCPController {
             let result: ToolsListResult
         }
 
+        let catalogTool = syntheticCatalogTool()
+
         guard let releaseId = try await Project.find(projectId, on: req.db)?.activeReleaseId else {
-            req.logger.mcpTrace("mcp tools/list result=empty reason=no_active_release")
+            req.logger.mcpTrace("mcp tools/list result=catalog_only reason=no_active_release")
             return try await serveSuccess(
-                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [])),
+                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [catalogTool])),
                 req: req
             )
         }
 
         let compiledSkillIds = try await MCPCatalogService.readyCompiledSkillIds(releaseId: releaseId, db: req.db)
         guard !compiledSkillIds.isEmpty else {
-            req.logger.mcpTrace("mcp tools/list result=empty reason=no_ready_skills releaseId=\(releaseId.uuidString)")
+            req.logger.mcpTrace("mcp tools/list result=catalog_only reason=no_ready_skills releaseId=\(releaseId.uuidString)")
             return try await serveSuccess(
-                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [])),
+                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [catalogTool])),
                 req: req
             )
         }
@@ -168,10 +234,10 @@ struct MCPController {
         )
         req.logger.mcpTrace("mcp tools/list readySkillRows=\(compiledSkillIds.count) toolCaps=\(capabilityDefs.count)")
 
-        let tools = capabilityDefs.map { cap in
+        let rest = capabilityDefs.map { cap in
             let compiled = cap.compiledSkill
-            let trimmed = compiled.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let desc = (trimmed?.isEmpty == false) ? trimmed : nil
+            let hints = McpCatalogMarkdown.routingHints(for: compiled)
+            let desc = MCPAgentCopy.toolDescription(baseSummary: compiled.summary, hints: hints)
             let inputSchema = InputSchema.fromCapabilitySchemaJson(cap.schemaJson)
             return MCPTool(
                 name: cap.capabilityName,
@@ -180,7 +246,7 @@ struct MCPController {
             )
         }
 
-        let listResult = ToolsListResult(tools: tools)
+        let listResult = ToolsListResult(tools: [catalogTool] + rest)
         return try await serveSuccess(ToolsListPayload(jsonrpc: "2.0", id: id, result: listResult), req: req)
     }
 
@@ -293,6 +359,44 @@ struct MCPController {
         return try await serveRpcError(id: id, code: -32602, message: "Resource not found", req: req)
     }
 
+    private struct MCPJsonEmpty: Content {}
+
+    private struct JsonRpcDataResult<D: Content>: Content {
+        let jsonrpc: String
+        let id: JSONRPCId?
+        let result: D
+    }
+
+    private static func handleResourcesSubscribe(req: Request, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+        guard let uri = params?.uri?.trimmingCharacters(in: .whitespacesAndNewlines), !uri.isEmpty else {
+            return try await serveRpcError(id: id, code: -32602, message: "Invalid params: missing uri", req: req)
+        }
+        guard let apiKey = req.storage[McpApiKeyRecordKey.self], let kid = apiKey.id else {
+            return try await serveRpcError(id: id, code: -32603, message: "Missing API key context", req: req)
+        }
+        req.application.mcpResourceSubscriptions.subscribe(apiKeyId: kid, uri: uri)
+        let uriLog = uri.count > 80 ? String(uri.prefix(80)) + "…" : uri
+        req.logger.mcpTrace("mcp resources/subscribe uri=\(uriLog)")
+        return try await serveSuccess(
+            JsonRpcDataResult(jsonrpc: "2.0", id: id, result: MCPJsonEmpty()),
+            req: req
+        )
+    }
+
+    private static func handleResourcesUnsubscribe(req: Request, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+        guard let uri = params?.uri?.trimmingCharacters(in: .whitespacesAndNewlines), !uri.isEmpty else {
+            return try await serveRpcError(id: id, code: -32602, message: "Invalid params: missing uri", req: req)
+        }
+        guard let apiKey = req.storage[McpApiKeyRecordKey.self], let kid = apiKey.id else {
+            return try await serveRpcError(id: id, code: -32603, message: "Missing API key context", req: req)
+        }
+        req.application.mcpResourceSubscriptions.unsubscribe(apiKeyId: kid, uri: uri)
+        return try await serveSuccess(
+            JsonRpcDataResult(jsonrpc: "2.0", id: id, result: MCPJsonEmpty()),
+            req: req
+        )
+    }
+
     private static func handlePromptsList(req: Request, projectId: UUID, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct Payload: Content {
             let jsonrpc: String
@@ -312,9 +416,12 @@ struct MCPController {
             db: req.db
         )
         let prompts = caps.map { cap in
-            MCPPrompt(
+            let compiled = cap.compiledSkill
+            let hints = McpCatalogMarkdown.routingHints(for: compiled)
+            let desc = MCPAgentCopy.toolDescription(baseSummary: compiled.summary, hints: hints)
+            return MCPPrompt(
                 name: cap.capabilityName,
-                description: cap.compiledSkill.summary,
+                description: desc,
                 arguments: nil
             )
         }

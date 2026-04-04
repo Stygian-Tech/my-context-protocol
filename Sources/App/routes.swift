@@ -121,9 +121,11 @@ func routes(_ app: Application) throws {
     adminProtected.post("admin", "lookup") { req in
         try await AdminController.lookup(req: req)
     }
+    adminProtected.get("admin", "privileged-accounts") { req in
+        try await AdminController.listPrivilegedAccounts(req: req)
+    }
     adminProtected.post("admin", "account-flags") { req in
-        let status = try await AdminController.updateFlags(req: req)
-        return Response(status: status)
+        try await AdminController.updateFlags(req: req)
     }
 
     app.on(.POST, ["webhooks", "github"], body: .collect(maxSize: ByteCount(value: 512 * 1024))) { req in
@@ -144,5 +146,8 @@ func routes(_ app: Application) throws {
     )
     McpRoutePath.registerPost(on: mcpRoutes) { req in
         try await MCPController.handle(req: req)
+    }
+    McpRoutePath.registerGetEvents(on: mcpRoutes) { req in
+        try await McpSseController.handle(req: req)
     }
 }
