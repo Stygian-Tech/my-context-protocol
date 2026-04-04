@@ -7,11 +7,15 @@ enum DevLoggingConfig {
     /// When unset in non-production, verbose HTTP tracing is **on**. Set `DEV_LOG_HTTP=0` / `false` / `no` to disable.
     private static let verboseHttpKey = "DEV_LOG_HTTP"
 
-    /// Per-RPC MCP handler traces (`Logger.mcpTrace`, `.debug`). When unset in non-production, **on**. Set `DEV_LOG_MCP=0` to disable.
+    /// Per-RPC MCP handler traces (`Logger.mcpTrace`, `.info`). When unset in non-production, **on**. Set `DEV_LOG_MCP=0` to disable.
     private static let mcpRpcTraceKey = "DEV_LOG_MCP"
 
-    /// 1/true/yes: log SQL from Fluent drivers at `.debug` (requires `APP_ENV=local|dev`). Independent of HTTP tracing.
+    /// When unset in non-production, Fluent SQL query logging is **on** at debug. Set `DEV_LOG_SQL=0` / `false` / `no` to disable.
     private static let sqlKey = "DEV_LOG_SQL"
+
+    /// One-line `http_access … status=… durationMs=…` after each request (see `HTTPAccessLogMiddleware`).
+    /// Unset: on for non-production, off for prod. Set `HTTP_ACCESS_LOG=1` to enable in prod; `0` to disable everywhere.
+    private static let httpAccessLogKey = "HTTP_ACCESS_LOG"
 
     static var verboseHttpEnabled: Bool {
         guard AppEnvironment.isNonProduction else { return false }
@@ -25,7 +29,7 @@ enum DevLoggingConfig {
         return true
     }
 
-    /// MCP JSON-RPC dispatch traces (each handler). Uses `.debug`; non-production defaults `LOG_LEVEL` to `.debug` when unset so these lines appear.
+    /// MCP JSON-RPC dispatch traces (each handler). Emits at `.info` when enabled so they show without raising root `LOG_LEVEL` to debug.
     static var mcpRpcTraceEnabled: Bool {
         guard AppEnvironment.isNonProduction else { return false }
         guard let raw = Environment.get(mcpRpcTraceKey) else {
@@ -38,9 +42,33 @@ enum DevLoggingConfig {
         return true
     }
 
+    static var httpAccessLogEnabled: Bool {
+        guard let raw = Environment.get(httpAccessLogKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty
+        else {
+            return AppEnvironment.isNonProduction
+        }
+        let v = raw.lowercased()
+        if v == "0" || v == "false" || v == "no" { return false }
+        if v == "1" || v == "true" || v == "yes" { return true }
+        return AppEnvironment.isNonProduction
+    }
+
+    static var sqlLogEnabled: Bool {
+        guard AppEnvironment.isNonProduction else { return false }
+        guard let raw = Environment.get(sqlKey) else {
+            return true
+        }
+        let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if v.isEmpty { return true }
+        if v == "0" || v == "false" || v == "no" { return false }
+        if v == "1" || v == "true" || v == "yes" { return true }
+        return true
+    }
+
     /// SQL log level for Fluent Postgres driver (non-optional in driver).
     static var postgresSqlLogLevel: Logger.Level {
-        guard AppEnvironment.isNonProduction, envTruthy(sqlKey) else {
+        guard sqlLogEnabled else {
             return .critical
         }
         return .debug
@@ -48,7 +76,7 @@ enum DevLoggingConfig {
 
     /// SQL log level for Fluent SQLite driver (`nil` disables query logging at the driver).
     static var sqliteSqlLogLevel: Logger.Level? {
-        guard AppEnvironment.isNonProduction, envTruthy(sqlKey) else {
+        guard sqlLogEnabled else {
             return nil
         }
         return .debug
@@ -121,9 +149,9 @@ extension Logger {
         self.info("\(message)")
     }
 
-    /// Finer MCP RPC tracing (handler steps). Emits at `.debug` when `DEV_LOG_MCP` is on (default in non-production).
+    /// MCP RPC tracing (handler steps). Emits at `.info` when `DEV_LOG_MCP` is on (default in non-production).
     func mcpTrace(_ message: @autoclosure () -> String) {
         guard DevLoggingConfig.mcpRpcTraceEnabled else { return }
-        self.debug("\(message())")
+        self.info("\(message())")
     }
 }

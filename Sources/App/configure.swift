@@ -19,7 +19,7 @@ public func configure(_ app: Application) throws {
         if raw.isEmpty {
             app.logger.logLevel = .debug
             app.logger.info(
-                "Non-production: LOG_LEVEL unset; using debug (MCP RPC traces via DEV_LOG_MCP). Set LOG_LEVEL=info to quiet down."
+                "Non-production: LOG_LEVEL unset; using debug (Fluent SQL + verbose HTTP). MCP handler lines use info (DEV_LOG_MCP). Set LOG_LEVEL=info to reduce SwiftLog noise."
             )
         }
     }
@@ -35,8 +35,10 @@ public func configure(_ app: Application) throws {
         app.logger.info("Verbose HTTP request tracing on (non-production default; set DEV_LOG_HTTP=0 to disable)")
         app.middleware.use(VerboseRequestLoggingMiddleware(), at: .beginning)
     }
-    if AppEnvironment.isNonProduction, DevLoggingConfig.envTruthy("DEV_LOG_SQL") {
-        app.logger.info("DEV_LOG_SQL enabled: Fluent SQL logging at debug (set LOG_LEVEL=debug to see queries)")
+    if AppEnvironment.isNonProduction, DevLoggingConfig.sqlLogEnabled {
+        app.logger.info(
+            "DEV_LOG_SQL: Fluent SQL logging at debug (non-prod default on; set DEV_LOG_SQL=0 to disable)"
+        )
     }
 
     app.middleware.use(SecurityHeadersMiddleware(), at: .beginning)
@@ -56,6 +58,13 @@ public func configure(_ app: Application) throws {
         allowCredentials: true
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
+    // Outermost: final status after ErrorMiddleware (Vapor’s default route log is request-only, no status).
+    app.middleware.use(HTTPAccessLogMiddleware(), at: .beginning)
+    if DevLoggingConfig.httpAccessLogEnabled {
+        app.logger.info(
+            "HTTP access log: http_access … status=… lines after each request (alongside req_start/req_end when DEV_LOG_HTTP is on). Prod: HTTP_ACCESS_LOG=1; disable: HTTP_ACCESS_LOG=0."
+        )
+    }
 
     app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
     app.routes.defaultMaxBodySize = "5mb"
