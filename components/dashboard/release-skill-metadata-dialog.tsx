@@ -124,10 +124,14 @@ function SkillEditorRow({
   projectId,
   releaseId,
   skill,
+  onSaved,
+  onCancel,
 }: {
   projectId: string;
   releaseId: string;
   skill: CompiledSkill;
+  onSaved?: () => void;
+  onCancel?: () => void;
 }) {
   const queryClient = useQueryClient();
   const [exposure, setExposure] = useState(skill.exposure_type);
@@ -202,6 +206,7 @@ function SkillEditorRow({
       queryClient.invalidateQueries({
         queryKey: ["release-validation", projectId, releaseId],
       });
+      onSaved?.();
     },
     onError: (err) => {
       if (err instanceof ApiError) {
@@ -234,14 +239,27 @@ function SkillEditorRow({
           <p className="font-medium">{skill.name}</p>
           <p className="text-muted-foreground font-mono text-xs break-all">{skill.path}</p>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleSave}
-          disabled={mutation.isPending}
-        >
-          {mutation.isPending ? "Saving…" : "Save"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onCancel ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onCancel()}
+              disabled={mutation.isPending}
+            >
+              Cancel
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleSave}
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? "Saving…" : "Save"}
+          </Button>
+        </div>
       </div>
       {saveError ? (
         <p className="text-destructive text-sm">{saveError}</p>
@@ -357,8 +375,9 @@ function SkillEditorRow({
             className="border-input text-primary focus-visible:ring-ring mt-0.5 h-4 w-4 rounded border shadow-xs focus-visible:ring-2 focus-visible:outline-none"
           />
           <Label htmlFor={`invoke-first-${skill.id}`} className="text-xs leading-snug font-normal">
-            <span className="font-medium">invoke_first</span> — prefer loading this resource
-            before other skills on the same task
+            <span className="font-medium">invoke_first</span> — suggest reading this skill before
+            others (MCP routing hint; used when exposure is{" "}
+            <span className="font-medium">resource</span>)
           </Label>
         </div>
       </div>
@@ -490,30 +509,15 @@ export function ReleaseSkillMetadataDialog({
       }}
     >
       <DialogContent className="flex max-h-[92vh] w-[min(88rem,calc(100vw-1rem))] flex-col gap-4 overflow-hidden p-6">
-        <DialogHeader className="shrink-0 space-y-3">
-          <div className="flex flex-wrap items-start gap-2">
-            {selectedSkillId ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setSelectedSkillId(null)}
-              >
-                Back to list
-              </Button>
-            ) : null}
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <DialogTitle>
-                {selectedSkill ? `Edit: ${selectedSkill.name}` : "MCP metadata"}
-              </DialogTitle>
-              <DialogDescription>
-                {selectedSkill
-                  ? "Update exposure, routing lists, body, and MCP JSON for this skill. Save applies to this release only."
-                  : "Pick a skill to edit full MCP metadata. Green, yellow, and red indicate publish readiness at a glance."}
-              </DialogDescription>
-            </div>
-          </div>
+        <DialogHeader className="shrink-0 space-y-1.5">
+          <DialogTitle>
+            {selectedSkill ? `Edit: ${selectedSkill.name}` : "MCP metadata"}
+          </DialogTitle>
+          <DialogDescription>
+            {selectedSkill
+              ? "Update exposure, routing lists, body, and MCP JSON for this skill. Save writes this release and returns to the list; Cancel returns without saving."
+              : "Pick a skill to edit full MCP metadata. Green, yellow, and red indicate publish readiness at a glance."}
+          </DialogDescription>
         </DialogHeader>
         {showIngestBanner ? (
           <div className="shrink-0 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-50">
@@ -545,6 +549,8 @@ export function ReleaseSkillMetadataDialog({
                 projectId={projectId}
                 releaseId={releaseId}
                 skill={selectedSkill}
+                onSaved={() => setSelectedSkillId(null)}
+                onCancel={() => setSelectedSkillId(null)}
               />
             </div>
           ) : (

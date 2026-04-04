@@ -256,14 +256,14 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                           </p>
                         ) : null}
                       </div>
-                      <div className="flex flex-shrink-0 flex-wrap gap-2">
+                      <div className="flex w-full flex-shrink-0 flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
                         {r.invoke_first ? (
-                          <span className="bg-primary/10 text-primary rounded-md px-2 py-0.5 text-xs font-medium">
+                          <span className="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-1 text-xs font-medium leading-none">
                             Invoke first
                           </span>
                         ) : null}
                         {hasHints && !r.invoke_first ? (
-                          <span className="bg-muted rounded-md px-2 py-0.5 text-xs">
+                          <span className="bg-muted inline-flex items-center rounded-md px-2 py-1 text-xs leading-none">
                             Agent hints
                           </span>
                         ) : null}
