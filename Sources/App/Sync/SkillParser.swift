@@ -16,6 +16,8 @@ struct ParsedSkill {
     let riskLevel: String?
     let sideEffects: String?
     let repoSpecific: Bool?
+    /// True when the file began with a closed `---` YAML front matter block (see Agent Skills layout).
+    let hadYamlFrontmatter: Bool
 }
 
 struct SkillParser {
@@ -30,8 +32,10 @@ struct SkillParser {
 
         var frontmatter: [String: String] = [:]
         var body = ""
+        var hadYamlFrontmatter = false
 
         if lines.first?.trimmingCharacters(in: .whitespaces) == "---" {
+            hadYamlFrontmatter = true
             var i = 1
             var closed = false
             while i < lines.count {
@@ -58,12 +62,21 @@ struct SkillParser {
             body = content
         }
 
-        guard let rawName = frontmatter["name"] else {
-            throw SkillParserError.missingName
-        }
-        let name = Self.normalizeScalarString(rawName)
-        guard !name.isEmpty else {
-            throw SkillParserError.missingName
+        let relativePath = fileURL.path.replacingOccurrences(of: basePath, with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        let name: String
+        if hadYamlFrontmatter {
+            guard let rawName = frontmatter["name"] else {
+                throw SkillParserError.missingName
+            }
+            let n = Self.normalizeScalarString(rawName)
+            guard !n.isEmpty else {
+                throw SkillParserError.missingName
+            }
+            name = n
+        } else {
+            name = try Self.inferredNameFromParentDirectory(fileURL: fileURL)
         }
 
         let description: String? = {
@@ -71,8 +84,6 @@ struct SkillParser {
             let t = Self.normalizeScalarString(d)
             return t.isEmpty ? nil : t
         }()
-        let relativePath = fileURL.path.replacingOccurrences(of: basePath, with: "")
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let hash = content.data(using: .utf8).map { $0.base64EncodedString() }
 
         let exposeAs = frontmatter["expose_as"]
@@ -97,8 +108,22 @@ struct SkillParser {
             invokeFirst: invokeFirst,
             riskLevel: riskLevel,
             sideEffects: sideEffects,
-            repoSpecific: repoSpecific
+            repoSpecific: repoSpecific,
+            hadYamlFrontmatter: hadYamlFrontmatter
         )
+    }
+
+    /// Parent folder name for `…/skill-name/SKILL.md` when there is no YAML `name` field.
+    private static func inferredNameFromParentDirectory(fileURL: URL) throws -> String {
+        let parent = fileURL.deletingLastPathComponent().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !parent.isEmpty, parent != ".", parent != "/" else {
+            throw SkillParserError.cannotInferNameWithoutFrontmatter
+        }
+        let normalized = normalizeScalarString(parent)
+        guard !normalized.isEmpty else {
+            throw SkillParserError.cannotInferNameWithoutFrontmatter
+        }
+        return normalized
     }
 
     /// Trims whitespace/newlines and strips stray `\\r` from Windows-style line endings in single-line YAML values.
@@ -122,6 +147,7 @@ enum SkillParserError: Error, LocalizedError {
     case emptyFile
     case missingName
     case unclosedFrontmatter
+    case cannotInferNameWithoutFrontmatter
 
     var errorDescription: String? {
         switch self {
@@ -131,6 +157,8 @@ enum SkillParserError: Error, LocalizedError {
             return "SKILL.md frontmatter is missing required \"name\" field"
         case .unclosedFrontmatter:
             return "SKILL.md frontmatter is missing closing --- delimiter"
+        case .cannotInferNameWithoutFrontmatter:
+            return "SKILL.md has no YAML front matter: place the file in a directory whose name is a valid skill slug (e.g. my-skill/SKILL.md), or add a \"name\" field under leading --- front matter"
         }
     }
 }

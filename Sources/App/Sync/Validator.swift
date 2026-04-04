@@ -3,6 +3,7 @@ import Foundation
 struct ValidationReport {
     let isValid: Bool
     let errors: [ValidationError]
+    let warnings: [ValidationError]
 }
 
 struct ValidationError {
@@ -17,6 +18,15 @@ struct Validator {
 
     static func validate(_ skill: ParsedSkill) -> ValidationReport {
         var errors: [ValidationError] = []
+        var warnings: [ValidationError] = []
+
+        if !skill.hadYamlFrontmatter {
+            warnings.append(ValidationError(
+                path: skill.path,
+                message: "No YAML front matter; skill name was inferred from the parent directory.",
+                line: nil
+            ))
+        }
 
         if skill.name.isEmpty {
             errors.append(ValidationError(path: skill.path, message: "name cannot be empty", line: nil))
@@ -58,7 +68,8 @@ struct Validator {
 
         return ValidationReport(
             isValid: errors.isEmpty,
-            errors: errors
+            errors: errors,
+            warnings: warnings
         )
     }
 }

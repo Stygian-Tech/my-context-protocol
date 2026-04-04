@@ -128,6 +128,7 @@ struct ProjectController {
             summary: cs.summary,
             skill_body: cs.skillBody,
             schema_json: schemaJson,
+            yaml_frontmatter_present: cs.yamlFrontmatterPresent,
             exposure_type: cs.exposureType,
             risk_level: cs.riskLevel,
             repo_specific: cs.repoSpecific,
@@ -844,15 +845,15 @@ struct ProjectController {
                     : trimmed
                 return ReleaseValidationResponse(is_valid: false, errors: [
                     ValidationErrorEntry(path: "release", message: message)
-                ])
+                ], warnings: [])
             }
-            return ReleaseValidationResponse(is_valid: true, errors: [])
+            return ReleaseValidationResponse(is_valid: true, errors: [], warnings: [])
         }
         guard let data = record.reportJson.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return ReleaseValidationResponse(is_valid: false, errors: [
                 ValidationErrorEntry(path: "report", message: "Could not parse validation report JSON")
-            ])
+            ], warnings: [])
         }
         let isValid = (obj["is_valid"] as? Bool) ?? false
         let rawErrors = (obj["errors"] as? [[String: Any]]) ?? []
@@ -861,7 +862,13 @@ struct ProjectController {
             let message = (e["message"] as? String) ?? ""
             return ValidationErrorEntry(path: path, message: message)
         }
-        return ReleaseValidationResponse(is_valid: isValid, errors: errors)
+        let rawWarnings = (obj["warnings"] as? [[String: Any]]) ?? []
+        let warnings: [ValidationErrorEntry] = rawWarnings.compactMap { e in
+            guard let path = e["path"] as? String else { return nil }
+            let message = (e["message"] as? String) ?? ""
+            return ValidationErrorEntry(path: path, message: message)
+        }
+        return ReleaseValidationResponse(is_valid: isValid, errors: errors, warnings: warnings)
     }
 
     // MARK: - Dashboard metrics

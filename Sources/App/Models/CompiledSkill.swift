@@ -38,6 +38,10 @@ final class CompiledSkill: Model, Content {
     @Field(key: "status")
     var status: String
 
+    /// Whether the ingested SKILL.md included a closed YAML `---` front matter block.
+    @Field(key: "yaml_frontmatter_present")
+    var yamlFrontmatterPresent: Bool
+
     /// Unified line diff vs `body_diff_prior_release_id` when SKILL body changed between releases.
     @OptionalField(key: "body_diff_unified")
     var bodyDiffUnified: String?
@@ -68,6 +72,7 @@ final class CompiledSkill: Model, Content {
         riskLevel: String,
         repoSpecific: Bool,
         status: String,
+        yamlFrontmatterPresent: Bool = true,
         bodyDiffUnified: String? = nil,
         bodyDiffPriorReleaseId: UUID? = nil
     ) {
@@ -82,6 +87,7 @@ final class CompiledSkill: Model, Content {
         self.riskLevel = riskLevel
         self.repoSpecific = repoSpecific
         self.status = status
+        self.yamlFrontmatterPresent = yamlFrontmatterPresent
         self.bodyDiffUnified = bodyDiffUnified
         self.bodyDiffPriorReleaseId = bodyDiffPriorReleaseId
     }

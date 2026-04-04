@@ -42,4 +42,17 @@ struct MCPInfrastructureTests {
         #expect(schema.type == "object")
         #expect(schema.properties?["detail"] != nil)
     }
+
+    @Test func resourceSchemaJsonPatchesUriWhilePreservingHints() {
+        let wrongUri = #"{"avoid_when":["x"],"mimeType":"text/markdown","uri":"ctx://skill/old-slug","use_when":["a"]}"#
+        let patched = CapabilitySchemaBuilder.resourceSchemaJsonWithPatchedUri(
+            schemaJson: wrongUri,
+            skillName: "new-slug"
+        )
+        #expect(patched != nil)
+        let meta = CapabilitySchemaBuilder.parseResourceMeta(patched!)
+        #expect(meta?.uri == CapabilitySchemaBuilder.resourceURI(skillName: "new-slug"))
+        #expect(meta?.useWhen == ["a"])
+        #expect(meta?.avoidWhen == ["x"])
+    }
 }

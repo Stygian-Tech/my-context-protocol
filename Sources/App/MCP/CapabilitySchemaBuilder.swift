@@ -116,6 +116,20 @@ enum CapabilitySchemaBuilder {
         return "\(resourceURIScheme)://\(resourceURIHost)/\(enc)"
     }
 
+    /// Rewrites `uri` to match `skillName`, preserving other keys (for release carry-forward after renames or manual edits).
+    static func resourceSchemaJsonWithPatchedUri(schemaJson: String, skillName: String) -> String? {
+        guard let data = schemaJson.data(using: .utf8),
+              var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        obj["uri"] = resourceURI(skillName: skillName)
+        guard let out = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+              let s = String(data: out, encoding: .utf8) else {
+            return nil
+        }
+        return s
+    }
+
     static func parseResourceMeta(_ schemaJson: String?) -> ParsedResourceMeta? {
         guard let schemaJson, let data = schemaJson.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

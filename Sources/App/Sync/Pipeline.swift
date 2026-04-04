@@ -92,11 +92,13 @@ struct SyncPipeline {
             var errorSummary: String?
             var parsedSkills: [(ParsedSkill, SkillPackage)] = []
             var validationErrors: [[String: String]] = []
+            var validationWarnings: [[String: String]] = []
 
             for fileURL in skillFiles {
                 do {
                     let skill = try SkillParser.parse(fileURL: fileURL, basePath: basePath)
                     let report = Validator.validate(skill)
+                    validationWarnings.append(contentsOf: report.warnings.map { ["path": $0.path, "message": $0.message] })
 
                     let validationStatus = report.isValid ? "valid" : "invalid"
                     let skillPackage = SkillPackage(
@@ -150,7 +152,8 @@ struct SyncPipeline {
 
             let reportPayload: [String: Any] = [
                 "is_valid": allValid,
-                "errors": validationErrors
+                "errors": validationErrors,
+                "warnings": validationWarnings
             ]
             let reportData = try JSONSerialization.data(withJSONObject: reportPayload)
             let reportJson = String(data: reportData, encoding: .utf8) ?? "{}"

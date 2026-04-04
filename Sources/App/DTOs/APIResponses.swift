@@ -223,6 +223,8 @@ struct CompiledSkillResponse: Content {
     let skill_body: String?
     /// MCP `inputSchema` / metadata JSON for this skill’s capability (from `capability_defs.schema_json`).
     let schema_json: String?
+    /// Whether the synced file included a closed YAML `---` block (false when name was inferred from the parent folder).
+    let yaml_frontmatter_present: Bool
     let exposure_type: String
     let risk_level: String
     let repo_specific: Bool
@@ -242,6 +244,7 @@ struct CompiledSkillResponse: Content {
         case skill_package_id = "skill_package_id"
         case skill_body = "skill_body"
         case schema_json = "schema_json"
+        case yaml_frontmatter_present = "yaml_frontmatter_present"
         case exposure_type = "exposure_type"
         case risk_level = "risk_level"
         case repo_specific = "repo_specific"
@@ -283,10 +286,12 @@ struct RequestLogResponse: Content {
 struct ReleaseValidationResponse: Content {
     let is_valid: Bool
     let errors: [ValidationErrorEntry]
+    let warnings: [ValidationErrorEntry]
 
     enum CodingKeys: String, CodingKey {
         case is_valid = "is_valid"
         case errors
+        case warnings
     }
 }
 

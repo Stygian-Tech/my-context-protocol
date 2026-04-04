@@ -152,6 +152,7 @@ public func configure(_ app: Application) throws {
     app.migrations.add(AddNameToApiKeys())
     app.migrations.add(AddAgentHintsToRoutingRules())
     app.migrations.add(AddCompiledSkillBodyDiffAndReleaseCounts())
+    app.migrations.add(AddYamlFrontmatterPresentToCompiledSkills())
     app.migrations.add(NormalizeRepoDefaultBranchToMain())
     app.migrations.add(CreateAppSessions())
     app.migrations.add(CreateOAuthHandoffTokens())

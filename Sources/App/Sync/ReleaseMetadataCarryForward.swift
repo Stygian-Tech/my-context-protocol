@@ -71,7 +71,15 @@ enum ReleaseMetadataCarryForward {
             if let oldCap = oldCS.capabilityDefs.first, let newCap = newCS.capabilityDefs.first {
                 newCap.capabilityName = "skill:\(newCS.name)"
                 newCap.type = capType
-                newCap.schemaJson = oldCap.schemaJson
+                var mergedSchema = oldCap.schemaJson
+                if capType == "resource", let raw = mergedSchema,
+                   let patched = CapabilitySchemaBuilder.resourceSchemaJsonWithPatchedUri(
+                    schemaJson: raw,
+                    skillName: newCS.name
+                   ) {
+                    mergedSchema = patched
+                }
+                newCap.schemaJson = mergedSchema
                 newCap.sideEffectLevel = oldCap.sideEffectLevel
                 try await newCap.save(on: db)
             }

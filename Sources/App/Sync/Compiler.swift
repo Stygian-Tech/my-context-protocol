@@ -34,7 +34,8 @@ struct Compiler {
                 exposureType: exposureType,
                 riskLevel: riskLevel,
                 repoSpecific: repoSpecific,
-                status: status
+                status: status,
+                yamlFrontmatterPresent: parsed.hadYamlFrontmatter
             )
             try await compiledSkill.save(on: db)
 
