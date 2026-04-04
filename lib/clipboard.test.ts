@@ -10,7 +10,7 @@ vi.mock("@/lib/toast", () => ({
   toastError,
 }));
 
-import { buildMcpJsonConfig, copyTextToClipboard } from "./clipboard";
+import { buildMcpJsonConfig, copyTextToClipboard, mcpEventsUrl } from "./clipboard";
 
 describe("clipboard helpers", () => {
   it("builds the mcp.json object for a new API key", () => {
@@ -24,6 +24,18 @@ describe("clipboard helpers", () => {
     }
   }
 }`);
+  });
+
+  it("uses a project-scoped server key when slug is provided", () => {
+    const raw = buildMcpJsonConfig("https://example.com/mcp", "k", {
+      projectSlug: "My Cool_Project!",
+    });
+    expect(raw).toContain('"MyContextProtocol_my-cool-project"');
+  });
+
+  it("appends /events for MCP SSE URL", () => {
+    expect(mcpEventsUrl("https://x.test/mcp")).toBe("https://x.test/mcp/events");
+    expect(mcpEventsUrl("https://x.test/mcp/")).toBe("https://x.test/mcp/events");
   });
 
   describe("copyTextToClipboard", () => {

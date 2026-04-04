@@ -30,6 +30,7 @@ import { getApiKeyDisplayName } from "@/lib/api-key-utils";
 interface ApiKeyManagerProps {
   projectId: string;
   mcpUrl?: string | null;
+  projectSlug?: string | null;
 }
 
 interface CreatedApiKey {
@@ -37,7 +38,7 @@ interface CreatedApiKey {
   name?: string | null;
 }
 
-export function ApiKeyManager({ projectId, mcpUrl }: ApiKeyManagerProps) {
+export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerProps) {
   const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
   const [keyName, setKeyName] = useState("");
   const queryClient = useQueryClient();
@@ -67,10 +68,16 @@ export function ApiKeyManager({ projectId, mcpUrl }: ApiKeyManagerProps) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <p className="text-muted-foreground text-sm">
-          API keys authenticate MCP clients. Store them securely—you won&apos;t
-          see the full key again.
-        </p>
+        <div className="text-muted-foreground space-y-1 text-sm">
+          <p>
+            API keys authenticate MCP clients. Store them securely—you won&apos;t
+            see the full key again.
+          </p>
+          <p>
+            For agents: call MCP tool <code className="font-mono text-xs">mycontext:catalog</code>{" "}
+            first for a markdown overview of this project&apos;s tools, resources, and prompts.
+          </p>
+        </div>
         <div className="flex w-full max-w-md flex-col gap-2 sm:flex-row">
           <Input
             value={keyName}
@@ -168,10 +175,13 @@ export function ApiKeyManager({ projectId, mcpUrl }: ApiKeyManagerProps) {
                       size="sm"
                       variant="outline"
                       onClick={() =>
-                        void copyTextToClipboard(buildMcpJsonConfig(mcpUrl, newKey.key), {
-                          success: "mcp.json object copied to clipboard",
-                          error: "Could not copy mcp.json object",
-                        })
+                        void copyTextToClipboard(
+                          buildMcpJsonConfig(mcpUrl, newKey.key, { projectSlug }),
+                          {
+                            success: "mcp.json object copied to clipboard",
+                            error: "Could not copy mcp.json object",
+                          }
+                        )
                       }
                     >
                       <CopyIcon className="h-4 w-4" />
@@ -179,7 +189,7 @@ export function ApiKeyManager({ projectId, mcpUrl }: ApiKeyManagerProps) {
                     </Button>
                   </div>
                   <pre className="bg-muted overflow-auto rounded-lg p-4 text-xs leading-relaxed">
-                    {buildMcpJsonConfig(mcpUrl, newKey.key)}
+                    {buildMcpJsonConfig(mcpUrl, newKey.key, { projectSlug })}
                   </pre>
                 </div>
               ) : (

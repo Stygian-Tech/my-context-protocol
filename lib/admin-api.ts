@@ -13,6 +13,16 @@ export interface AdminLookupResult {
   paywall_bypass: boolean;
 }
 
+/** Accounts with platform admin and/or paywall bypass (admin session only). */
+export interface AdminPrivilegedAccountRow {
+  account_id: string;
+  github_login: string;
+  is_admin: boolean;
+  paywall_bypass: boolean;
+  admin_granted_at: string | null;
+  paywall_bypass_granted_at: string | null;
+}
+
 export async function fetchAdminMetrics(): Promise<AdminPlatformMetrics> {
   return api.get<AdminPlatformMetrics>("/admin/metrics");
 }
@@ -42,6 +52,10 @@ export async function adminUpdateFlags(body: {
   account_id: string;
   is_admin?: boolean;
   paywall_bypass?: boolean;
-}): Promise<void> {
-  await api.post<void>("/admin/account-flags", body);
+}): Promise<AdminLookupResult> {
+  return api.post<AdminLookupResult>("/admin/account-flags", body);
+}
+
+export async function fetchPrivilegedAccounts(): Promise<AdminPrivilegedAccountRow[]> {
+  return api.get<AdminPrivilegedAccountRow[]>("/admin/privileged-accounts");
 }

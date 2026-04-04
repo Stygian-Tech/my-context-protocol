@@ -56,7 +56,7 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
   const successHint =
     data.requests_last_7d > data.metrics_sample_size_last_7d
       ? `Success rate from newest ${data.metrics_sample_size_last_7d.toLocaleString()} ${logWord} (7d).`
-      : "Based on MCP request logs: HTTP success and no JSON-RPC error (method not found and similar count as failures).";
+      : "Based on MCP request logs: HTTP 2xx/3xx with no logged JSON-RPC error. Failed calls use non-success HTTP status and/or a logged error code.";
 
   const activeCapsSummary = `${data.active_tools} ${pluralEn(data.active_tools, "tool", "tools")}, ${data.active_resources} ${pluralEn(data.active_resources, "resource", "resources")}, ${data.active_prompts} ${pluralEn(data.active_prompts, "prompt", "prompts")}`;
 

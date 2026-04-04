@@ -26,14 +26,50 @@ import {
   adminLookup,
   adminUpdateFlags,
   fetchAdminMetrics,
+  fetchPrivilegedAccounts,
   type AdminLookupResult,
   type AdminPlatformMetrics,
+  type AdminPrivilegedAccountRow,
 } from "@/lib/admin-api";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import Link from "next/link";
 import { ShieldAlertIcon } from "lucide-react";
 import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
 
 type IdKind = "github_login" | "github_id" | "email";
+
+/** Relative time since override was granted (for audit list). */
+function formatHeldSince(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "—";
+  const sec = Math.floor((Date.now() - t) / 1000);
+  if (sec < 0) return "just now";
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  if (sec < 60) return rtf.format(-sec, "second");
+  const min = Math.floor(sec / 60);
+  if (min < 60) return rtf.format(-min, "minute");
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return rtf.format(-hr, "hour");
+  const day = Math.floor(hr / 24);
+  if (day < 60) return rtf.format(-day, "day");
+  const month = Math.floor(day / 30);
+  return rtf.format(-month, "month");
+}
+
+function overridesSummary(row: AdminPrivilegedAccountRow): string {
+  const parts: string[] = [];
+  if (row.is_admin) parts.push("Admin");
+  if (row.paywall_bypass) parts.push("Paywall bypass");
+  return parts.length ? parts.join(" · ") : "—";
+}
 
 export default function AdminPage() {
   const { user, isLoading } = useAuth();
@@ -51,6 +87,10 @@ export default function AdminPage() {
 
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const [privileged, setPrivileged] = useState<AdminPrivilegedAccountRow[]>([]);
+  const [privilegedLoading, setPrivilegedLoading] = useState(false);
+  const [privilegedError, setPrivilegedError] = useState<string | null>(null);
 
   const loadMetrics = useCallback(async () => {
     setMetricsLoading(true);
@@ -72,10 +112,31 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadPrivileged = useCallback(async () => {
+    setPrivilegedLoading(true);
+    setPrivilegedError(null);
+    try {
+      const rows = await fetchPrivilegedAccounts();
+      setPrivileged(rows);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        setPrivilegedError("You do not have access.");
+      } else {
+        setPrivilegedError(
+          e instanceof ApiError ? formatApiErrorDetail(e.body) : "Load failed."
+        );
+      }
+      setPrivileged([]);
+    } finally {
+      setPrivilegedLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user?.is_admin) return;
     void loadMetrics();
-  }, [user?.is_admin, loadMetrics]);
+    void loadPrivileged();
+  }, [user?.is_admin, loadMetrics, loadPrivileged]);
 
   const runLookup = async () => {
     setLookupLoading(true);
@@ -124,26 +185,14 @@ export default function AdminPage() {
     setActionLoading(true);
     setActionMessage(null);
     try {
-      await adminUpdateFlags({
+      const updated = await adminUpdateFlags({
         account_id: lookupResult.account_id,
         ...patch,
       });
+      setLookupResult(updated);
       setActionMessage("Saved.");
-      const trimmed = idInput.trim();
-      let body:
-        | { github_login: string }
-        | { github_id: string }
-        | { email: string };
-      if (idKind === "github_login") {
-        body = { github_login: trimmed };
-      } else if (idKind === "github_id") {
-        body = { github_id: trimmed };
-      } else {
-        body = { email: trimmed.toLowerCase() };
-      }
-      const res = await adminLookup(body);
-      setLookupResult(res);
       await loadMetrics();
+      await loadPrivileged();
     } catch (e) {
       setActionMessage(
         e instanceof ApiError ? formatApiErrorDetail(e.body) : "Update failed."
@@ -190,8 +239,9 @@ export default function AdminPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Admin</h1>
         <p className="text-muted-foreground mt-1">
-          Platform-wide aggregates only. Grant or revoke access for a specific
-          account after lookup — no directory of users is exposed.
+          Platform-wide aggregates, a directory of accounts with admin or paywall
+          overrides, and single-account lookup. Lookup by identifier still returns
+          only id and flags (no email or profile).
         </p>
       </div>
 
@@ -247,6 +297,73 @@ export default function AdminPage() {
         </p>
         <MetricsTimeseriesCharts variant="admin" />
       </section>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle>Accounts with overrides</CardTitle>
+              <CardDescription>
+                Anyone with platform admin and/or paywall bypass. Times are from
+                when each override was last turned on (approximate for accounts
+                granted before this audit field existed — backfilled from account
+                creation).
+              </CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void loadPrivileged()}
+              disabled={privilegedLoading}
+            >
+              {privilegedLoading ? "Loading…" : "Refresh"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {privilegedError ? (
+            <p className="text-destructive text-sm">{privilegedError}</p>
+          ) : privilegedLoading && privileged.length === 0 ? (
+            <Skeleton className="h-32 w-full" />
+          ) : privileged.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No accounts with admin or paywall bypass overrides.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>GitHub login</TableHead>
+                  <TableHead>Overrides</TableHead>
+                  <TableHead>Admin since</TableHead>
+                  <TableHead>Paywall bypass since</TableHead>
+                  <TableHead className="font-mono text-xs">Account id</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {privileged.map((row) => (
+                  <TableRow key={row.account_id}>
+                    <TableCell className="font-medium">{row.github_login}</TableCell>
+                    <TableCell className="text-sm">{overridesSummary(row)}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {row.is_admin ? formatHeldSince(row.admin_granted_at) : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {row.paywall_bypass
+                        ? formatHeldSince(row.paywall_bypass_granted_at)
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs break-all">
+                      {row.account_id}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -319,7 +436,7 @@ export default function AdminPage() {
                 Paywall bypass:{" "}
                 <strong>{lookupResult.paywall_bypass ? "yes" : "no"}</strong>
               </p>
-              <div className="flex flex-wrap gap-2 pt-1">
+              <div className="flex flex-wrap justify-center gap-2 pt-1 sm:justify-start">
                 <Button
                   type="button"
                   size="sm"

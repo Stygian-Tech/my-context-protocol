@@ -121,7 +121,11 @@ export default function ProjectDetailPage() {
           <ReleaseTable projectId={projectId} />
         </TabsContent>
         <TabsContent value="api-keys">
-          <ApiKeyManager projectId={projectId} mcpUrl={project.mcp_url} />
+          <ApiKeyManager
+            projectId={projectId}
+            mcpUrl={project.mcp_url}
+            projectSlug={project.slug}
+          />
         </TabsContent>
         <TabsContent value="logs">
           <RequestLogsTable projectId={projectId} />

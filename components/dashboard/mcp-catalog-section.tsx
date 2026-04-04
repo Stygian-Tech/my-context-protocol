@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { CopyIcon } from "lucide-react";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
-import { copyTextToClipboard } from "@/lib/clipboard";
+import { copyTextToClipboard, mcpEventsUrl } from "@/lib/clipboard";
 import { pluralEn } from "@/lib/pluralize";
 
 interface McpCatalogSectionProps {
@@ -67,6 +67,32 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
         protocolVersion: "2024-11-05",
         capabilities: {},
         clientInfo: { name: "example", version: "1.0.0" },
+      },
+    },
+    null,
+    2
+  );
+
+  const sampleInitializeResponse = JSON.stringify(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        protocolVersion: "2024-11-05",
+        capabilities: {
+          tools: { listChanged: true },
+          resources: { subscribe: true, listChanged: true },
+          prompts: { listChanged: true },
+        },
+        serverInfo: {
+          name: "MyContextProtocol",
+          version: "1.0.0",
+          title: "MyContextProtocol — Your project",
+          description: "Hosted MCP skills for this project.",
+          websiteUrl: "https://your-app.example.com/projects/<project-id>",
+        },
+        instructions:
+          "You are connected to MyContextProtocol…\nDiscovery: call tool `mycontext:catalog` first…",
       },
     },
     null,
@@ -138,30 +164,61 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             </li>
             <li>
               Call <code className="font-mono text-xs">initialize</code>, then{" "}
-              <code className="font-mono text-xs">tools/list</code>,{" "}
+              <code className="font-mono text-xs">tools/list</code> (includes{" "}
+              <code className="font-mono text-xs">mycontext:catalog</code>),{" "}
               <code className="font-mono text-xs">resources/list</code>, or{" "}
               <code className="font-mono text-xs">prompts/list</code>.
             </li>
+            <li>
+              Optional: open a long-lived{" "}
+              <code className="font-mono text-xs">GET</code> to{" "}
+              <code className="font-mono text-xs">…/events</code> with the same
+              bearer key for SSE <code className="font-mono text-xs">list_changed</code>{" "}
+              notifications; otherwise compare{" "}
+              <code className="font-mono text-xs">X-MCP-Catalog-Revision</code> on
+              responses.
+            </li>
           </ol>
           {url ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="bg-muted max-w-full flex-1 break-all rounded px-2 py-1 text-xs">
-                {url}
-              </code>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  void copyTextToClipboard(url, {
-                    success: "Catalog URL copied to clipboard",
-                    error: "Could not copy catalog URL",
-                  })
-                }
-              >
-                <CopyIcon className="mr-1 h-3.5 w-3.5" />
-                Copy URL
-              </Button>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="bg-muted max-w-full flex-1 break-all rounded px-2 py-1 text-xs">
+                  {url}
+                </code>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    void copyTextToClipboard(url, {
+                      success: "Catalog URL copied to clipboard",
+                      error: "Could not copy catalog URL",
+                    })
+                  }
+                >
+                  <CopyIcon className="mr-1 h-3.5 w-3.5" />
+                  Copy URL
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="bg-muted max-w-full flex-1 break-all rounded px-2 py-1 text-xs">
+                  {mcpEventsUrl(url)}
+                </code>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    void copyTextToClipboard(mcpEventsUrl(url), {
+                      success: "MCP events URL copied",
+                      error: "Could not copy events URL",
+                    })
+                  }
+                >
+                  <CopyIcon className="mr-1 h-3.5 w-3.5" />
+                  Copy events URL
+                </Button>
+              </div>
             </div>
           ) : (
             <p className="text-muted-foreground text-xs">
@@ -191,6 +248,31 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             </div>
             <pre className="bg-muted max-h-40 overflow-auto rounded-md p-3 text-xs leading-relaxed">
               {sampleInitialize}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground text-xs">
+                Example initialize response (shape)
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() =>
+                  void copyTextToClipboard(sampleInitializeResponse, {
+                    success: "Sample response copied to clipboard",
+                    error: "Could not copy sample response",
+                  })
+                }
+              >
+                <CopyIcon className="mr-1 h-3 w-3" />
+                Copy JSON
+              </Button>
+            </div>
+            <pre className="bg-muted max-h-48 overflow-auto rounded-md p-3 text-xs leading-relaxed">
+              {sampleInitializeResponse}
             </pre>
           </div>
         </div>

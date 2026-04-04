@@ -1,6 +1,6 @@
 # MyContextProtocol Frontend
 
-Dashboard for [MyContextProtocol](https://www.notion.so/MyContextProtocol-325f6c1638ed80568b93dc8e6abba384)—a hosted MCP endpoint that syncs SKILL.md files from Git repositories.
+Dashboard for **MyContextProtocol**—a hosted MCP endpoint that syncs SKILL.md files from Git repositories.
 
 ## Tech Stack
 
