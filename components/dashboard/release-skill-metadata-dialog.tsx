@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchCompiledSkills,
+  fetchReleaseValidation,
   updateCompiledSkill,
 } from "@/lib/projects-api";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
@@ -26,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEffect, useState } from "react";
+import { ChevronRightIcon } from "lucide-react";
 
 const EXPOSURE_TYPES = ["tool", "resource", "prompt"] as const;
 const RISK_LEVELS = ["low", "medium", "high"] as const;
@@ -51,6 +53,64 @@ function listFromMultiline(text: string): string[] {
 
 function multilineFromList(items: string[] | null | undefined): string {
   return (items ?? []).join("\n");
+}
+
+type MetadataHealthTier = "red" | "yellow" | "green";
+
+/** Traffic-light heuristic for MCP metadata quality (dashboard only). */
+function metadataHealthTier(skill: CompiledSkill): MetadataHealthTier {
+  if (skill.status === "not_publishable") return "red";
+  const raw = skill.schema_json?.trim() ?? "";
+  if (raw) {
+    try {
+      JSON.parse(raw);
+    } catch {
+      return "red";
+    }
+  }
+  if (skill.exposure_type === "resource") {
+    if (!raw) return "red";
+    try {
+      const o = JSON.parse(raw) as { uri?: string };
+      if (!o.uri?.trim()) return "red";
+    } catch {
+      return "red";
+    }
+  }
+  if (skill.status === "needs_review") return "yellow";
+  if (skill.yaml_frontmatter_present === false) return "yellow";
+  if (!skill.skill_body?.trim()) return "yellow";
+  if (skill.exposure_type === "resource") {
+    const hasRouting =
+      (skill.use_when?.length ?? 0) > 0 ||
+      (skill.avoid_when?.length ?? 0) > 0 ||
+      (skill.failure_modes?.length ?? 0) > 0;
+    if (!hasRouting) return "yellow";
+  }
+  if (skill.status === "ready") return "green";
+  return "yellow";
+}
+
+function MetadataHealthGlyph({ tier }: { tier: MetadataHealthTier }) {
+  const title =
+    tier === "green"
+      ? "Looks good for publish"
+      : tier === "yellow"
+        ? "Review suggested"
+        : "Blocking issue";
+  const cls =
+    tier === "green"
+      ? "bg-emerald-500"
+      : tier === "yellow"
+        ? "bg-amber-500"
+        : "bg-red-600";
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className={cn("inline-block size-2.5 shrink-0 rounded-full ring-2 ring-background", cls)}
+    />
+  );
 }
 
 interface ReleaseSkillMetadataDialogProps {
@@ -139,6 +199,9 @@ function SkillEditorRow({
       queryClient.invalidateQueries({ queryKey: ["project-catalog", projectId] });
       queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-dashboard-summary", projectId] });
+      queryClient.invalidateQueries({
+        queryKey: ["release-validation", projectId, releaseId],
+      });
     },
     onError: (err) => {
       if (err instanceof ApiError) {
@@ -393,23 +456,75 @@ export function ReleaseSkillMetadataDialog({
   open,
   onOpenChange,
 }: ReleaseSkillMetadataDialogProps) {
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) setSelectedSkillId(null);
+  }, [open]);
+
   const { data: skills, isLoading, error } = useQuery({
     queryKey: ["compiled-skills", projectId, releaseId],
     queryFn: () => fetchCompiledSkills(projectId, releaseId!),
     enabled: open && !!releaseId,
   });
 
+  const { data: validationReport } = useQuery({
+    queryKey: ["release-validation", projectId, releaseId],
+    queryFn: () => fetchReleaseValidation(projectId, releaseId!),
+    enabled: open && !!releaseId,
+  });
+
+  const selectedSkill =
+    selectedSkillId && skills ? skills.find((s) => s.id === selectedSkillId) : undefined;
+
+  const showIngestBanner =
+    (validationReport?.warnings?.length ?? 0) > 0 ||
+    (skills?.some((s) => s.yaml_frontmatter_present === false) ?? false);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setSelectedSkillId(null);
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="flex max-h-[92vh] w-[min(88rem,calc(100vw-1rem))] flex-col gap-4 overflow-hidden p-6">
-        <DialogHeader className="shrink-0">
-          <DialogTitle>Edit MCP metadata</DialogTitle>
-          <DialogDescription>
-            Exposure (tool / resource / prompt), risk, publish status, summary, SKILL routing
-            lists, and MCP capability JSON. Saving updates stored metadata for this release; activate
-            the release to refresh the live MCP catalog.
-          </DialogDescription>
+        <DialogHeader className="shrink-0 space-y-3">
+          <div className="flex flex-wrap items-start gap-2">
+            {selectedSkillId ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setSelectedSkillId(null)}
+              >
+                Back to list
+              </Button>
+            ) : null}
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <DialogTitle>
+                {selectedSkill ? `Edit: ${selectedSkill.name}` : "MCP metadata"}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedSkill
+                  ? "Update exposure, routing lists, body, and MCP JSON for this skill. Save applies to this release only."
+                  : "Pick a skill to edit full MCP metadata. Green, yellow, and red indicate publish readiness at a glance."}
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
+        {showIngestBanner ? (
+          <div className="shrink-0 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-50">
+            <p className="font-medium">Ingest warnings</p>
+            <p className="text-muted-foreground mt-1 text-xs leading-snug dark:text-amber-100/90">
+              {(validationReport?.warnings?.length ?? 0) > 0
+                ? "This release has validation warnings (for example skills without YAML front matter). Open Release errors for the full report."
+                : "At least one skill was synced without YAML front matter (name taken from the folder). Add a --- block in the repo when you can."}
+            </p>
+          </div>
+        ) : null}
         {!releaseId ? (
           <p className="text-muted-foreground text-sm">No release selected.</p>
         ) : isLoading ? (
@@ -424,16 +539,43 @@ export function ReleaseSkillMetadataDialog({
             ) : null}
           </div>
         ) : skills && skills.length > 0 ? (
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1 [-ms-overflow-style:auto] [scrollbar-gutter:stable]">
-            {skills.map((s) => (
+          selectedSkill && releaseId ? (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [-ms-overflow-style:auto] [scrollbar-gutter:stable]">
               <SkillEditorRow
-                key={s.id}
                 projectId={projectId}
                 releaseId={releaseId}
-                skill={s}
+                skill={selectedSkill}
               />
-            ))}
-          </div>
+            </div>
+          ) : (
+            <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 [-ms-overflow-style:auto] [scrollbar-gutter:stable]">
+              {skills.map((s) => {
+                const tier = metadataHealthTier(s);
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSkillId(s.id)}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-lg border bg-card px-3 py-3 text-left transition-colors",
+                        "hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                      )}
+                    >
+                      <MetadataHealthGlyph tier={tier} />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium">{s.name}</p>
+                        <p className="text-muted-foreground font-mono text-xs break-all">{s.path}</p>
+                        <p className="text-muted-foreground mt-0.5 text-xs capitalize">
+                          {s.exposure_type} · {s.status.split("_").join(" ")}
+                        </p>
+                      </div>
+                      <ChevronRightIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )
         ) : (
           <p className="text-muted-foreground text-sm">No compiled skills for this release.</p>
         )}

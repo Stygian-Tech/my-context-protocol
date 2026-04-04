@@ -119,6 +119,8 @@ export interface ValidationErrorEntry {
 export interface ReleaseValidationReport {
   is_valid: boolean;
   errors: ValidationErrorEntry[];
+  /** Non-blocking ingest notices (e.g. missing YAML front matter). */
+  warnings?: ValidationErrorEntry[];
 }
 
 export interface CompiledSkill {
@@ -132,6 +134,8 @@ export interface CompiledSkill {
   skill_body?: string | null;
   /** Capability metadata / tool inputSchema JSON from the compiler or your edits. */
   schema_json?: string | null;
+  /** False when the repo file had no YAML `---` block (name inferred from parent folder). */
+  yaml_frontmatter_present?: boolean;
   exposure_type: "tool" | "resource" | "prompt" | string;
   risk_level: string;
   repo_specific: boolean;

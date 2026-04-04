@@ -138,9 +138,44 @@ export function ReleaseValidationDialog({
               </Badge>
               <span className="text-muted-foreground text-sm">
                 {data.errors.length.toLocaleString()}{" "}
-                {pluralEn(data.errors.length, "entry", "entries")}
+                {pluralEn(data.errors.length, "error", "errors")}
               </span>
+              {(data.warnings?.length ?? 0) > 0 ? (
+                <span className="text-muted-foreground text-sm">
+                  · {(data.warnings?.length ?? 0).toLocaleString()}{" "}
+                  {pluralEn(data.warnings?.length ?? 0, "warning", "warnings")}
+                </span>
+              ) : null}
             </div>
+            {(data.warnings?.length ?? 0) > 0 ? (
+              <div className="shrink-0 space-y-2 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3">
+                <p className="text-sm font-medium text-amber-950 dark:text-amber-100">Warnings</p>
+                <p className="text-muted-foreground text-xs leading-snug">
+                  These skills were ingested but may need attention (for example, add YAML front matter in the
+                  repo).
+                </p>
+                <Table className="table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[34%] font-medium whitespace-normal">Path</TableHead>
+                      <TableHead className="font-medium whitespace-normal">Message</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(data.warnings ?? []).map((w, i) => (
+                      <TableRow key={`w-${w.path}-${i}`}>
+                        <TableCell className="w-[34%] min-w-0 align-top whitespace-normal break-all font-mono text-xs">
+                          {w.path}
+                        </TableCell>
+                        <TableCell className="min-w-0 align-top whitespace-normal break-words text-sm leading-snug">
+                          <ValidationMessageCell message={w.message} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : null}
             {data.errors.length === 0 ? (
               <p className="text-muted-foreground text-sm">No structured errors.</p>
             ) : (

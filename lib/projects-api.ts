@@ -132,9 +132,14 @@ export async function fetchReleaseValidation(
   projectId: string,
   releaseId: string
 ): Promise<ReleaseValidationReport> {
-  return api.get<ReleaseValidationReport>(
+  const r = await api.get<ReleaseValidationReport>(
     `/projects/${projectId}/releases/${releaseId}/validation`
   );
+  return {
+    ...r,
+    errors: r.errors ?? [],
+    warnings: r.warnings ?? [],
+  };
 }
 
 export async function fetchCompiledSkills(
