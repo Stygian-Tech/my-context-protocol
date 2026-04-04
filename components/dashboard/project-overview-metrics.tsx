@@ -7,6 +7,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
 import { DashboardStatCard } from "@/components/dashboard/dashboard-stat-card";
 import { pluralEn } from "@/lib/pluralize";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function shortSha(sha: string | null | undefined): string {
   if (!sha?.trim()) return "—";
@@ -29,10 +37,13 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
 
   if (isLoading) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 rounded-lg" />
-        ))}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="hidden h-full min-h-48 rounded-lg lg:block" />
       </div>
     );
   }
@@ -82,58 +93,84 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
           · {activeCapsSummary}
         </span>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <DashboardStatCard
-          title="Total requests"
-          value={data.total_requests.toLocaleString()}
-          valueClassName="text-xl"
-        />
-        <DashboardStatCard
-          title="Last 24h"
-          value={data.requests_last_24h.toLocaleString()}
-          valueClassName="text-xl"
-        />
-        <DashboardStatCard
-          title="Last 7d"
-          value={data.requests_last_7d.toLocaleString()}
-          valueClassName="text-xl"
-        />
-        <DashboardStatCard
-          title="Success (7d)"
-          value={formatPct(data.success_rate_last_7d)}
-          hint={successHint}
-          valueClassName="text-xl"
-        />
-        <DashboardStatCard
-          title="Avg latency"
-          value={
-            data.avg_latency_ms_last_7d != null
-              ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
-              : "—"
-          }
-          valueClassName="text-xl"
-        />
-        <DashboardStatCard
-          title="p95 latency"
-          value={
-            data.p95_latency_ms_last_7d != null ? `${data.p95_latency_ms_last_7d} ms` : "—"
-          }
-          valueClassName="text-xl"
-        />
-      </div>
-      {data.method_breakdown_last_7d.length > 0 ? (
-        <div className="rounded-lg border p-3">
-          <p className="text-xs font-medium">Methods (7d sample)</p>
-          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs">
-            {data.method_breakdown_last_7d.map((m) => (
-              <li key={m.method}>
-                <span className="text-muted-foreground">{m.method}</span>{" "}
-                <span className="tabular-nums">{m.count}</span>
-              </li>
-            ))}
-          </ul>
+      <div
+        className={
+          data.method_breakdown_last_7d.length > 0
+            ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] lg:items-stretch"
+            : "contents"
+        }
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <DashboardStatCard
+            title="Total requests"
+            value={data.total_requests.toLocaleString()}
+            valueClassName="text-xl"
+          />
+          <DashboardStatCard
+            title="Last 24h"
+            value={data.requests_last_24h.toLocaleString()}
+            valueClassName="text-xl"
+          />
+          <DashboardStatCard
+            title="Last 7d"
+            value={data.requests_last_7d.toLocaleString()}
+            valueClassName="text-xl"
+          />
+          <DashboardStatCard
+            title="Success (7d)"
+            value={formatPct(data.success_rate_last_7d)}
+            hint={successHint}
+            valueClassName="text-xl"
+          />
+          <DashboardStatCard
+            title="Avg latency"
+            value={
+              data.avg_latency_ms_last_7d != null
+                ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
+                : "—"
+            }
+            valueClassName="text-xl"
+          />
+          <DashboardStatCard
+            title="p95 latency"
+            value={
+              data.p95_latency_ms_last_7d != null ? `${data.p95_latency_ms_last_7d} ms` : "—"
+            }
+            valueClassName="text-xl"
+          />
         </div>
-      ) : null}
+        {data.method_breakdown_last_7d.length > 0 ? (
+          <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card/50 shadow-xs">
+            <div className="border-b px-3 py-2.5">
+              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                Methods (7d sample)
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="h-9 text-xs">Method</TableHead>
+                    <TableHead className="h-9 w-24 text-right text-xs">Count</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.method_breakdown_last_7d.map((m) => (
+                    <TableRow key={m.method}>
+                      <TableCell className="max-w-[1px] truncate py-2 font-mono text-xs">
+                        <span title={m.method}>{m.method}</span>
+                      </TableCell>
+                      <TableCell className="py-2 text-right font-mono text-xs tabular-nums">
+                        {m.count.toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <MetricsTimeseriesCharts variant="project" projectId={projectId} />
     </div>
