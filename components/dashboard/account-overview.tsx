@@ -51,7 +51,7 @@ export function AccountOverview() {
   const successHint =
     data.requests_last_7d > data.metrics_sample_size_last_7d
       ? `Based on newest ${data.metrics_sample_size_last_7d.toLocaleString()} ${logWord} in the last 7 days.`
-      : "Based on MCP request logs (HTTP status < 400 = success).";
+      : "Based on MCP request logs: HTTP success and no JSON-RPC error (method not found and similar count as failures).";
 
   const publishedCapsHint = [
     `${data.active_tools_total.toLocaleString()} ${pluralEn(data.active_tools_total, "tool", "tools")}`,
