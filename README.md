@@ -42,10 +42,11 @@ Dashboard for [MyContextProtocol](https://www.notion.so/MyContextProtocol-325f6c
 
 ## Environment Variables
 
-| Variable               | Description                                                |
-| ---------------------- | ---------------------------------------------------------- |
-| `NEXT_PUBLIC_API_URL`  | Backend API base URL (Vapor server)                        |
-| `NEXT_PUBLIC_APP_URL`  | Frontend URL for OAuth return (optional, defaults to origin) |
+| Variable                      | Description                                                |
+| ----------------------------- | ---------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`         | Backend API base URL (Vapor server)                        |
+| `NEXT_PUBLIC_APP_URL`         | Frontend URL for OAuth return (optional, defaults to origin) |
+| `NEXT_PUBLIC_CLIENT_API_LOG`  | `0`/`false` disables `[client-api]` console traces; `1` forces them on (e.g. in tests). Default: on for local dev, Vercel preview, and when `NEXT_PUBLIC_APP_ENV` is `local` or `dev`; off in production and in Vitest. When on: logs request/response timing, warns on non-OK status, and prints a truncated error response body. |
 
 ## Project Structure
 

@@ -1,3 +1,10 @@
+import {
+  logClientApiError,
+  logClientApiErrorBody,
+  logClientApiRequest,
+  logClientApiResponse,
+} from "@/lib/client-api-logging";
+
 const getBaseUrl = () => {
   if (typeof window !== "undefined") {
     return "/api";
@@ -60,17 +67,38 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const baseUrl = getBaseUrl();
   const url = `${baseUrl.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  const method = (options.method ?? "GET").toUpperCase();
+  logClientApiRequest(method, url, options);
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    credentials: "include",
-  });
+  const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+      credentials: "include",
+    });
+  } catch (err) {
+    const elapsed =
+      typeof performance !== "undefined" ? performance.now() - t0 : Date.now() - t0;
+    logClientApiError(method, url, Math.round(elapsed), err);
+    throw err;
+  }
+  const elapsed =
+    typeof performance !== "undefined" ? performance.now() - t0 : Date.now() - t0;
+  logClientApiResponse(method, url, response.status, Math.round(elapsed), response.ok);
 
-  return handleResponse<T>(response);
+  try {
+    return await handleResponse<T>(response);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      logClientApiErrorBody(err.body);
+    }
+    throw err;
+  }
 }
 
 export const api = {
