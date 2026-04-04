@@ -38,9 +38,9 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
   if (isLoading) {
     return (
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-lg" />
+            <Skeleton key={i} className="h-[4.25rem] rounded-lg" />
           ))}
         </div>
         <Skeleton className="hidden h-full min-h-48 rounded-lg lg:block" />
@@ -100,43 +100,49 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
             : "contents"
         }
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2">
           <DashboardStatCard
+            compact
             title="Total requests"
             value={data.total_requests.toLocaleString()}
-            valueClassName="text-xl"
+            valueClassName="text-lg"
           />
           <DashboardStatCard
+            compact
             title="Last 24h"
             value={data.requests_last_24h.toLocaleString()}
-            valueClassName="text-xl"
+            valueClassName="text-lg"
           />
           <DashboardStatCard
+            compact
             title="Last 7d"
             value={data.requests_last_7d.toLocaleString()}
-            valueClassName="text-xl"
+            valueClassName="text-lg"
           />
           <DashboardStatCard
+            compact
             title="Success (7d)"
             value={formatPct(data.success_rate_last_7d)}
             hint={successHint}
-            valueClassName="text-xl"
+            valueClassName="text-lg"
           />
           <DashboardStatCard
+            compact
             title="Avg latency"
             value={
               data.avg_latency_ms_last_7d != null
                 ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
                 : "—"
             }
-            valueClassName="text-xl"
+            valueClassName="text-lg"
           />
           <DashboardStatCard
+            compact
             title="p95 latency"
             value={
               data.p95_latency_ms_last_7d != null ? `${data.p95_latency_ms_last_7d} ms` : "—"
             }
-            valueClassName="text-xl"
+            valueClassName="text-lg"
           />
         </div>
         {data.method_breakdown_last_7d.length > 0 ? (
