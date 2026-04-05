@@ -20,8 +20,15 @@ import { cn } from "@/lib/utils";
 
 export function Header() {
   const { user, logout } = useAuth();
-  const { state, isMobile } = useSidebar();
-  const showResizeHandle = !isMobile && state === "expanded";
+  const {
+    state,
+    isMobile,
+    peekGlassActive,
+    handlePeekTogglePointerEnter,
+    handlePeekTogglePointerLeave,
+  } = useSidebar();
+  const showResizeHandle =
+    !isMobile && state === "expanded" && !peekGlassActive;
 
   const initials = user?.login
     ? user.login.slice(0, 2).toUpperCase()
@@ -42,9 +49,17 @@ export function Header() {
     >
       {/* Match profile cap width so control centers mirror across the bar */}
       <div
+        onMouseEnter={handlePeekTogglePointerEnter}
+        onMouseLeave={handlePeekTogglePointerLeave}
         className={cn(
-          "flex h-full w-14 shrink-0 items-center justify-center",
-          showResizeHandle ? "-ml-6" : "-ml-3"
+          "flex h-full w-14 shrink-0 items-center justify-center transition-transform duration-[240ms] ease-[cubic-bezier(0.34,0.82,0.25,1)] motion-reduce:transition-none",
+          showResizeHandle ? "-ml-6" : "-ml-3",
+          peekGlassActive &&
+            !isMobile &&
+            // Sit above the fixed peek drawer (z-[60]): half of this control still lies left of
+            // the drawer’s right edge after translate, so without a higher z-index the sidebar
+            // intercepts clicks meant for the trigger.
+            "relative z-[70] translate-x-[var(--sidebar-width)]",
         )}
       >
         <SidebarTrigger className="size-8 shrink-0" />

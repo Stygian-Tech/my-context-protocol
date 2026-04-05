@@ -7,11 +7,19 @@ import {
   setProjectCustomDomain,
   verifyProjectCustomDomain,
 } from "@/lib/projects-api";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+
+/** Matches MCP Catalog / Project Info top-level sections (page background, not bg-card). */
+const SECTION_SHELL =
+  "space-y-4 rounded-lg border p-4 text-sm text-card-foreground";
+
+/** Matches MCP catalog monospace / URL inset panels. */
+const INSET_SURFACE =
+  "rounded-lg border border-border/80 bg-muted/35 dark:bg-muted/20";
 
 interface CustomDomainSectionProps {
   projectId: string;
@@ -48,35 +56,56 @@ export function CustomDomainSection({ projectId }: CustomDomainSectionProps) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Custom Domain</CardTitle>
-        <CardDescription>
-          Point your own hostname at this project. Add the TXT record we show, then verify.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <section
+      className={SECTION_SHELL}
+      aria-labelledby="custom-domain-heading"
+    >
+      <div className="space-y-1.5">
+        <h2
+          id="custom-domain-heading"
+          className="text-base leading-snug font-medium text-foreground"
+        >
+          Custom Domain
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Point your own hostname at this project. Add the TXT record we show,
+          then verify.
+        </p>
+      </div>
+      <div className="space-y-4">
         {data.hostname && (
-          <div className="text-sm">
+          <div>
             <span className="text-muted-foreground">Hostname: </span>
             <span className="font-medium">{data.hostname}</span>
             {data.verified ? (
-              <span className="ml-2 text-green-600 dark:text-green-500">Verified</span>
+              <span className="ml-2 text-green-600 dark:text-green-500">
+                Verified
+              </span>
             ) : (
-              <span className="text-muted-foreground ml-2">Pending verification</span>
+              <span className="text-muted-foreground ml-2">
+                Pending verification
+              </span>
             )}
           </div>
         )}
         {!data.verified && data.instructions && (
-          <p className="bg-muted rounded-md p-3 font-mono text-xs break-all">{data.instructions}</p>
+          <p
+            className={cn(
+              INSET_SURFACE,
+              "p-3 font-mono text-xs break-all",
+            )}
+          >
+            {data.instructions}
+          </p>
         )}
-        <div className="space-y-2">
+        <div className={cn(INSET_SURFACE, "space-y-2 p-3")}>
           <Label htmlFor="custom-host">Hostname</Label>
           <Input
             id="custom-host"
             value={hostname}
             onChange={(e) => setHostname(e.target.value)}
             placeholder="mcp.example.com"
+            className="bg-transparent dark:bg-transparent"
           />
         </div>
         <div className="flex flex-wrap gap-2">
@@ -86,7 +115,11 @@ export function CustomDomainSection({ projectId }: CustomDomainSectionProps) {
             onClick={() => setMutation.mutate()}
             disabled={setMutation.isPending || !hostname.trim()}
           >
-            {setMutation.isPending ? "Saving…" : data.hostname ? "Update hostname" : "Save hostname"}
+            {setMutation.isPending
+              ? "Saving…"
+              : data.hostname
+                ? "Update hostname"
+                : "Save hostname"}
           </Button>
           {!data.verified && data.hostname && (
             <Button
@@ -100,7 +133,7 @@ export function CustomDomainSection({ projectId }: CustomDomainSectionProps) {
             </Button>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

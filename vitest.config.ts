@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
+import { buildVitestWorkerEnv } from "./lib/testing/vitest-worker-env";
 
 const isCi = Boolean(process.env.CI && process.env.CI !== "false");
 
@@ -38,6 +39,7 @@ export default defineConfig({
       include: coverageInclude,
       exclude: coverageExclude,
     },
+    env: buildVitestWorkerEnv(process.env),
   },
   resolve: {
     alias: {

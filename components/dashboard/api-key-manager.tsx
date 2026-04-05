@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchApiKeys, createApiKey } from "@/lib/projects-api";
+import { fetchApiKeys, createApiKey, updateApiKey } from "@/lib/projects-api";
 import {
   Table,
   TableBody,
@@ -19,14 +19,21 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CopyIcon, KeyIcon } from "lucide-react";
+import { CopyIcon, KeyIcon, PencilIcon } from "lucide-react";
 import { formatLocalDateTime } from "@/lib/format-local-time";
 import { buildMcpJsonConfig, copyTextToClipboard } from "@/lib/clipboard";
 import { getApiKeyDisplayName } from "@/lib/api-key-utils";
+import type { ApiKey } from "@/lib/types";
+import { ApiError, formatApiErrorDetail } from "@/lib/api";
+import { toastError, toastSuccess } from "@/lib/toast";
+
+const API_KEY_NAME_MAX_LEN = 64;
 
 interface ApiKeyManagerProps {
   projectId: string;
@@ -42,6 +49,8 @@ interface CreatedApiKey {
 export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerProps) {
   const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
   const [keyName, setKeyName] = useState("");
+  const [renameTarget, setRenameTarget] = useState<ApiKey | null>(null);
+  const [renameName, setRenameName] = useState("");
   const queryClient = useQueryClient();
 
   const { data: keys, isLoading } = useQuery({
@@ -58,8 +67,41 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
     },
   });
 
+  const renameMutation = useMutation({
+    mutationFn: ({ keyId, name }: { keyId: string; name: string }) =>
+      updateApiKey(projectId, keyId, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["api-keys", projectId] });
+      setRenameTarget(null);
+      toastSuccess("API key name updated");
+    },
+    onError: (err: unknown) => {
+      const detail =
+        err instanceof ApiError
+          ? formatApiErrorDetail(err.body) || err.message
+          : String(err);
+      toastError(detail || "Could not update API key name");
+    },
+  });
+
   const closeNewKeyDialog = () => {
     setNewKey(null);
+  };
+
+  const handleRenameSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!renameTarget) return;
+    const next = renameName.trim();
+    if (next.length > API_KEY_NAME_MAX_LEN) {
+      toastError(`Name must be at most ${API_KEY_NAME_MAX_LEN} characters`);
+      return;
+    }
+    const prev = renameTarget.name?.trim() ?? "";
+    if (next === prev) {
+      setRenameTarget(null);
+      return;
+    }
+    renameMutation.mutate({ keyId: renameTarget.id, name: next });
   };
 
   if (isLoading) {
@@ -98,8 +140,8 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
       {keys && keys.length > 0 ? (
         <Table>
           <TableCaption className="sr-only">
-            API keys for this project: display name, key prefix, status, and
-            usage times.
+            API keys for this project: display name, key prefix, status, usage
+            times, and rename action.
           </TableCaption>
           <TableHeader>
             <TableRow>
@@ -108,6 +150,7 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Last Used</TableHead>
+              <TableHead className="text-end">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -129,6 +172,21 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
                   {key.last_used_at
                     ? formatLocalDateTime(key.last_used_at)
                     : "Never"}
+                </TableCell>
+                <TableCell className="text-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => {
+                      setRenameName(key.name ?? "");
+                      setRenameTarget(key);
+                    }}
+                  >
+                    <PencilIcon className="mr-1 h-3.5 w-3.5" aria-hidden />
+                    Rename
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -205,6 +263,47 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
               )}
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={renameTarget != null}
+        onOpenChange={(open) => !open && setRenameTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename API key</DialogTitle>
+            <DialogDescription>
+              This label is only for your reference in the dashboard. Leave the
+              field empty to show &quot;Unnamed key&quot;.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleRenameSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="api-key-rename">Name</Label>
+              <Input
+                id="api-key-rename"
+                value={renameName}
+                onChange={(event) => setRenameName(event.target.value)}
+                placeholder="Key name (optional)"
+                maxLength={API_KEY_NAME_MAX_LEN}
+                disabled={renameMutation.isPending}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRenameTarget(null)}
+                disabled={renameMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={renameMutation.isPending}>
+                {renameMutation.isPending ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

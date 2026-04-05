@@ -43,6 +43,8 @@ import {
 import Link from "next/link";
 import { ShieldAlertIcon } from "lucide-react";
 import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
+import { glassSurfaceClasses } from "@/lib/glass";
+import { cn } from "@/lib/utils";
 
 type IdKind = "github_login" | "github_id" | "email";
 
@@ -299,7 +301,12 @@ export default function AdminPage() {
         <MetricsTimeseriesCharts variant="admin" />
       </section>
 
-      <Card>
+      <Card
+        className={cn(
+          glassSurfaceClasses("subtle"),
+          "rounded-lg ring-0",
+        )}
+      >
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -369,7 +376,12 @@ export default function AdminPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card
+        className={cn(
+          glassSurfaceClasses("subtle"),
+          "rounded-lg ring-0",
+        )}
+      >
         <CardHeader>
           <CardTitle>Lookup and Update Flags</CardTitle>
           <CardDescription>

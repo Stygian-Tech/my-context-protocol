@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot } from "react-dom/client";
-// `react` can resolve to the `react-server` export under some CI resolvers; that build has no `act`.
+// `react-dom/test-utils` → `React.act` (see `lib/testing/vitest-worker-env.ts` + `vitest.config.ts`).
 import { act } from "react-dom/test-utils";
 
 afterEach(() => {

@@ -41,7 +41,9 @@ import {
   fetchUserGithubRepos,
   setProjectCustomDomain,
   triggerSync,
+  updateApiKey,
   updateCompiledSkill,
+  updateProjectCatalogMarkdown,
   verifyProjectCustomDomain,
 } from "./projects-api";
 
@@ -89,9 +91,24 @@ describe("projects-api", () => {
   });
 
   it("fetchProjectCatalog, createProject, and updateProject", async () => {
-    get.mockResolvedValueOnce({ skills: [] });
+    get.mockResolvedValueOnce({
+      catalog_markdown: "# Catalog",
+      catalog_markdown_generated: "# Catalog",
+      catalog_markdown_override: null,
+      tools: [],
+      resources: [],
+      prompts: [],
+    });
     await fetchProjectCatalog("pid");
     expect(get).toHaveBeenCalledWith("/projects/pid/catalog");
+
+    patch.mockResolvedValueOnce({
+      catalog_markdown: "# Catalog",
+      catalog_markdown_generated: "# Catalog",
+      catalog_markdown_override: null,
+    });
+    await updateProjectCatalogMarkdown("pid", { markdown: "" });
+    expect(patch).toHaveBeenCalledWith("/projects/pid/catalog-markdown", { markdown: "" });
 
     post.mockResolvedValueOnce({ id: "new" });
     await createProject({ name: "N", slug: "n" });
@@ -186,6 +203,12 @@ describe("projects-api", () => {
     post.mockResolvedValueOnce({ key: "sec", prefix: "pre" });
     await createApiKey("pid");
     expect(post).toHaveBeenLastCalledWith("/projects/pid/api-keys", {});
+
+    patch.mockResolvedValueOnce({ id: "kid", name: "Renamed" });
+    await updateApiKey("pid", "kid", { name: "Renamed" });
+    expect(patch).toHaveBeenCalledWith("/projects/pid/api-keys/kid", {
+      name: "Renamed",
+    });
 
     get.mockResolvedValueOnce({});
     expect(await fetchApiKeys("pid")).toEqual([]);

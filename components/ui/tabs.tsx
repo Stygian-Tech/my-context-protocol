@@ -59,10 +59,11 @@ function TabsList({
         data-slot="tabs-indicator"
         renderBeforeHydration
         className={cn(
-          "pointer-events-none absolute z-0 rounded-md bg-background shadow-sm",
+          "pointer-events-none absolute z-0 rounded-md bg-background",
+          "shadow-md ring-1 ring-border/70",
           "left-[var(--active-tab-left)] top-[var(--active-tab-top)] h-[var(--active-tab-height)] w-[var(--active-tab-width)]",
           "transition-[left,top,width,height] duration-200 ease-out motion-reduce:transition-none",
-          "dark:bg-input/30",
+          "dark:bg-card dark:shadow-lg dark:ring-border/55",
           "group-data-[variant=line]/tabs-list:hidden"
         )}
       />

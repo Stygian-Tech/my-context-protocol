@@ -360,7 +360,21 @@ export function AppSidebar() {
         </SidebarContent>
       </nav>
       <nav aria-label="Account, billing, and sign out">
-        <SidebarFooter className="border-sidebar-border border-t">
+        <SidebarFooter className="border-0">
+          <div
+            aria-hidden
+            role="presentation"
+            className="mx-3 shrink-0 px-0.5 pt-0.5"
+          >
+            <div
+              className={cn(
+                "h-[3px] w-full rounded-full",
+                "supports-backdrop-filter:backdrop-blur-[4px]",
+                "bg-sidebar-border/50 supports-backdrop-filter:bg-sidebar-border/30",
+                "shadow-[inset_0_2px_4px_rgba(0,0,0,0.5),inset_0_-1px_2px_rgba(255,255,255,0.07)]"
+              )}
+            />
+          </div>
           <SidebarGroup className="p-0">
             <SidebarGroupContent>
               <SidebarMenu>

@@ -1,5 +1,5 @@
 import type { AppEnv } from "./types";
-import { glassEffectClasses } from "./glass";
+import { GLASS_CHROME_BACKDROP_BLUR_CLASSES } from "./glass";
 import { cn } from "./utils";
 
 export function parseAppEnv(raw: string | undefined | null): AppEnv {
@@ -38,8 +38,8 @@ export function bannerMessage(env: AppEnv): string {
 
 export function bannerClasses(env: AppEnv, mismatch: boolean): string {
   const base = cn(
-    "sticky top-0 z-50 border-b px-5 py-2.5 text-sm",
-    glassEffectClasses("subtle")
+    "border-b px-5 py-2.5 text-sm",
+    GLASS_CHROME_BACKDROP_BLUR_CLASSES
   );
 
   if (mismatch) {

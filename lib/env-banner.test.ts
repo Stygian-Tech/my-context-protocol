@@ -39,7 +39,9 @@ describe("env-banner", () => {
   });
 
   it("adds backdrop blur to keep banner text readable", () => {
-    expect(bannerClasses("local", false)).toContain("supports-backdrop-filter:backdrop-blur-sm");
+    expect(bannerClasses("local", false)).toContain(
+      "supports-backdrop-filter:backdrop-blur-[5rem]"
+    );
     expect(bannerClasses("local", false)).toContain("bg-yellow-400/40");
     expect(bannerClasses("dev", false)).toContain("bg-red-500/28");
     expect(bannerClasses("dev", true)).toContain("bg-amber-500/20");

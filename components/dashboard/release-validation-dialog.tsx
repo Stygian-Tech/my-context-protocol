@@ -122,10 +122,10 @@ export function ReleaseValidationDialog({
         {!releaseId ? null : isLoading ? (
           <Skeleton className="h-48 shrink-0" />
         ) : error ? (
-          <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-            <p className="font-medium text-destructive">Could not load validation report.</p>
+          <div className="space-y-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            <p className="font-medium">Could not load validation report.</p>
             {error instanceof ApiError ? (
-              <pre className="text-muted-foreground max-h-40 overflow-auto whitespace-pre-wrap break-all text-xs">
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all text-xs text-destructive/85">
                 {formatApiErrorDetail(error.body) || error.message}
               </pre>
             ) : null}
@@ -134,7 +134,14 @@ export function ReleaseValidationDialog({
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain">
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               <span className="text-sm font-medium">Report</span>
-              <Badge variant={data.is_valid ? "default" : "destructive"}>
+              <Badge
+                variant={data.is_valid ? "default" : "destructive"}
+                className={
+                  data.is_valid
+                    ? undefined
+                    : "border-destructive/50 bg-destructive/10 text-destructive dark:bg-destructive/10"
+                }
+              >
                 {data.is_valid ? "valid" : "invalid"}
               </Badge>
               <span className="text-muted-foreground text-sm">
@@ -183,31 +190,36 @@ export function ReleaseValidationDialog({
             {data.errors.length === 0 ? (
               <p className="text-muted-foreground text-sm">No structured errors.</p>
             ) : (
-              <Table className="table-fixed">
-                <TableCaption className="sr-only">
-                  Validation errors by path or source and message.
-                </TableCaption>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[34%] font-medium whitespace-normal">
-                      Path / Source
-                    </TableHead>
-                    <TableHead className="font-medium whitespace-normal">Message</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.errors.map((e, i) => (
-                    <TableRow key={`${e.path}-${i}`}>
-                      <TableCell className="w-[34%] min-w-0 align-top whitespace-normal break-all font-mono text-xs">
-                        {e.path}
-                      </TableCell>
-                      <TableCell className="min-w-0 align-top whitespace-normal break-words text-sm leading-snug">
-                        <ValidationMessageCell message={e.message} />
-                      </TableCell>
+              <div className="overflow-hidden rounded-lg border border-destructive/50 bg-destructive/10">
+                <Table className="table-fixed">
+                  <TableCaption className="sr-only">
+                    Validation errors by path or source and message.
+                  </TableCaption>
+                  <TableHeader>
+                    <TableRow className="border-destructive/20 bg-destructive/5 hover:bg-destructive/5">
+                      <TableHead className="w-[34%] font-medium whitespace-normal">
+                        Path / Source
+                      </TableHead>
+                      <TableHead className="font-medium whitespace-normal">Message</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {data.errors.map((e, i) => (
+                      <TableRow
+                        key={`${e.path}-${i}`}
+                        className="border-destructive/15 hover:bg-destructive/5"
+                      >
+                        <TableCell className="w-[34%] min-w-0 align-top whitespace-normal break-all font-mono text-xs text-foreground">
+                          {e.path}
+                        </TableCell>
+                        <TableCell className="min-w-0 align-top whitespace-normal break-words text-sm leading-snug text-foreground">
+                          <ValidationMessageCell message={e.message} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </div>
         ) : null}

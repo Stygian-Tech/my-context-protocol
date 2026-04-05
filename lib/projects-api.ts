@@ -7,6 +7,7 @@ import type {
   RequestLog,
   GithubRepoListItem,
   ProjectCatalog,
+  ProjectCatalogMarkdownUpdate,
   ReleaseValidationReport,
   CompiledSkill,
   AccountDashboardSummary,
@@ -59,6 +60,16 @@ export async function fetchProjectDashboardTimeseries(
 
 export async function fetchProjectCatalog(projectId: string): Promise<ProjectCatalog> {
   return api.get<ProjectCatalog>(`/projects/${projectId}/catalog`);
+}
+
+export async function updateProjectCatalogMarkdown(
+  projectId: string,
+  body: { markdown: string }
+): Promise<ProjectCatalogMarkdownUpdate> {
+  return api.patch<ProjectCatalogMarkdownUpdate>(
+    `/projects/${projectId}/catalog-markdown`,
+    body
+  );
 }
 
 export async function createProject(data: {
@@ -202,6 +213,14 @@ export async function createApiKey(
     `/projects/${projectId}/api-keys`,
     data ?? {}
   );
+}
+
+export async function updateApiKey(
+  projectId: string,
+  keyId: string,
+  body: { name: string }
+): Promise<ApiKey> {
+  return api.patch<ApiKey>(`/projects/${projectId}/api-keys/${keyId}`, body);
 }
 
 export async function fetchRequestLogs(

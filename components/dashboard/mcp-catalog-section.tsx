@@ -1,15 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { fetchProjectCatalog } from "@/lib/projects-api";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  fetchProjectCatalog,
+  updateProjectCatalogMarkdown,
+} from "@/lib/projects-api";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -24,15 +22,112 @@ import { CopyIcon } from "lucide-react";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { copyTextToClipboard, mcpEventsUrl } from "@/lib/clipboard";
 import { pluralEn } from "@/lib/pluralize";
+import { MarkdownPreview } from "@/components/dashboard/markdown-preview";
+import { glassSurfaceClasses } from "@/lib/glass";
+import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+/** MCP synthetic discovery tool; matches backend `MCPConstants.catalogToolName`. */
+const MYCONTEXT_CATALOG_TOOL = "mycontext:catalog";
+
+const CATALOG_MARKDOWN_MAX_CHARS = 512 * 1024;
+
+/** Inset surface for subpanels, monospace blocks, and URL chips (shared fill). */
+const MCP_CATALOG_INSET_SURFACE =
+  "rounded-lg border border-border/80 bg-muted/35 dark:bg-muted/20";
+
+/** Nested blocks (catalog editor, resource cards) inside a section. */
+const MCP_CATALOG_SUBPANEL = cn("space-y-3 p-4", MCP_CATALOG_INSET_SURFACE);
+
+/** Bordered block matching Project Info / other dashboard sections. */
+const MCP_CATALOG_SECTION =
+  "space-y-4 rounded-lg border p-4 text-sm text-card-foreground";
 
 interface McpCatalogSectionProps {
   projectId: string;
 }
 
 export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["project-catalog", projectId],
     queryFn: () => fetchProjectCatalog(projectId),
+  });
+
+  const [draft, setDraft] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [catalogEditorOpen, setCatalogEditorOpen] = useState(false);
+
+  useEffect(() => {
+    if (!data) return;
+    setDraft(data.catalog_markdown ?? "");
+  }, [
+    projectId,
+    data?.catalog_markdown,
+    data?.catalog_markdown_generated,
+    data?.catalog_markdown_override ?? "",
+  ]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!data) throw new Error("Catalog not loaded");
+      const trimmedDraft = draft.trim();
+      const trimmedGen = (
+        data.catalog_markdown_generated ??
+        data.catalog_markdown ??
+        ""
+      ).trim();
+      const markdown = trimmedDraft === trimmedGen ? "" : trimmedDraft;
+      if (markdown.length > CATALOG_MARKDOWN_MAX_CHARS) {
+        throw new Error(
+          `Catalog markdown must be ${CATALOG_MARKDOWN_MAX_CHARS.toLocaleString()} characters or fewer`,
+        );
+      }
+      return updateProjectCatalogMarkdown(projectId, { markdown });
+    },
+    onSuccess: () => {
+      setSaveError(null);
+      setCatalogEditorOpen(false);
+      void queryClient.invalidateQueries({
+        queryKey: ["project-catalog", projectId],
+      });
+    },
+    onError: (e: unknown) => {
+      setSaveError(
+        e instanceof ApiError
+          ? formatApiErrorDetail(e.body) || e.message
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      );
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: () => updateProjectCatalogMarkdown(projectId, { markdown: "" }),
+    onSuccess: () => {
+      setSaveError(null);
+      setCatalogEditorOpen(false);
+      void queryClient.invalidateQueries({
+        queryKey: ["project-catalog", projectId],
+      });
+    },
+    onError: (e: unknown) => {
+      setSaveError(
+        e instanceof ApiError
+          ? formatApiErrorDetail(e.body) || e.message
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      );
+    },
   });
 
   if (isLoading) {
@@ -42,7 +137,9 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
   if (error) {
     return (
       <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
-        <p className="font-medium text-destructive">Could not load MCP catalog.</p>
+        <p className="font-medium text-destructive">
+          Could not load MCP catalog.
+        </p>
         {error instanceof ApiError ? (
           <pre className="text-muted-foreground max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">
             {formatApiErrorDetail(error.body) || error.message}
@@ -71,7 +168,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
       },
     },
     null,
-    2
+    2,
   );
 
   const sampleInitializeResponse = JSON.stringify(
@@ -97,7 +194,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
       },
     },
     null,
-    2
+    2,
   );
 
   const sampleResourcesRead = (uri: string) =>
@@ -109,183 +206,557 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
         params: { uri },
       },
       null,
-      2
+      2,
     );
 
-  const total =
-    data.tools.length + data.resources.length + data.prompts.length;
+  const sampleCatalogToolsCall = JSON.stringify(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: MYCONTEXT_CATALOG_TOOL,
+        arguments: {},
+      },
+    },
+    null,
+    2,
+  );
+
+  const skillTools = data.tools.filter(
+    (t) => t.name !== MYCONTEXT_CATALOG_TOOL,
+  );
+  const catalogToolRow = data.tools.find(
+    (t) => t.name === MYCONTEXT_CATALOG_TOOL,
+  );
+  const totalCapabilities =
+    skillTools.length + data.resources.length + data.prompts.length;
+
+  const hasCustomOverride = Boolean(
+    data.catalog_markdown_override?.trim().length,
+  );
+  const trimmedDraft = draft.trim();
+  const catalogMarkdownGenerated =
+    data.catalog_markdown_generated ?? data.catalog_markdown ?? "";
+  const trimmedGen = catalogMarkdownGenerated.trim();
+  const wouldSendEmpty = trimmedDraft === trimmedGen;
+  const customTooLong =
+    !wouldSendEmpty && trimmedDraft.length > CATALOG_MARKDOWN_MAX_CHARS;
+  const catalogDirty = trimmedDraft !== (data.catalog_markdown ?? "").trim();
+  const catalogSaving = saveMutation.isPending || restoreMutation.isPending;
+
+  const liveCatalogMarkdown = data.catalog_markdown ?? "";
+  const catalogPreviewEmpty = !liveCatalogMarkdown.trim();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>MCP Catalog</CardTitle>
-        <CardDescription>
-          What this project exposes over MCP for the{" "}
-          <span className="font-medium">active release</span>. Sync and
-          activate a release to populate tools, resources, and prompts.
-          Resource entries can include agent routing from SKILL.md (
-          <code className="font-mono text-xs">use_when</code>,{" "}
-          <code className="font-mono text-xs">avoid_when</code>,{" "}
-          <code className="font-mono text-xs">failure_modes</code>,{" "}
-          <code className="font-mono text-xs">invoke_first</code>) — the same
-          data is returned in <code className="font-mono text-xs">resources/list</code>{" "}
-          and summarized at the top of <code className="font-mono text-xs">resources/read</code>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <div className="space-y-6">
+      <section
+        className={MCP_CATALOG_SECTION}
+        aria-labelledby="mcp-catalog-heading"
+      >
+        <div className="space-y-1.5">
+          <h2
+            id="mcp-catalog-heading"
+            className="text-base leading-snug font-medium text-foreground"
+          >
+            MCP Catalog
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Markdown returned by{" "}
+            <code className="font-mono text-xs">{MYCONTEXT_CATALOG_TOOL}</code>{" "}
+            for this project&apos;s{" "}
+            <span className="font-medium text-foreground">active release</span>.
+            It is built from the release unless you save a custom override in
+            the editor.
+          </p>
+        </div>
         {!data.release_id && (
           <p className="text-muted-foreground text-sm">
-            No active release yet — connect a repo, sync, then activate a
-            ready release.
+            No active release yet — connect a repo, sync, then activate a ready
+            release.
           </p>
         )}
         {data.release_id && (
           <p className="text-muted-foreground text-sm">
             Release <span className="font-mono">{data.release_id}</span>
-            {data.release_status
-              ? ` · status: ${data.release_status}`
-              : ""}
-            {total === 0
-              ? " · no capabilities in this release (check skill exposure types in compiled skills)."
-              : ` · ${total} ${pluralEn(total, "capability", "capabilities")}.`}
+            {data.release_status ? ` · status: ${data.release_status}` : ""}
+            {totalCapabilities === 0
+              ? " · no skill capabilities in this release (check skill exposure types in compiled skills)."
+              : ` · ${totalCapabilities} ${pluralEn(totalCapabilities, "skill capability", "skill capabilities")} (plus discovery tool ${MYCONTEXT_CATALOG_TOOL}).`}
           </p>
         )}
 
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium">Connect</h3>
-          <ol className="text-muted-foreground list-inside list-decimal space-y-1 text-sm">
-            <li>Create an API key (API Keys tab).</li>
-            <li>
-              Send JSON-RPC <code className="font-mono text-xs">POST</code> to
-              your MCP URL with header{" "}
-              <code className="font-mono text-xs">
-                Authorization: Bearer &lt;key&gt;
-              </code>
-              .
-            </li>
-            <li>
-              Call <code className="font-mono text-xs">initialize</code>, then{" "}
-              <code className="font-mono text-xs">tools/list</code> (includes{" "}
-              <code className="font-mono text-xs">mycontext:catalog</code>),{" "}
-              <code className="font-mono text-xs">resources/list</code>, or{" "}
-              <code className="font-mono text-xs">prompts/list</code>.
-            </li>
-            <li>
-              Optional: open a long-lived{" "}
-              <code className="font-mono text-xs">GET</code> to{" "}
-              <code className="font-mono text-xs">…/events</code> with the same
-              bearer key for SSE <code className="font-mono text-xs">list_changed</code>{" "}
-              notifications; otherwise compare{" "}
-              <code className="font-mono text-xs">X-MCP-Catalog-Revision</code> on
-              responses.
-            </li>
-          </ol>
-          {url ? (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <code className="bg-muted max-w-full flex-1 break-all rounded px-2 py-1 text-xs">
-                  {url}
-                </code>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    void copyTextToClipboard(url, {
-                      success: "Catalog URL copied to clipboard",
-                      error: "Could not copy catalog URL",
-                    })
-                  }
-                >
-                  <CopyIcon className="mr-1 h-3.5 w-3.5" />
-                  Copy URL
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <code className="bg-muted max-w-full flex-1 break-all rounded px-2 py-1 text-xs">
-                  {mcpEventsUrl(url)}
-                </code>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    void copyTextToClipboard(mcpEventsUrl(url), {
-                      success: "MCP events URL copied",
-                      error: "Could not copy events URL",
-                    })
-                  }
-                >
-                  <CopyIcon className="mr-1 h-3.5 w-3.5" />
-                  Copy events URL
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-xs">
-              MCP URL unavailable — set{" "}
-              <code className="font-mono">SAAS_MCP_BASE_DOMAIN</code> on the API
-              or verify a custom domain.
-            </p>
-          )}
+        <div className={MCP_CATALOG_SUBPANEL}>
           <div className="space-y-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground text-xs">Sample Initialize Body</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-medium">Catalog Markdown</h3>
+              {hasCustomOverride ? (
+                <span className="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium leading-none">
+                  Custom Text
+                </span>
+              ) : (
+                <span className="bg-muted inline-flex items-center rounded-md px-2 py-0.5 text-xs leading-none">
+                  Auto-Generated
+                </span>
+              )}
+            </div>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              This is the markdown returned by{" "}
+              <code className="font-mono">{MYCONTEXT_CATALOG_TOOL}</code>. By
+              default it is built from the active release; you can replace it
+              with your own text (for example a shorter onboarding blurb).
+              Saving text identical to the auto-generated catalog clears the
+              custom override.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-xs font-medium">
+              Preview (Live Catalog)
+            </p>
+            <div
+              className={cn(
+                "max-h-40 overflow-auto rounded-lg p-3",
+                glassSurfaceClasses("subtle"),
+              )}
+            >
+              {catalogPreviewEmpty ? (
+                <span className="text-muted-foreground text-xs leading-relaxed">
+                  No catalog text yet. Sync and activate a release, or open the
+                  editor to add custom markdown.
+                </span>
+              ) : (
+                <MarkdownPreview markdown={liveCatalogMarkdown} />
+              )}
+            </div>
+            {catalogDirty ? (
+              <p className="text-amber-700 text-xs dark:text-amber-400">
+                You have unsaved edits in the editor — open it to save or adjust
+                before leaving the page.
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setSaveError(null);
+                setCatalogEditorOpen(true);
+              }}
+            >
+              Edit Catalog Markdown…
+            </Button>
+          </div>
+        </div>
+
+        <Dialog
+          open={catalogEditorOpen}
+          onOpenChange={(open) => {
+            setCatalogEditorOpen(open);
+            if (!open) setSaveError(null);
+          }}
+        >
+          <DialogContent
+            showCloseButton
+            className="flex h-[min(90vh,calc(100vh-2rem))] max-h-[min(90vh,calc(100vh-2rem))] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(56rem,calc(100vw-2rem))]"
+          >
+            <DialogHeader className="shrink-0 space-y-2 border-b border-border/50 px-4 py-3">
+              <DialogTitle>Edit Catalog Markdown</DialogTitle>
+              <DialogDescription>
+                Markdown returned by{" "}
+                <code className="font-mono text-xs">
+                  {MYCONTEXT_CATALOG_TOOL}
+                </code>
+                . Saving text identical to the auto-generated catalog clears the
+                custom override.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 py-3">
+              <Label
+                htmlFor={`mcp-catalog-md-${projectId}`}
+                className="sr-only"
+              >
+                Catalog Markdown
+              </Label>
+              <div
+                className={cn(
+                  "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg p-3",
+                  glassSurfaceClasses("default"),
+                )}
+              >
+                <textarea
+                  id={`mcp-catalog-md-${projectId}`}
+                  value={draft}
+                  onChange={(e) => {
+                    setSaveError(null);
+                    setDraft(e.target.value);
+                  }}
+                  spellCheck={false}
+                  aria-invalid={customTooLong}
+                  className={cn(
+                    "min-h-[min(50vh,26rem)] w-full flex-1 resize-y rounded-md border border-input/80 bg-transparent px-2.5 py-2 font-mono text-xs",
+                    "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                    "outline-none dark:bg-input/20",
+                    customTooLong &&
+                      "border-destructive focus-visible:border-destructive",
+                  )}
+                />
+              </div>
+              <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span>
+                  {trimmedDraft.length.toLocaleString()} /{" "}
+                  {CATALOG_MARKDOWN_MAX_CHARS.toLocaleString()} characters
+                  (custom text)
+                </span>
+                {customTooLong ? (
+                  <span className="text-destructive font-medium">
+                    Too Long to Save
+                  </span>
+                ) : null}
+              </div>
+              {saveError ? (
+                <p className="text-destructive text-xs">{saveError}</p>
+              ) : null}
+            </div>
+            <DialogFooter className="mx-0 mb-0 mt-0 shrink-0 border-t border-border/40 bg-background/35 px-4 py-3 supports-backdrop-filter:bg-background/22 sm:justify-end">
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
+                onClick={() => setCatalogEditorOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={catalogSaving || !hasCustomOverride}
+                onClick={() => restoreMutation.mutate()}
+              >
+                Use Auto-Generated Catalog
+              </Button>
+              <Button
+                type="button"
+                disabled={
+                  catalogSaving ||
+                  !catalogDirty ||
+                  customTooLong ||
+                  (wouldSendEmpty && !hasCustomOverride)
+                }
+                onClick={() => saveMutation.mutate()}
+              >
+                Save Catalog Markdown
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </section>
+
+      <section
+        className={MCP_CATALOG_SECTION}
+        aria-labelledby="mcp-connect-heading"
+      >
+        <div className="space-y-1.5">
+          <h2
+            id="mcp-connect-heading"
+            className="text-base leading-snug font-medium text-foreground"
+          >
+            Connect
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Use an API key and your MCP URL to run JSON-RPC over HTTP, then list
+            tools, resources, and prompts.
+          </p>
+        </div>
+        <ol className="text-muted-foreground list-inside list-decimal space-y-1 text-sm">
+          <li>Create an API key (API Keys tab).</li>
+          <li>
+            Send JSON-RPC <code className="font-mono text-xs">POST</code> to
+            your MCP URL with header{" "}
+            <code className="font-mono text-xs">
+              Authorization: Bearer &lt;key&gt;
+            </code>
+            .
+          </li>
+          <li>
+            Call <code className="font-mono text-xs">initialize</code>, then{" "}
+            <code className="font-mono text-xs">tools/list</code> (includes{" "}
+            <code className="font-mono text-xs">{MYCONTEXT_CATALOG_TOOL}</code>
+            ), <code className="font-mono text-xs">resources/list</code>, or{" "}
+            <code className="font-mono text-xs">prompts/list</code>. Use{" "}
+            <strong className="font-medium text-foreground">
+              Agent Discovery
+            </strong>{" "}
+            below to copy a{" "}
+            <code className="font-mono text-xs">tools/call</code> payload and
+            preview the catalog markdown agents should read first.
+          </li>
+          <li>
+            Optional: open a long-lived{" "}
+            <code className="font-mono text-xs">GET</code> to{" "}
+            <code className="font-mono text-xs">…/events</code> with the same
+            bearer key for SSE{" "}
+            <code className="font-mono text-xs">list_changed</code>{" "}
+            notifications; otherwise compare{" "}
+            <code className="font-mono text-xs">X-MCP-Catalog-Revision</code> on
+            responses.
+          </li>
+        </ol>
+        {url ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <code
+                className={cn(
+                  MCP_CATALOG_INSET_SURFACE,
+                  "max-w-full flex-1 break-all px-2 py-1 text-xs",
+                )}
+              >
+                {url}
+              </code>
+              <Button
+                type="button"
+                variant="outline"
                 size="sm"
-                className="h-7 text-xs"
                 onClick={() =>
-                  void copyTextToClipboard(sampleInitialize, {
-                    success: "Sample JSON copied to clipboard",
-                    error: "Could not copy sample JSON",
+                  void copyTextToClipboard(url, {
+                    success: "Catalog URL copied to clipboard",
+                    error: "Could not copy catalog URL",
                   })
                 }
               >
-                <CopyIcon className="mr-1 h-3 w-3" />
-                Copy JSON
+                <CopyIcon className="mr-1 h-3.5 w-3.5" />
+                Copy URL
               </Button>
             </div>
-            <pre className="bg-muted max-h-40 overflow-auto rounded-md p-3 text-xs leading-relaxed">
-              {sampleInitialize}
-            </pre>
+            <div className="flex flex-wrap items-center gap-2">
+              <code
+                className={cn(
+                  MCP_CATALOG_INSET_SURFACE,
+                  "max-w-full flex-1 break-all px-2 py-1 text-xs",
+                )}
+              >
+                {mcpEventsUrl(url)}
+              </code>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  void copyTextToClipboard(mcpEventsUrl(url), {
+                    success: "MCP events URL copied",
+                    error: "Could not copy events URL",
+                  })
+                }
+              >
+                <CopyIcon className="mr-1 h-3.5 w-3.5" />
+                Copy events URL
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-xs">
+            MCP URL unavailable — set{" "}
+            <code className="font-mono">SAAS_MCP_BASE_DOMAIN</code> on the API
+            or verify a custom domain.
+          </p>
+        )}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground text-xs">
+              Sample Initialize Body
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() =>
+                void copyTextToClipboard(sampleInitialize, {
+                  success: "Sample JSON copied to clipboard",
+                  error: "Could not copy sample JSON",
+                })
+              }
+            >
+              <CopyIcon className="mr-1 h-3 w-3" />
+              Copy JSON
+            </Button>
+          </div>
+          <pre
+            className={cn(
+              MCP_CATALOG_INSET_SURFACE,
+              "max-h-40 overflow-auto p-3 text-xs leading-relaxed",
+            )}
+          >
+            {sampleInitialize}
+          </pre>
+        </div>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground text-xs">
+              Example Initialize Response (Shape)
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() =>
+                void copyTextToClipboard(sampleInitializeResponse, {
+                  success: "Sample response copied to clipboard",
+                  error: "Could not copy sample response",
+                })
+              }
+            >
+              <CopyIcon className="mr-1 h-3 w-3" />
+              Copy JSON
+            </Button>
+          </div>
+          <pre
+            className={cn(
+              MCP_CATALOG_INSET_SURFACE,
+              "max-h-48 overflow-auto p-3 text-xs leading-relaxed",
+            )}
+          >
+            {sampleInitializeResponse}
+          </pre>
+        </div>
+      </section>
+
+      <section
+        className={MCP_CATALOG_SECTION}
+        aria-labelledby="mcp-agent-discovery-heading"
+      >
+        <div className="space-y-1.5">
+          <h2
+            id="mcp-agent-discovery-heading"
+            className="text-base leading-snug font-medium text-foreground"
+          >
+            Agent Discovery
+          </h2>
+        </div>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              After <code className="font-mono text-xs">initialize</code>,
+              agents should call{" "}
+              <code className="font-mono text-xs">tools/call</code> with tool
+              name{" "}
+              <code className="font-mono text-xs">
+                {MYCONTEXT_CATALOG_TOOL}
+              </code>{" "}
+              to get a markdown map of skill tools, resources, and prompts
+              (routing hints, URIs, and when to use each). That steers how the
+              agent accesses the rest of this project without guessing from{" "}
+              <code className="font-mono text-xs">tools/list</code> alone. Any{" "}
+              <code className="font-mono text-xs">detail</code> argument is
+              ignored for this tool (it is only used for{" "}
+              <code className="font-mono text-xs">skill:</code> tools).
+            </p>
+            {catalogToolRow?.description ? (
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {catalogToolRow.description}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                void copyTextToClipboard(MYCONTEXT_CATALOG_TOOL, {
+                  success: "Tool name copied",
+                  error: "Could not copy",
+                })
+              }
+            >
+              <CopyIcon className="mr-1 h-3.5 w-3.5" />
+              Copy tool name
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                void copyTextToClipboard(sampleCatalogToolsCall, {
+                  success: "tools/call JSON copied",
+                  error: "Could not copy JSON",
+                })
+              }
+            >
+              <CopyIcon className="mr-1 h-3.5 w-3.5" />
+              Copy tools/call JSON
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                void copyTextToClipboard(data.catalog_markdown ?? "", {
+                  success: "Catalog markdown copied",
+                  error: "Could not copy markdown",
+                })
+              }
+            >
+              <CopyIcon className="mr-1 h-3.5 w-3.5" />
+              Copy Catalog Markdown
+            </Button>
           </div>
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground text-xs">
-                Example Initialize Response (Shape)
+                Sample <code className="font-mono">tools/call</code> body
               </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() =>
-                  void copyTextToClipboard(sampleInitializeResponse, {
-                    success: "Sample response copied to clipboard",
-                    error: "Could not copy sample response",
-                  })
-                }
-              >
-                <CopyIcon className="mr-1 h-3 w-3" />
-                Copy JSON
-              </Button>
             </div>
-            <pre className="bg-muted max-h-48 overflow-auto rounded-md p-3 text-xs leading-relaxed">
-              {sampleInitializeResponse}
+            <pre
+              className={cn(
+                MCP_CATALOG_INSET_SURFACE,
+                "max-h-40 overflow-auto p-3 text-xs leading-relaxed",
+              )}
+            >
+              {sampleCatalogToolsCall}
             </pre>
           </div>
         </div>
+      </section>
+
+      <section
+        className={cn(MCP_CATALOG_SECTION, "space-y-6")}
+        aria-labelledby="mcp-capabilities-heading"
+      >
+        <div className="space-y-1.5">
+          <h2
+            id="mcp-capabilities-heading"
+            className="text-base leading-snug font-medium text-foreground"
+          >
+            Tools, Resources, and Prompts
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Skill tools, resources, and prompts from the active release.
+            Resource entries can include agent routing from SKILL.md (
+            <code className="font-mono text-xs">use_when</code>,{" "}
+            <code className="font-mono text-xs">avoid_when</code>,{" "}
+            <code className="font-mono text-xs">failure_modes</code>,{" "}
+            <code className="font-mono text-xs">invoke_first</code>) — the same
+            data is returned in{" "}
+            <code className="font-mono text-xs">resources/list</code> and
+            summarized at the top of{" "}
+            <code className="font-mono text-xs">resources/read</code>.
+          </p>
+        </div>
 
         <div className="space-y-2">
-          <h3 className="text-sm font-medium">Tools</h3>
-          {data.tools.length === 0 ? (
-            <p className="text-muted-foreground text-sm">None.</p>
+          <h3 className="text-sm font-medium">Skill Tools</h3>
+          {skillTools.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              None from the active release yet. The discovery tool{" "}
+              <code className="font-mono text-xs">
+                {MYCONTEXT_CATALOG_TOOL}
+              </code>{" "}
+              is still listed above once you connect over MCP.
+            </p>
           ) : (
             <Table>
               <TableCaption className="sr-only">
-                MCP tools exposed for this project&apos;s active release.
+                MCP skill tools from the active release (excludes synthetic
+                catalog tool).
               </TableCaption>
               <TableHeader>
                 <TableRow>
@@ -294,9 +765,11 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.tools.map((t) => (
+                {skillTools.map((t) => (
                   <TableRow key={t.name}>
-                    <TableCell className="font-mono text-xs">{t.name}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {t.name}
+                    </TableCell>
                     <TableCell className="max-w-md text-sm">
                       {t.description ?? "—"}
                     </TableCell>
@@ -318,15 +791,15 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                 const avoidWhen = r.avoid_when ?? [];
                 const failureModes = r.failure_modes ?? [];
                 const hasHints =
-                  (useWhen.length > 0) ||
-                  (avoidWhen.length > 0) ||
-                  (failureModes.length > 0) ||
+                  useWhen.length > 0 ||
+                  avoidWhen.length > 0 ||
+                  failureModes.length > 0 ||
                   r.invoke_first === true;
                 const readRpc = sampleResourcesRead(r.uri);
                 return (
                   <div
                     key={r.uri}
-                    className="bg-card space-y-3 rounded-lg border p-4 text-sm"
+                    className={cn(MCP_CATALOG_SUBPANEL, "text-sm")}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0 flex-1 space-y-1">
@@ -345,12 +818,12 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                       <div className="flex w-full flex-shrink-0 flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
                         {r.invoke_first ? (
                           <span className="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-1 text-xs font-medium leading-none">
-                            Invoke first
+                            Invoke First
                           </span>
                         ) : null}
                         {hasHints && !r.invoke_first ? (
                           <span className="bg-muted inline-flex items-center rounded-md px-2 py-1 text-xs leading-none">
-                            Agent hints
+                            Agent Hints
                           </span>
                         ) : null}
                         <Button
@@ -390,7 +863,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                         {useWhen.length > 0 ? (
                           <div>
                             <p className="mb-1 text-xs font-medium text-foreground/90">
-                              Read when
+                              Read When
                             </p>
                             <ul className="text-muted-foreground list-inside list-disc space-y-0.5 text-xs">
                               {useWhen.map((line) => (
@@ -402,7 +875,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                         {avoidWhen.length > 0 ? (
                           <div>
                             <p className="mb-1 text-xs font-medium text-foreground/90">
-                              Skip when
+                              Skip When
                             </p>
                             <ul className="text-muted-foreground list-inside list-disc space-y-0.5 text-xs">
                               {avoidWhen.map((line) => (
@@ -414,7 +887,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                         {failureModes.length > 0 ? (
                           <div className="sm:col-span-3">
                             <p className="mb-1 text-xs font-medium text-foreground/90">
-                              Failure modes / fallbacks
+                              Failure Modes / Fallbacks
                             </p>
                             <ul className="text-muted-foreground list-inside list-disc space-y-0.5 text-xs">
                               {failureModes.map((line) => (
@@ -437,7 +910,12 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                         Sample <code className="font-mono">resources/read</code>{" "}
                         body
                       </summary>
-                      <pre className="bg-muted mt-2 max-h-36 overflow-auto rounded-md p-2 leading-relaxed">
+                      <pre
+                        className={cn(
+                          MCP_CATALOG_INSET_SURFACE,
+                          "mt-2 max-h-36 overflow-auto p-2 leading-relaxed",
+                        )}
+                      >
                         {readRpc}
                       </pre>
                     </details>
@@ -466,7 +944,9 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
               <TableBody>
                 {data.prompts.map((p) => (
                   <TableRow key={p.name}>
-                    <TableCell className="font-mono text-xs">{p.name}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {p.name}
+                    </TableCell>
                     <TableCell className="max-w-md text-sm">
                       {p.description ?? "—"}
                     </TableCell>
@@ -476,7 +956,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             </Table>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </section>
+    </div>
   );
 }

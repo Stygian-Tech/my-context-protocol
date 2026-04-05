@@ -43,6 +43,9 @@ export interface Release {
   error_summary?: string | null;
   is_active?: boolean;
   skill_body_changes_count?: number;
+  /** From `GET /projects/:id/releases` — skills with blocking MCP metadata (same rules as MCP Metadata dialog). */
+  mcp_metadata_blocking_skills?: number;
+  mcp_metadata_warning_skills?: number;
 }
 
 export interface SkillPackage {
@@ -82,9 +85,22 @@ export interface ProjectCatalog {
   release_id?: string | null;
   release_status?: string | null;
   mcp_url?: string | null;
+  /** Same markdown returned by MCP `tools/call` for `mycontext:catalog`. */
+  catalog_markdown: string;
+  /** Auto-generated catalog from the active release (ignores custom override). Omitted on older API responses. */
+  catalog_markdown_generated?: string;
+  /** Custom markdown when set; then `catalog_markdown` matches this. */
+  catalog_markdown_override?: string | null;
   tools: ProjectCatalogTool[];
   resources: ProjectCatalogResource[];
   prompts: ProjectCatalogPrompt[];
+}
+
+/** Response from PATCH `/projects/:id/catalog-markdown`. */
+export interface ProjectCatalogMarkdownUpdate {
+  catalog_markdown: string;
+  catalog_markdown_generated: string;
+  catalog_markdown_override?: string | null;
 }
 
 export interface ApiKey {

@@ -29,6 +29,8 @@ import { MAIN_CONTENT_ID } from "@/lib/a11y"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+/** Mirrors open state when cookies are blocked or lag; read on client init. */
+const SIDEBAR_OPEN_STORAGE_KEY = "mycontext.sidebar.open"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
@@ -41,6 +43,51 @@ const MAX_SIDEBAR_WIDTH_PX = 480
 const SIDEBAR_PANEL_DURATION_CLASS = "duration-[240ms]"
 const SIDEBAR_PANEL_EASE_CLASS =
   "ease-[cubic-bezier(0.34,0.82,0.25,1)]"
+
+/** Peek auto-close: slow pointer movement keeps this full hang time. */
+const PEEK_AUTO_CLOSE_DELAY_MS_MAX = 200
+/** Peek auto-close: fast movement off the panel approaches this floor. */
+const PEEK_AUTO_CLOSE_DELAY_MS_MIN = 48
+/** At or below this speed (px/ms), use {@link PEEK_AUTO_CLOSE_DELAY_MS_MAX}. */
+const PEEK_POINTER_SPEED_SLOW_PX_PER_MS = 0.22
+/** At or above this speed (px/ms), use {@link PEEK_AUTO_CLOSE_DELAY_MS_MIN}. */
+const PEEK_POINTER_SPEED_FAST_PX_PER_MS = 1.35
+/** Recent pointer segment used to estimate speed when leaving the peek rail. */
+const PEEK_POINTER_HISTORY_MS = 72
+const PEEK_POINTER_SAMPLES_MAX = 14
+
+/**
+ * Edge-hover sidebar glass only (differs from env-banner chrome): heavy frosted blur,
+ * dark translucent fill, no hard rail stroke — matches the floating overlay reference.
+ */
+const PEEK_SIDEBAR_GLASS_BACKDROP =
+  "supports-backdrop-filter:backdrop-blur-[5.5rem] supports-backdrop-filter:backdrop-saturate-[1.2]" as const
+
+type PeekPointerSample = { x: number; y: number; t: number }
+
+function computePeekAutoCloseDelayMs(samples: PeekPointerSample[]): number {
+  if (samples.length < 2) return PEEK_AUTO_CLOSE_DELAY_MS_MAX
+  const first = samples[0]
+  const last = samples[samples.length - 1]
+  const dt = last.t - first.t
+  if (dt < 12) return PEEK_AUTO_CLOSE_DELAY_MS_MAX
+  let dist = 0
+  for (let i = 1; i < samples.length; i++) {
+    dist += Math.hypot(
+      samples[i].x - samples[i - 1].x,
+      samples[i].y - samples[i - 1].y
+    )
+  }
+  const v = dist / dt
+  if (v <= PEEK_POINTER_SPEED_SLOW_PX_PER_MS) return PEEK_AUTO_CLOSE_DELAY_MS_MAX
+  if (v >= PEEK_POINTER_SPEED_FAST_PX_PER_MS) return PEEK_AUTO_CLOSE_DELAY_MS_MIN
+  const span = PEEK_POINTER_SPEED_FAST_PX_PER_MS - PEEK_POINTER_SPEED_SLOW_PX_PER_MS
+  const t = (v - PEEK_POINTER_SPEED_SLOW_PX_PER_MS) / span
+  return Math.round(
+    PEEK_AUTO_CLOSE_DELAY_MS_MAX -
+      t * (PEEK_AUTO_CLOSE_DELAY_MS_MAX - PEEK_AUTO_CLOSE_DELAY_MS_MIN)
+  )
+}
 
 function clampSidebarWidth(px: number) {
   return Math.min(
@@ -58,6 +105,28 @@ function readStoredSidebarWidth(): number | null {
   return clampSidebarWidth(n)
 }
 
+function readStoredSidebarOpenFromLocalStorage(): boolean | null {
+  if (typeof window === "undefined") return null
+  try {
+    const v = window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)
+    if (v === "0") return false
+    if (v === "1") return true
+  } catch {
+    /* quota / private mode */
+  }
+  return null
+}
+
+function persistSidebarOpenPreference(openState: boolean) {
+  if (typeof document === "undefined") return
+  document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax`
+  try {
+    window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, openState ? "1" : "0")
+  } catch {
+    /* ignore */
+  }
+}
+
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
   open: boolean
@@ -68,6 +137,14 @@ type SidebarContextProps = {
   toggleSidebar: () => void
   sidebarWidthPx: number
   setSidebarWidthPx: React.Dispatch<React.SetStateAction<number>>
+  /** True while the panel was opened from the left-edge hover affordance (glass + auto-dismiss). */
+  peekGlassActive: boolean
+  handleEdgeHoverOpen: () => void
+  handleSidebarPanelMouseEnter: () => void
+  handleSidebarPanelMouseLeave: () => void
+  /** Edge peek only: cancel auto-close while the pointer is over `SidebarTrigger`. */
+  handlePeekTogglePointerEnter: () => void
+  handlePeekTogglePointerLeave: () => void
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -139,16 +216,128 @@ function SidebarProvider({
         _setOpen(openState)
       }
 
-      // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+      persistSidebarOpenPreference(openState)
     },
     [setOpenProp, open]
   )
 
+  /* If the server had no cookie yet, align once with localStorage (e.g. prior session wrote LS only). */
+  const openHydrationSyncedRef = React.useRef(false)
+  React.useLayoutEffect(() => {
+    if (openProp !== undefined || openHydrationSyncedRef.current) return
+    openHydrationSyncedRef.current = true
+    const fromLs = readStoredSidebarOpenFromLocalStorage()
+    if (fromLs !== null && fromLs !== defaultOpen) {
+      _setOpen(fromLs)
+      persistSidebarOpenPreference(fromLs)
+    }
+  }, [openProp, defaultOpen])
+
+  const [peekGlassActive, setPeekGlassActive] = React.useState(false)
+  const openedViaEdgeHoverRef = React.useRef(false)
+  const edgeLeaveTimerRef = React.useRef<number | null>(null)
+  const peekPointerSamplesRef = React.useRef<PeekPointerSample[]>([])
+
+  const clearEdgeLeaveTimer = React.useCallback(() => {
+    const id = edgeLeaveTimerRef.current
+    if (id !== null) {
+      window.clearTimeout(id)
+      edgeLeaveTimerRef.current = null
+    }
+  }, [])
+
+  React.useEffect(() => {
+    return () => clearEdgeLeaveTimer()
+  }, [clearEdgeLeaveTimer])
+
+  React.useEffect(() => {
+    if (!open && !isMobile) {
+      openedViaEdgeHoverRef.current = false
+      setPeekGlassActive(false)
+      clearEdgeLeaveTimer()
+    }
+  }, [open, isMobile, clearEdgeLeaveTimer])
+
+  const handleEdgeHoverOpen = React.useCallback(() => {
+    if (isMobile) return
+    clearEdgeLeaveTimer()
+    peekPointerSamplesRef.current = []
+    openedViaEdgeHoverRef.current = true
+    setPeekGlassActive(true)
+    setOpen(true)
+  }, [isMobile, clearEdgeLeaveTimer, setOpen])
+
+  React.useEffect(() => {
+    if (!peekGlassActive || isMobile) {
+      peekPointerSamplesRef.current = []
+      return
+    }
+    const onPointerMove = (ev: PointerEvent) => {
+      const now = performance.now()
+      const arr = peekPointerSamplesRef.current
+      arr.push({ x: ev.clientX, y: ev.clientY, t: now })
+      const cutoff = now - PEEK_POINTER_HISTORY_MS
+      while (arr.length > 0 && arr[0].t < cutoff) arr.shift()
+      if (arr.length > PEEK_POINTER_SAMPLES_MAX) {
+        arr.splice(0, arr.length - PEEK_POINTER_SAMPLES_MAX)
+      }
+    }
+    document.addEventListener("pointermove", onPointerMove, { passive: true })
+    return () => document.removeEventListener("pointermove", onPointerMove)
+  }, [peekGlassActive, isMobile])
+
+  const handleSidebarPanelMouseEnter = React.useCallback(() => {
+    clearEdgeLeaveTimer()
+  }, [clearEdgeLeaveTimer])
+
+  const schedulePeekAutoClose = React.useCallback(() => {
+    if (isMobile || !openedViaEdgeHoverRef.current || !peekGlassActive) return
+    clearEdgeLeaveTimer()
+    const delayMs = computePeekAutoCloseDelayMs(peekPointerSamplesRef.current)
+    edgeLeaveTimerRef.current = window.setTimeout(() => {
+      edgeLeaveTimerRef.current = null
+      openedViaEdgeHoverRef.current = false
+      setPeekGlassActive(false)
+      setOpen(false)
+    }, delayMs)
+  }, [isMobile, peekGlassActive, clearEdgeLeaveTimer, setOpen])
+
+  const handleSidebarPanelMouseLeave = React.useCallback(() => {
+    schedulePeekAutoClose()
+  }, [schedulePeekAutoClose])
+
+  const handlePeekTogglePointerEnter = React.useCallback(() => {
+    if (!peekGlassActive) return
+    clearEdgeLeaveTimer()
+  }, [peekGlassActive, clearEdgeLeaveTimer])
+
+  const handlePeekTogglePointerLeave = React.useCallback(() => {
+    schedulePeekAutoClose()
+  }, [schedulePeekAutoClose])
+
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {
-    return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
-  }, [isMobile, setOpen, setOpenMobile])
+    clearEdgeLeaveTimer()
+    if (isMobile) {
+      return setOpenMobile((o) => !o)
+    }
+    // Edge-hover peek already has open === true; flipping would collapse. First trigger
+    // interaction commits to pinned open (layout gap + no auto-dismiss).
+    if (peekGlassActive) {
+      openedViaEdgeHoverRef.current = false
+      setPeekGlassActive(false)
+      return
+    }
+    openedViaEdgeHoverRef.current = false
+    setPeekGlassActive(false)
+    return setOpen((o) => !o)
+  }, [
+    isMobile,
+    peekGlassActive,
+    setOpen,
+    setOpenMobile,
+    clearEdgeLeaveTimer,
+  ])
 
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
@@ -181,6 +370,12 @@ function SidebarProvider({
       toggleSidebar,
       sidebarWidthPx,
       setSidebarWidthPx,
+      peekGlassActive,
+      handleEdgeHoverOpen,
+      handleSidebarPanelMouseEnter,
+      handleSidebarPanelMouseLeave,
+      handlePeekTogglePointerEnter,
+      handlePeekTogglePointerLeave,
     }),
     [
       state,
@@ -192,6 +387,12 @@ function SidebarProvider({
       toggleSidebar,
       sidebarWidthPx,
       setSidebarWidthPx,
+      peekGlassActive,
+      handleEdgeHoverOpen,
+      handleSidebarPanelMouseEnter,
+      handleSidebarPanelMouseLeave,
+      handlePeekTogglePointerEnter,
+      handlePeekTogglePointerLeave,
     ]
   )
 
@@ -213,8 +414,23 @@ function SidebarProvider({
         {...props}
       >
         {children}
+        <SidebarEdgeHoverZone />
       </div>
     </SidebarContext.Provider>
+  )
+}
+
+/** Narrow hit target at the left viewport edge: opens the desktop off-canvas sidebar (glass peek). */
+function SidebarEdgeHoverZone() {
+  const { isMobile, open, handleEdgeHoverOpen } = useSidebar()
+  if (isMobile || open) return null
+  return (
+    <div
+      data-slot="sidebar-edge-hover"
+      className="pointer-events-auto fixed inset-y-0 left-0 z-[35] hidden w-3 bg-transparent md:block"
+      aria-hidden
+      onMouseEnter={handleEdgeHoverOpen}
+    />
   )
 }
 
@@ -231,7 +447,15 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const {
+    isMobile,
+    state,
+    openMobile,
+    setOpenMobile,
+    peekGlassActive,
+    handleSidebarPanelMouseEnter,
+    handleSidebarPanelMouseLeave,
+  } = useSidebar()
 
   if (collapsible === "none") {
     return (
@@ -302,6 +526,10 @@ function Sidebar({
           SIDEBAR_PANEL_EASE_CLASS,
           "motion-reduce:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
+          // Edge-hover peek: keep layout width at 0 so the panel floats over content.
+          peekGlassActive &&
+            collapsible === "offcanvas" &&
+            "!w-0 min-w-0 shrink-0 overflow-hidden",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
             ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
@@ -316,6 +544,14 @@ function Sidebar({
           SIDEBAR_PANEL_DURATION_CLASS,
           SIDEBAR_PANEL_EASE_CLASS,
           "motion-reduce:transition-none",
+          // Pinned expanded: above sticky env banner (z-30) so layer order matches glass peek (no z flip on toggle).
+          state === "expanded" &&
+            collapsible === "offcanvas" &&
+            !isMobile &&
+            !peekGlassActive &&
+            "z-40",
+          // Edge peek: above in-flow chrome (header ~h-14) and banner.
+          peekGlassActive && collapsible === "offcanvas" && "z-[60] shadow-xl",
           "data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
@@ -328,8 +564,36 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
+          onMouseEnter={
+            !isMobile && collapsible === "offcanvas"
+              ? handleSidebarPanelMouseEnter
+              : undefined
+          }
+          onMouseLeave={
+            !isMobile && collapsible === "offcanvas"
+              ? handleSidebarPanelMouseLeave
+              : undefined
+          }
           className={cn(
             "relative flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border",
+            // While the inset gap animates (peek → pinned), ease the panel to full opacity in lockstep.
+            collapsible === "offcanvas" &&
+              state === "expanded" &&
+              cn(
+                "transition-opacity",
+                SIDEBAR_PANEL_DURATION_CLASS,
+                SIDEBAR_PANEL_EASE_CLASS,
+                "motion-reduce:transition-none",
+              ),
+            peekGlassActive &&
+              cn(
+                PEEK_SIDEBAR_GLASS_BACKDROP,
+                "border-0 border-transparent",
+                // Soft top edge where the rail meets the env strip (diffused highlight, not a hard rule).
+                "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)]",
+                "bg-sidebar/68 supports-backdrop-filter:bg-sidebar/44",
+                "opacity-100",
+              ),
             // Offcanvas hides via `left` on the container only — do not fade this wrapper,
             // or nav row cascades run while opacity is still ~0 and read as “no animation”.
             collapsible === "offcanvas" &&
@@ -351,7 +615,8 @@ function SidebarResizeHandle({
 }: React.ComponentProps<"button"> & {
   side?: "left" | "right"
 }) {
-  const { sidebarWidthPx, setSidebarWidthPx, state, isMobile } = useSidebar()
+  const { sidebarWidthPx, setSidebarWidthPx, state, isMobile, peekGlassActive } =
+    useSidebar()
 
   React.useEffect(() => {
     return () => {
@@ -359,7 +624,8 @@ function SidebarResizeHandle({
     }
   }, [])
 
-  if (isMobile || state === "collapsed") return null
+  /* Edge-peek overlay: handle sits on the right rail and overlaps the shifted header toggle. */
+  if (isMobile || state === "collapsed" || peekGlassActive) return null
 
   return (
     <button
