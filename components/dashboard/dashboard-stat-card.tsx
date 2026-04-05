@@ -14,6 +14,7 @@ export function DashboardStatCard({
   hint,
   valueClassName = "text-2xl",
   compact = false,
+  className,
 }: {
   title: string;
   value: string;
@@ -21,6 +22,7 @@ export function DashboardStatCard({
   valueClassName?: string;
   /** Tighter padding and labels for dense metric grids. */
   compact?: boolean;
+  className?: string;
 }) {
   return (
     <div
@@ -28,7 +30,8 @@ export function DashboardStatCard({
         "rounded-lg border bg-card/50 shadow-xs",
         compact
           ? "flex min-h-0 min-w-0 flex-col gap-0.5 p-2"
-          : "p-4"
+          : "p-4",
+        className
       )}
     >
       <div className="flex items-center justify-between gap-1">
