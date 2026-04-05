@@ -92,13 +92,19 @@ function ProjectsNavAccordion({
     queryFn: fetchProjects,
   });
 
-  const isActive =
+  const inProjectsSection =
     pathname === "/projects" || pathname.startsWith("/projects/");
 
   const [subOpen, setSubOpen] = useState(() => pathname.startsWith("/projects"));
   /** True while the project list is still mounted after a close, playing exit animation. */
   const [subExiting, setSubExiting] = useState(false);
   const subCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const projectsListOpen = subOpen || subExiting;
+  /** When the list is open and a project is selected, only the sub-row is highlighted. */
+  const parentRowActive =
+    inProjectsSection &&
+    (!projectsListOpen || pathname === "/projects");
 
   const clearSubCloseTimeout = useCallback(() => {
     if (subCloseTimeoutRef.current != null) {
@@ -172,7 +178,7 @@ function ProjectsNavAccordion({
       style={{ animationDelay: navCascadeDelayMs(navStaggerIndex) }}
     >
       <SidebarMenuButton
-        isActive={isActive}
+        isActive={parentRowActive}
         tooltip="Projects"
         render={
           <Link href="/projects">
