@@ -66,8 +66,10 @@ function ProjectMetricsWithMethodTable({
     return () => ro.disconnect();
   }, [data]);
 
-  const methodsPanelMaxHeight =
-    isLg && leftHeightPx != null ? leftHeightPx : undefined;
+  const methodsPanelHeightStyle =
+    isLg && leftHeightPx != null
+      ? { height: leftHeightPx, minHeight: leftHeightPx }
+      : undefined;
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start">
@@ -76,14 +78,14 @@ function ProjectMetricsWithMethodTable({
           <ProjectMetricCards data={data} successHint={successHint} />
         </div>
       </div>
-      <div className="min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-col">
         <div
-          className="flex max-h-80 min-h-0 flex-col lg:max-h-none"
-          style={methodsPanelMaxHeight != null ? { maxHeight: methodsPanelMaxHeight } : undefined}
+          className="flex max-h-80 min-h-0 flex-1 flex-col lg:max-h-none"
+          style={methodsPanelHeightStyle}
         >
           <DashboardMcpMethodsBreakdownCard
             methods={data.method_breakdown_last_7d}
-            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
             listClassName="mt-3 min-h-0 max-h-none flex-1 space-y-2 overflow-y-auto text-sm"
           />
         </div>
