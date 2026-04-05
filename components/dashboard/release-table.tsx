@@ -157,7 +157,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                       {errSummary}
                     </p>
                     <span className="mt-1 inline-block text-xs font-medium text-primary underline-offset-4 group-hover:underline">
-                      View full report
+                      View Full Report
                     </span>
                   </button>
                 ) : release.status === "failed" ? (
@@ -166,7 +166,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                     onClick={() => openValidationDialog(release)}
                     className="text-sm font-medium text-primary underline-offset-4 hover:underline"
                   >
-                    View details
+                    View Details
                   </button>
                 ) : (
                   <span className="text-muted-foreground text-sm">—</span>
@@ -192,7 +192,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                       setMetaOpen(true);
                     }}
                   >
-                    MCP metadata
+                    MCP Metadata
                   </Button>
                   {release.status === "failed" && !release.error_summary?.trim() ? (
                     <Button
@@ -215,7 +215,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
         <p className="text-muted-foreground text-sm leading-relaxed">
           {failedReleaseCount.toLocaleString()} failed {pluralEn(failedReleaseCount, "release", "releases")}{" "}
           {pluralEn(failedReleaseCount, "shows", "show")} a short error in the table — click{" "}
-          <span className="font-medium text-foreground">View full report</span> to open the validation
+          <span className="font-medium text-foreground">View Full Report</span> to open the validation
           dialog.
         </p>
       ) : null}

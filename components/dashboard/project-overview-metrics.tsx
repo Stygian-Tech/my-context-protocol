@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchProjectDashboardSummary } from "@/lib/projects-api";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
@@ -7,14 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
 import { DashboardStatCard } from "@/components/dashboard/dashboard-stat-card";
 import { pluralEn } from "@/lib/pluralize";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { DashboardMcpMethodsBreakdownCard } from "@/components/dashboard/dashboard-mcp-methods-breakdown-card";
 import type { ProjectDashboardSummary } from "@/lib/types";
 
 function shortSha(sha: string | null | undefined): string {
@@ -29,6 +23,75 @@ function formatPct(x: number | null | undefined): string {
   return `${Math.round(x * 1000) / 10}%`;
 }
 
+function subscribeMediaQuery(mq: MediaQueryList, onChange: () => void) {
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+function useMinWidthLg() {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (typeof window === "undefined") {
+        return () => {};
+      }
+      const mq = window.matchMedia("(min-width: 1024px)");
+      return subscribeMediaQuery(mq, onStoreChange);
+    },
+    () => (typeof window !== "undefined" ? window.matchMedia("(min-width: 1024px)").matches : false),
+    () => false
+  );
+}
+
+function ProjectMetricsWithMethodTable({
+  data,
+  successHint,
+}: {
+  data: ProjectDashboardSummary;
+  successHint: string;
+}) {
+  const leftRef = useRef<HTMLDivElement>(null);
+  const [leftHeightPx, setLeftHeightPx] = useState<number | null>(null);
+  const isLg = useMinWidthLg();
+
+  useLayoutEffect(() => {
+    const el = leftRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      setLeftHeightPx((prev) => (prev === h ? prev : h));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [data]);
+
+  const methodsPanelMaxHeight =
+    isLg && leftHeightPx != null ? leftHeightPx : undefined;
+
+  return (
+    <div className="grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start">
+      <div ref={leftRef} className="min-w-0">
+        <div className="grid grid-cols-2 gap-4">
+          <ProjectMetricCards data={data} successHint={successHint} />
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div
+          className="flex max-h-80 min-h-0 flex-col lg:max-h-none"
+          style={methodsPanelMaxHeight != null ? { maxHeight: methodsPanelMaxHeight } : undefined}
+        >
+          <DashboardMcpMethodsBreakdownCard
+            methods={data.method_breakdown_last_7d}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+            listClassName="mt-3 min-h-0 max-h-none flex-1 space-y-2 overflow-y-auto text-sm"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProjectMetricCards({
   data,
   successHint,
@@ -39,24 +102,24 @@ function ProjectMetricCards({
   return (
     <>
       <DashboardStatCard
-        title="Total MCP requests"
+        title="Total MCP Requests"
         value={data.total_requests.toLocaleString()}
       />
       <DashboardStatCard
-        title="Last 24 hours"
+        title="Last 24 Hours"
         value={data.requests_last_24h.toLocaleString()}
       />
       <DashboardStatCard
-        title="Last 7 days"
+        title="Last 7 Days"
         value={data.requests_last_7d.toLocaleString()}
       />
       <DashboardStatCard
-        title="Success rate (7d)"
+        title="Success Rate (7d)"
         value={formatPct(data.success_rate_last_7d)}
         hint={successHint}
       />
       <DashboardStatCard
-        title="Avg latency (7d)"
+        title="Average Latency (7d)"
         value={
           data.avg_latency_ms_last_7d != null
             ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
@@ -64,7 +127,7 @@ function ProjectMetricCards({
         }
       />
       <DashboardStatCard
-        title="p95 latency (7d)"
+        title="P95 Latency (7d)"
         value={
           data.p95_latency_ms_last_7d != null
             ? `${data.p95_latency_ms_last_7d} ms`
@@ -107,8 +170,6 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
 
   if (!data) return null;
 
-  const hasMethodBreakdown = data.method_breakdown_last_7d.length > 0;
-
   const logWord = pluralEn(data.metrics_sample_size_last_7d, "log", "logs");
   const successHint =
     data.requests_last_7d > data.metrics_sample_size_last_7d
@@ -139,48 +200,7 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
           · {activeCapsSummary}
         </span>
       </div>
-      {hasMethodBreakdown ? (
-        <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-card/50 shadow-xs lg:grid lg:grid-cols-2 lg:items-stretch">
-          <div className="flex min-h-0 min-w-0 flex-col border-b border-border p-4 lg:border-b-0 lg:border-r lg:border-border">
-            <div className="grid grid-cols-2 gap-4">
-              <ProjectMetricCards data={data} successHint={successHint} />
-            </div>
-          </div>
-          <div className="flex min-h-0 min-w-0 flex-col">
-            <div className="shrink-0 border-b border-border px-4 py-3">
-              <h3 className="font-medium">MCP methods (7d sample)</h3>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-2">
-              <Table>
-                <TableHeader className="bg-card sticky top-0 z-[1]">
-                  <TableRow className="border-0 hover:bg-transparent">
-                    <TableHead className="h-9 bg-card text-xs">Method</TableHead>
-                    <TableHead className="h-9 w-24 bg-card text-right text-xs">
-                      Count
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.method_breakdown_last_7d.map((m) => (
-                    <TableRow key={m.method}>
-                      <TableCell className="max-w-[1px] truncate py-2 font-mono text-xs">
-                        <span title={m.method}>{m.method}</span>
-                      </TableCell>
-                      <TableCell className="py-2 text-right font-mono text-xs tabular-nums">
-                        {m.count.toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <ProjectMetricCards data={data} successHint={successHint} />
-        </div>
-      )}
+      <ProjectMetricsWithMethodTable data={data} successHint={successHint} />
 
       <MetricsTimeseriesCharts variant="project" projectId={projectId} />
     </div>

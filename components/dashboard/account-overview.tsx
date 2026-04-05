@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseries-charts";
 import { DashboardStatCard } from "@/components/dashboard/dashboard-stat-card";
 import { pluralEn } from "@/lib/pluralize";
+import { DashboardMcpMethodsBreakdownCard } from "@/components/dashboard/dashboard-mcp-methods-breakdown-card";
 
 function formatPct(x: number | null | undefined): string {
   if (x == null) return "—";
@@ -65,24 +66,24 @@ export function AccountOverview() {
     <div className="space-y-8">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <DashboardStatCard
-          title="Total MCP requests"
+          title="Total MCP Requests"
           value={data.total_requests.toLocaleString()}
         />
         <DashboardStatCard
-          title="Last 24 hours"
+          title="Last 24 Hours"
           value={data.requests_last_24h.toLocaleString()}
         />
         <DashboardStatCard
-          title="Last 7 days"
+          title="Last 7 Days"
           value={data.requests_last_7d.toLocaleString()}
         />
         <DashboardStatCard
-          title="Success rate (7d)"
+          title="Success Rate (7d)"
           value={formatPct(data.success_rate_last_7d)}
           hint={successHint}
         />
         <DashboardStatCard
-          title="Avg latency (7d)"
+          title="Average Latency (7d)"
           value={
             data.avg_latency_ms_last_7d != null
               ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
@@ -90,7 +91,7 @@ export function AccountOverview() {
           }
         />
         <DashboardStatCard
-          title="p95 latency (7d)"
+          title="P95 Latency (7d)"
           value={
             data.p95_latency_ms_last_7d != null
               ? `${data.p95_latency_ms_last_7d} ms`
@@ -103,33 +104,16 @@ export function AccountOverview() {
           hint={projectsHint}
         />
         <DashboardStatCard
-          title="Published capabilities"
+          title="Published Capabilities"
           value={`${data.active_tools_total + data.active_resources_total + data.active_prompts_total}`}
           hint={`${publishedCapsHint} (active releases)`}
         />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <DashboardMcpMethodsBreakdownCard methods={data.method_breakdown_last_7d} />
         <div className="rounded-lg border p-4">
-          <h3 className="font-medium">MCP methods (7d sample)</h3>
-          <ul className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm">
-            {data.method_breakdown_last_7d.length === 0 ? (
-              <li className="text-muted-foreground">No traffic in sample window.</li>
-            ) : (
-              data.method_breakdown_last_7d.map((row) => (
-                <li
-                  key={row.method}
-                  className="flex items-center justify-between gap-2 font-mono text-xs"
-                >
-                  <span className="min-w-0 truncate">{row.method}</span>
-                  <span className="tabular-nums text-foreground">{row.count}</span>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-        <div className="rounded-lg border p-4">
-          <h3 className="font-medium">Top projects (7d sample)</h3>
+          <h3 className="font-medium">Top Projects (7d Sample)</h3>
           <ul className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm">
             {data.top_projects_last_7d.length === 0 ? (
               <li className="text-muted-foreground">No per-project traffic in sample.</li>

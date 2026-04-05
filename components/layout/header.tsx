@@ -70,7 +70,7 @@ export function Header() {
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => logout()}>
               <LogOutIcon className="mr-2 h-4 w-4" />
-              Sign out
+              Sign Out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

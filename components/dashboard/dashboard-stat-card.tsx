@@ -22,7 +22,7 @@ export function DashboardStatCard({
   return (
     <div className="rounded-lg border bg-card/50 p-4 shadow-xs">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-muted-foreground min-w-0 flex-1 text-xs font-medium tracking-wide uppercase">
+        <p className="text-muted-foreground min-w-0 flex-1 text-xs font-medium tracking-wide">
           {title}
         </p>
         {hint ? (

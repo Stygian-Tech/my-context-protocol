@@ -313,7 +313,7 @@ function SkillEditorRow({
       </div>
       <div className="space-y-3 rounded-md border border-dashed p-3">
         <div>
-          <p className="text-xs font-medium">SKILL routing (front matter)</p>
+          <p className="text-xs font-medium">SKILL Routing (Front Matter)</p>
           <p className="text-muted-foreground mt-0.5 text-xs leading-snug">
             One phrase per line (same as comma-separated lists in SKILL.md). Shown in MCP{" "}
             <code className="font-mono text-[0.7rem]">resources/list</code> and at the top of{" "}
@@ -324,7 +324,7 @@ function SkillEditorRow({
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1.5">
-            <Label className="text-xs">use_when — read when</Label>
+            <Label className="text-xs">use_when — Read When</Label>
             <textarea
               value={useWhenText}
               onChange={(e) => setUseWhenText(e.target.value)}
@@ -338,7 +338,7 @@ function SkillEditorRow({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">avoid_when — skip when</Label>
+            <Label className="text-xs">avoid_when — Skip When</Label>
             <textarea
               value={avoidWhenText}
               onChange={(e) => setAvoidWhenText(e.target.value)}
@@ -353,7 +353,7 @@ function SkillEditorRow({
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">failure_modes — fallbacks</Label>
+          <Label className="text-xs">failure_modes — Fallbacks</Label>
           <textarea
             value={failureModesText}
             onChange={(e) => setFailureModesText(e.target.value)}
@@ -382,11 +382,13 @@ function SkillEditorRow({
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">Skill body (markdown from SKILL.md — MCP tool/resource/prompt content)</Label>
+        <Label className="text-xs">
+          Skill Body (Markdown From SKILL.md — MCP Tool/Resource/Prompt Content)
+        </Label>
         {skill.body_diff_unified ? (
           <details className="rounded-lg border bg-muted/40 px-3 py-2">
             <summary className="cursor-pointer text-xs font-medium">
-              Body diff vs prior release
+              Body Diff vs. Prior Release
               {skill.body_diff_prior_release_id ? (
                 <span className="text-muted-foreground ml-1 font-mono font-normal">
                   ({skill.body_diff_prior_release_id.slice(0, 8)}…)
@@ -511,7 +513,7 @@ export function ReleaseSkillMetadataDialog({
       <DialogContent className="flex max-h-[92vh] w-[min(88rem,calc(100vw-1rem))] flex-col gap-4 overflow-hidden p-6">
         <DialogHeader className="shrink-0 space-y-1.5">
           <DialogTitle>
-            {selectedSkill ? `Edit: ${selectedSkill.name}` : "MCP metadata"}
+            {selectedSkill ? `Edit: ${selectedSkill.name}` : "MCP Metadata"}
           </DialogTitle>
           <DialogDescription>
             {selectedSkill
@@ -521,7 +523,7 @@ export function ReleaseSkillMetadataDialog({
         </DialogHeader>
         {showIngestBanner ? (
           <div className="shrink-0 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-50">
-            <p className="font-medium">Ingest warnings</p>
+            <p className="font-medium">Ingest Warnings</p>
             <p className="text-muted-foreground mt-1 text-xs leading-snug dark:text-amber-100/90">
               {(validationReport?.warnings?.length ?? 0) > 0
                 ? "This release has validation warnings (for example skills without YAML front matter). Open Release errors for the full report."

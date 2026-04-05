@@ -71,7 +71,7 @@ export default function BillingPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Current plan</CardTitle>
+          <CardTitle>Current Plan</CardTitle>
           <CardDescription>
             You are on the <span className="font-medium text-foreground">{user?.plan ?? "free"}</span>{" "}
             plan.
@@ -87,7 +87,7 @@ export default function BillingPage() {
           {!isPro ? (
             <>
               <div>
-                <p className="text-muted-foreground mb-2 text-sm">Pro pricing</p>
+                <p className="text-muted-foreground mb-2 text-sm">Pro Pricing</p>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"

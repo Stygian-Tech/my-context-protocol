@@ -67,7 +67,7 @@ function formatHeldSince(iso: string | null | undefined): string {
 function overridesSummary(row: AdminPrivilegedAccountRow): string {
   const parts: string[] = [];
   if (row.is_admin) parts.push("Admin");
-  if (row.paywall_bypass) parts.push("Paywall bypass");
+  if (row.paywall_bypass) parts.push("Paywall Bypass");
   return parts.length ? parts.join(" · ") : "—";
 }
 
@@ -218,7 +218,7 @@ export default function AdminPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ShieldAlertIcon className="size-5" />
-              Not authorized
+              Not Authorized
             </CardTitle>
             <CardDescription>
               Admin tools are restricted to platform administrators.
@@ -226,7 +226,7 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent>
             <Button nativeButton={false} render={<Link href="/" />}>
-              Back to overview
+              Back to Overview
             </Button>
           </CardContent>
         </Card>
@@ -247,7 +247,7 @@ export default function AdminPage() {
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Platform metrics</h2>
+          <h2 className="text-lg font-semibold">Platform Metrics</h2>
           <Button
             type="button"
             variant="outline"
@@ -263,19 +263,19 @@ export default function AdminPage() {
         ) : null}
         <div className="grid gap-3 sm:grid-cols-3">
           <DashboardStatCard
-            title="Total users"
+            title="Total Users"
             value={
               metrics ? String(metrics.total_users) : metricsLoading ? "—" : "—"
             }
           />
           <DashboardStatCard
-            title="Total projects"
+            title="Total Projects"
             value={
               metrics ? String(metrics.total_projects) : metricsLoading ? "—" : "—"
             }
           />
           <DashboardStatCard
-            title="Total MCP calls"
+            title="Total MCP Calls"
             value={
               metrics
                 ? String(metrics.total_mcp_calls)
@@ -289,7 +289,7 @@ export default function AdminPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Platform traffic</h2>
+        <h2 className="text-lg font-semibold">Platform Traffic</h2>
         <p className="text-muted-foreground text-sm">
           Same charts as the dashboard, sourced from hourly aggregates (not live
           per-request scans). Refresh cadence is configured on the backend —
@@ -302,7 +302,7 @@ export default function AdminPage() {
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <CardTitle>Accounts with overrides</CardTitle>
+              <CardTitle>Accounts With Overrides</CardTitle>
               <CardDescription>
                 Anyone with platform admin and/or paywall bypass. Times are from
                 when each override was last turned on (approximate for accounts
@@ -334,11 +334,11 @@ export default function AdminPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>GitHub login</TableHead>
+                  <TableHead>GitHub Login</TableHead>
                   <TableHead>Overrides</TableHead>
-                  <TableHead>Admin since</TableHead>
-                  <TableHead>Paywall bypass since</TableHead>
-                  <TableHead className="font-mono text-xs">Account id</TableHead>
+                  <TableHead>Admin Since</TableHead>
+                  <TableHead>Paywall Bypass Since</TableHead>
+                  <TableHead className="font-mono text-xs">Account ID</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -367,7 +367,7 @@ export default function AdminPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Lookup and update flags</CardTitle>
+          <CardTitle>Lookup and Update Flags</CardTitle>
           <CardDescription>
             Use a single identifier. Response shows only account id and current
             flags (no email or profile).
@@ -376,7 +376,7 @@ export default function AdminPage() {
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="grid flex-1 gap-2">
-              <Label>Identifier type</Label>
+              <Label>Identifier Type</Label>
               <Select
                 value={idKind}
                 onValueChange={(v) => {
@@ -388,9 +388,9 @@ export default function AdminPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="github_login">GitHub login</SelectItem>
-                  <SelectItem value="github_id">GitHub numeric id</SelectItem>
-                  <SelectItem value="email">Email (stored on account)</SelectItem>
+                  <SelectItem value="github_login">GitHub Login</SelectItem>
+                  <SelectItem value="github_id">GitHub Numeric ID</SelectItem>
+                  <SelectItem value="email">Email (Stored on Account)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -426,7 +426,7 @@ export default function AdminPage() {
           {lookupResult ? (
             <div className="space-y-3 rounded-md border bg-muted/30 p-4">
               <p className="font-mono text-sm">
-                <span className="text-muted-foreground">Account id: </span>
+                <span className="text-muted-foreground">Account ID: </span>
                 {lookupResult.account_id}
               </p>
               <p className="text-sm">
@@ -444,7 +444,7 @@ export default function AdminPage() {
                   disabled={actionLoading || lookupResult.is_admin}
                   onClick={() => void runFlagUpdate({ is_admin: true })}
                 >
-                  Grant admin
+                  Grant Admin
                 </Button>
                 <Button
                   type="button"
@@ -453,7 +453,7 @@ export default function AdminPage() {
                   disabled={actionLoading || !lookupResult.is_admin}
                   onClick={() => void runFlagUpdate({ is_admin: false })}
                 >
-                  Revoke admin
+                  Revoke Admin
                 </Button>
                 <Button
                   type="button"
@@ -462,7 +462,7 @@ export default function AdminPage() {
                   disabled={actionLoading || lookupResult.paywall_bypass}
                   onClick={() => void runFlagUpdate({ paywall_bypass: true })}
                 >
-                  Grant paywall bypass
+                  Grant Paywall Bypass
                 </Button>
                 <Button
                   type="button"
@@ -471,7 +471,7 @@ export default function AdminPage() {
                   disabled={actionLoading || !lookupResult.paywall_bypass}
                   onClick={() => void runFlagUpdate({ paywall_bypass: false })}
                 >
-                  Revoke paywall bypass
+                  Revoke Paywall Bypass
                 </Button>
               </div>
               {actionMessage ? (

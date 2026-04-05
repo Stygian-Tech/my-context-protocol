@@ -26,9 +26,9 @@ export function envMismatch(publicEnv: AppEnv, apiEnv: AppEnv | null): boolean {
 export function bannerMessage(env: AppEnv): string {
   switch (env) {
     case "local":
-      return "Local environment — development data and relaxed limits.";
+      return "Local Environment — Development Data and Relaxed Limits.";
     case "dev":
-      return "Development server — not production; data may be reset.";
+      return "Development Server — Not Production; Data May Be Reset.";
     case "prod":
       return "";
   }

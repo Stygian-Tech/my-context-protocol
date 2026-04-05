@@ -6,7 +6,7 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="max-w-xl text-muted-foreground leading-relaxed">
+        <p className="w-full max-w-[66.6667vw] text-muted-foreground leading-relaxed">
           MCP traffic, latency, and catalog health across your projects.
         </p>
         <div className="flex flex-wrap gap-3 pt-1">

@@ -174,7 +174,7 @@ export function MetricsTimeseriesCharts({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-medium">Traffic over time</h3>
+        <h3 className="font-medium">Traffic Over Time</h3>
         <Select
           value={range}
           onValueChange={(v) => v && setRange(v as DashboardTimeseriesRange)}
@@ -221,8 +221,8 @@ export function MetricsTimeseriesCharts({
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-lg border p-3 pt-4">
-          <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-            Request volume
+          <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide">
+            Request Volume
           </p>
           <div className="h-[240px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
@@ -263,8 +263,8 @@ export function MetricsTimeseriesCharts({
         </div>
 
         <div className="rounded-lg border p-3 pt-4">
-          <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-            Success vs errors (per bucket)
+          <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide">
+            Success vs. Errors (Per Bucket)
           </p>
           <div className="h-[240px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
@@ -296,8 +296,8 @@ export function MetricsTimeseriesCharts({
       </div>
 
       <div className="rounded-lg border p-3 pt-4">
-        <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-          Success rate &amp; avg latency
+        <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide">
+          Success Rate &amp; Average Latency
         </p>
         <div className="h-[260px] w-full min-w-0">
           <ResponsiveContainer width="100%" height="100%">

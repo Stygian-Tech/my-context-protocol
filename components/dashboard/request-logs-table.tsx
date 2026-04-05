@@ -119,12 +119,12 @@ export function RequestLogsTable({ projectId }: RequestLogsTableProps) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-muted-foreground text-xs leading-snug">
-          Right-click a row to open the menu, then choose <span className="text-foreground">Copy row</span>{" "}
+          Right-click a row to open the menu, then choose <span className="text-foreground">Copy Row</span>{" "}
           (tab-separated, includes header). Use the button to copy every loaded row with a header for
           spreadsheets.
         </p>
         <Button type="button" variant="outline" size="sm" onClick={copyAll}>
-          Copy all logs
+          Copy All Logs
         </Button>
       </div>
       <Table>
@@ -169,7 +169,7 @@ export function RequestLogsTable({ projectId }: RequestLogsTableProps) {
                 </TableCell>
               </ContextMenuTrigger>
               <ContextMenuContent>
-                <ContextMenuItem onClick={() => copyRow(log)}>Copy row</ContextMenuItem>
+                <ContextMenuItem onClick={() => copyRow(log)}>Copy Row</ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
           ))}

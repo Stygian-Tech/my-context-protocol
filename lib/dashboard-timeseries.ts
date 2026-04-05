@@ -40,15 +40,15 @@ export const DASHBOARD_TIMESERIES_OPTIONS: {
   label: string;
   proOnly: boolean;
 }[] = [
-  { value: "1h", label: "Last hour", proOnly: false },
-  { value: "24h", label: "24 hours", proOnly: false },
-  { value: "7d", label: "7 days", proOnly: false },
-  { value: "1mo", label: "30 days", proOnly: true },
-  { value: "3mo", label: "3 months", proOnly: true },
-  { value: "6mo", label: "6 months", proOnly: true },
-  { value: "1y", label: "1 year", proOnly: true },
-  { value: "ytd", label: "Year to date", proOnly: true },
-  { value: "all", label: "All time", proOnly: true },
+  { value: "1h", label: "Last Hour", proOnly: false },
+  { value: "24h", label: "24 Hours", proOnly: false },
+  { value: "7d", label: "7 Days", proOnly: false },
+  { value: "1mo", label: "30 Days", proOnly: true },
+  { value: "3mo", label: "3 Months", proOnly: true },
+  { value: "6mo", label: "6 Months", proOnly: true },
+  { value: "1y", label: "1 Year", proOnly: true },
+  { value: "ytd", label: "Year to Date", proOnly: true },
+  { value: "all", label: "All Time", proOnly: true },
 ];
 
 export function dashboardRangeRequiresPro(range: string): boolean {

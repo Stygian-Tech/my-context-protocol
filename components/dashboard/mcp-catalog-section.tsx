@@ -117,7 +117,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>MCP catalog</CardTitle>
+        <CardTitle>MCP Catalog</CardTitle>
         <CardDescription>
           What this project exposes over MCP for the{" "}
           <span className="font-medium">active release</span>. Sync and
@@ -229,7 +229,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
           )}
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground text-xs">Sample initialize body</span>
+              <span className="text-muted-foreground text-xs">Sample Initialize Body</span>
               <Button
                 type="button"
                 variant="ghost"
@@ -253,7 +253,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted-foreground text-xs">
-                Example initialize response (shape)
+                Example Initialize Response (Shape)
               </span>
               <Button
                 type="button"

@@ -100,7 +100,7 @@ export default function AccountPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-muted-foreground text-sm">Current plan</span>
+            <span className="text-muted-foreground text-sm">Current Plan</span>
             <Badge variant={isPro ? "default" : "secondary"}>
               {isPro ? "Pro" : "Free"}
             </Badge>

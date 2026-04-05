@@ -160,7 +160,7 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
                     }
                   >
                     <CopyIcon className="h-4 w-4" />
-                    Copy key
+                    Copy Key
                   </Button>
                 </div>
                 <div className="flex items-center gap-2 rounded-lg bg-muted p-4">
@@ -170,7 +170,7 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
               {mcpUrl ? (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium">mcp.json object</p>
+                    <p className="text-sm font-medium">mcp.json Object</p>
                     <Button
                       size="sm"
                       variant="outline"
@@ -185,7 +185,7 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
                       }
                     >
                       <CopyIcon className="h-4 w-4" />
-                      Copy mcp.json object
+                      Copy mcp.json Object
                     </Button>
                   </div>
                   <pre className="bg-muted overflow-auto rounded-lg p-4 text-xs leading-relaxed">

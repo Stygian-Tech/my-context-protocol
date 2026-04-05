@@ -47,7 +47,7 @@ function ValidationMessageCell({ message }: { message: string }) {
         className="text-primary text-xs font-medium hover:underline"
         onClick={() => setExpanded((e) => !e)}
       >
-        {expanded ? "Show less" : "Show full message"}
+        {expanded ? "Show Less" : "Show Full Message"}
       </button>
     </div>
   );
@@ -89,7 +89,7 @@ export function ReleaseValidationDialog({
     >
       <DialogContent className="flex max-h-[92vh] w-[min(72rem,calc(100vw-1rem))] flex-col gap-4 overflow-hidden p-6">
         <DialogHeader>
-          <DialogTitle>Release errors — {releaseLabel}</DialogTitle>
+          <DialogTitle>Release Errors — {releaseLabel}</DialogTitle>
           <DialogDescription>
             Validation report and pipeline messages for this release. Fix skills in the repo
             and sync again, or adjust MCP metadata if exposure is wrong.
@@ -98,7 +98,7 @@ export function ReleaseValidationDialog({
         {pipelineSummary?.trim() ? (
           <div className="shrink-0 space-y-2 rounded-lg border bg-muted/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-medium text-muted-foreground">Ingest / pipeline summary</p>
+              <p className="text-xs font-medium text-muted-foreground">Ingest / Pipeline Summary</p>
               <Button
                 type="button"
                 variant="ghost"
@@ -106,7 +106,7 @@ export function ReleaseValidationDialog({
                 className="h-7 text-xs"
                 onClick={() => setShowFullSummary((v) => !v)}
               >
-                {showFullSummary ? "Show less" : "Show full text"}
+                {showFullSummary ? "Show Less" : "Show Full Text"}
               </Button>
             </div>
             <pre
@@ -183,7 +183,7 @@ export function ReleaseValidationDialog({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[34%] font-medium whitespace-normal">
-                      Path / source
+                      Path / Source
                     </TableHead>
                     <TableHead className="font-medium whitespace-normal">Message</TableHead>
                   </TableRow>

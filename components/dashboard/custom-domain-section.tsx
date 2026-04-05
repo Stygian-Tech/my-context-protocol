@@ -50,7 +50,7 @@ export function CustomDomainSection({ projectId }: CustomDomainSectionProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Custom domain</CardTitle>
+        <CardTitle>Custom Domain</CardTitle>
         <CardDescription>
           Point your own hostname at this project. Add the TXT record we show, then verify.
         </CardDescription>
