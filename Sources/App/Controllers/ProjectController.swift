@@ -187,6 +187,22 @@ struct ProjectController {
         return projectResponse(project)
     }
 
+    /// Update project metadata (display name only for now).
+    static func update(req: Request) async throws -> ProjectResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        struct PatchBody: Content {
+            var name: String
+        }
+        let body = try req.content.decode(PatchBody.self)
+        let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw Abort(.badRequest, reason: "Name is required") }
+        guard name.count <= 256 else { throw Abort(.badRequest, reason: "Name is too long") }
+        project.name = name
+        try await project.save(on: req.db)
+        return projectResponse(project)
+    }
+
     /// Active-release MCP catalog (tools, resources, prompts) for dashboard clients.
     static func catalog(req: Request) async throws -> ProjectCatalogResponse {
         let account = try requireAccount(req)

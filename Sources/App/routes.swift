@@ -50,6 +50,9 @@ func routes(_ app: Application) throws {
     protected.get("projects", ":id") { req in
         try await ProjectController.get(req: req)
     }
+    protected.patch("projects", ":id") { req in
+        try await ProjectController.update(req: req)
+    }
     protected.get("projects", ":id", "catalog") { req in
         try await ProjectController.catalog(req: req)
     }
