@@ -183,6 +183,7 @@ public func configure(_ app: Application) throws {
     try app.autoMigrate().wait()
 
     app.lifecycle.use(AdminAnalyticsRollupLifecycle())
+    app.lifecycle.use(LocalDevFixtureLifecycle())
 
     try routes(app)
 }
