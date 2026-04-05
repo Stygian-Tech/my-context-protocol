@@ -1,12 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchProjects } from "@/lib/projects-api";
 import { ProjectCard } from "@/components/dashboard/project-card";
 import { CreateProjectDialog } from "@/components/dashboard/create-project-dialog";
+import { RenameProjectDialog } from "@/components/dashboard/rename-project-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Project } from "@/lib/types";
 
 export default function ProjectsPage() {
+  const [renameTarget, setRenameTarget] = useState<Project | null>(null);
   const { data: projects, isLoading, error } = useQuery({
     queryKey: ["projects"],
     queryFn: fetchProjects,
@@ -50,9 +54,13 @@ export default function ProjectsPage() {
         <CreateProjectDialog />
       </div>
       {projects && projects.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
+        <div className="grid items-stretch gap-4 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
           {projects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
+            <ProjectCard
+              key={project.id}
+              project={project}
+              onRequestRename={() => setRenameTarget(project)}
+            />
           ))}
         </div>
       ) : (
@@ -68,6 +76,13 @@ export default function ProjectsPage() {
           <CreateProjectDialog />
         </div>
       )}
+      <RenameProjectDialog
+        project={renameTarget}
+        open={renameTarget != null}
+        onOpenChange={(open) => {
+          if (!open) setRenameTarget(null);
+        }}
+      />
     </div>
   );
 }

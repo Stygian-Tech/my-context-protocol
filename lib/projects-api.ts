@@ -68,6 +68,13 @@ export async function createProject(data: {
   return api.post<Project>("/projects", data);
 }
 
+export async function updateProject(
+  projectId: string,
+  body: { name: string }
+): Promise<Project> {
+  return api.patch<Project>(`/projects/${projectId}`, body);
+}
+
 export interface CustomDomainStatus {
   hostname: string | null;
   verified: boolean;

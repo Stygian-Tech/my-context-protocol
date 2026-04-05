@@ -18,7 +18,7 @@ export function DashboardMcpMethodsBreakdownCard({
 }) {
   return (
     <div className={cn("rounded-lg border p-4", className)} style={style}>
-      <h3 className="font-medium">{title}</h3>
+      <h3 className="shrink-0 font-medium">{title}</h3>
       <ul
         className={cn(
           "mt-3 max-h-56 space-y-2 overflow-y-auto text-sm",

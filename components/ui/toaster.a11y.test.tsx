@@ -2,7 +2,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot } from "react-dom/client";
-import { act } from "react";
+// `react` can resolve to the `react-server` export under some CI resolvers; that build has no `act`.
+import { act } from "react-dom/test-utils";
 
 afterEach(() => {
   vi.useRealTimers();

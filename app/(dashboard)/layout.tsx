@@ -18,7 +18,7 @@ export default function DashboardLayout({
         <SidebarInset>
           <EnvironmentBanner />
           <Header />
-          <div className="flex flex-1 flex-col gap-4 px-5 py-6 md:gap-5 md:px-6 md:py-8">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 px-5 py-6 md:gap-5 md:px-6 md:py-8">
             {children}
           </div>
         </SidebarInset>

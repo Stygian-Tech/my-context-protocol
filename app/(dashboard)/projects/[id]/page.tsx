@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { fetchProject } from "@/lib/projects-api";
+import { ProjectNameHeader } from "@/components/dashboard/project-name-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RepoConnectionSection } from "@/components/dashboard/repo-connection-section";
@@ -61,7 +62,7 @@ export default function ProjectDetailPage() {
   return (
     <div className="space-y-6 md:space-y-7">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
+        <ProjectNameHeader project={project} projectId={projectId} />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <p className="text-muted-foreground font-mono text-sm leading-relaxed break-all">
             {project.mcp_url ??

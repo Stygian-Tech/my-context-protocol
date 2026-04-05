@@ -23,6 +23,7 @@ import {
   connectRepo,
   createApiKey,
   createProject,
+  updateProject,
   fetchAccountDashboardSummary,
   fetchAccountDashboardTimeseries,
   fetchApiKeys,
@@ -87,7 +88,7 @@ describe("projects-api", () => {
     expect(get).toHaveBeenCalledWith("/projects/x/dashboard/timeseries?range=1mo");
   });
 
-  it("fetchProjectCatalog and createProject", async () => {
+  it("fetchProjectCatalog, createProject, and updateProject", async () => {
     get.mockResolvedValueOnce({ skills: [] });
     await fetchProjectCatalog("pid");
     expect(get).toHaveBeenCalledWith("/projects/pid/catalog");
@@ -95,6 +96,10 @@ describe("projects-api", () => {
     post.mockResolvedValueOnce({ id: "new" });
     await createProject({ name: "N", slug: "n" });
     expect(post).toHaveBeenCalledWith("/projects", { name: "N", slug: "n" });
+
+    patch.mockResolvedValueOnce({ id: "pid", name: "Renamed" });
+    await updateProject("pid", { name: "Renamed" });
+    expect(patch).toHaveBeenCalledWith("/projects/pid", { name: "Renamed" });
   });
 
   it("custom domain helpers", async () => {

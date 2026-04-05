@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth-context";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,11 +15,13 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOutIcon, UserCircleIcon } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
+import { glassSurfaceClasses } from "@/lib/glass";
 import { cn } from "@/lib/utils";
 
 export function Header() {
   const { user, logout } = useAuth();
+  const { state, isMobile } = useSidebar();
+  const showResizeHandle = !isMobile && state === "expanded";
 
   const initials = user?.login
     ? user.login.slice(0, 2).toUpperCase()
@@ -28,11 +30,27 @@ export function Header() {
       : "?";
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="h-6" />
-      <div className="flex flex-1 items-center justify-between">
-        <div />
+    <header
+      className={cn(
+        "flex h-14 shrink-0 items-center pr-3",
+        showResizeHandle ? "pl-6" : "pl-3",
+        glassSurfaceClasses(
+          "default",
+          "rounded-none border-x-0 border-t-0 supports-backdrop-filter:bg-background/46"
+        )
+      )}
+    >
+      {/* Match profile cap width so control centers mirror across the bar */}
+      <div
+        className={cn(
+          "flex h-full w-14 shrink-0 items-center justify-center",
+          showResizeHandle ? "-ml-6" : "-ml-3"
+        )}
+      >
+        <SidebarTrigger className="size-8 shrink-0" />
+      </div>
+      <div className="min-w-0 flex-1" />
+      <div className="flex h-full w-14 shrink-0 items-center justify-center">
         <DropdownMenu>
           <DropdownMenuTrigger
             className={cn(

@@ -9,6 +9,7 @@ import { MetricsTimeseriesCharts } from "@/components/dashboard/metrics-timeseri
 import { DashboardStatCard } from "@/components/dashboard/dashboard-stat-card";
 import { pluralEn } from "@/lib/pluralize";
 import { DashboardMcpMethodsBreakdownCard } from "@/components/dashboard/dashboard-mcp-methods-breakdown-card";
+import { cn } from "@/lib/utils";
 import type { ProjectDashboardSummary } from "@/lib/types";
 
 function shortSha(sha: string | null | undefined): string {
@@ -61,14 +62,20 @@ function ProjectMetricsWithMethodTable({
       setLeftHeightPx((prev) => (prev === h ? prev : h));
     };
     measure();
-    const ro = new ResizeObserver(measure);
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(measure);
+    });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [data]);
+  }, [data, isLg]);
 
   const methodsPanelHeightStyle =
     isLg && leftHeightPx != null
-      ? { height: leftHeightPx, minHeight: leftHeightPx }
+      ? {
+          height: leftHeightPx,
+          maxHeight: leftHeightPx,
+          minHeight: 0,
+        }
       : undefined;
 
   return (
@@ -78,15 +85,23 @@ function ProjectMetricsWithMethodTable({
           <ProjectMetricCards data={data} successHint={successHint} />
         </div>
       </div>
-      <div className="flex min-h-0 min-w-0 flex-col">
+      {/* min-h-0 + overflow-hidden: grid row height follows LHS, not methods list intrinsic height */}
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden lg:min-h-0 lg:w-full lg:self-start lg:overflow-hidden">
         <div
-          className="flex max-h-80 min-h-0 flex-1 flex-col lg:max-h-none"
+          className={
+            isLg
+              ? cn(
+                  "flex min-h-0 w-full flex-col overflow-hidden lg:flex-none",
+                  leftHeightPx == null && "lg:max-h-80"
+                )
+              : "flex max-h-80 min-h-0 flex-1 flex-col overflow-hidden"
+          }
           style={methodsPanelHeightStyle}
         >
           <DashboardMcpMethodsBreakdownCard
             methods={data.method_breakdown_last_7d}
-            className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
-            listClassName="mt-3 min-h-0 max-h-none flex-1 space-y-2 overflow-y-auto text-sm"
+            className="flex h-full min-h-0 flex-col overflow-hidden"
+            listClassName="mt-3 min-h-0 max-h-none flex-1 space-y-2 overflow-y-auto overscroll-contain text-sm"
           />
         </div>
       </div>

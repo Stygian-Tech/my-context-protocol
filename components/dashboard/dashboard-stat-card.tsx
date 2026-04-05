@@ -6,6 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { glassSurfaceClasses } from "@/lib/glass";
 import { cn } from "@/lib/utils";
 
 export function DashboardStatCard({
@@ -20,7 +21,7 @@ export function DashboardStatCard({
   valueClassName?: string;
 }) {
   return (
-    <div className="rounded-lg border bg-card/50 p-4 shadow-xs">
+    <div className={cn("rounded-lg p-4", glassSurfaceClasses("subtle"))}>
       <div className="flex items-start justify-between gap-2">
         <p className="text-muted-foreground min-w-0 flex-1 text-xs font-medium tracking-wide">
           {title}
