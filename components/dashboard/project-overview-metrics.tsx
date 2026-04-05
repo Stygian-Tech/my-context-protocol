@@ -37,15 +37,15 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
 
   if (isLoading) {
     return (
-      <div className="grid min-h-48 gap-4 lg:min-h-[min(22rem,55vh)] lg:grid-cols-2 lg:items-stretch">
-        <div className="flex min-h-48 flex-col rounded-lg border bg-card/50 p-2 shadow-xs lg:h-full lg:min-h-0">
-          <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-[repeat(3,minmax(0,1fr))] gap-2">
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+        <div className="rounded-lg border bg-card/50 p-2 shadow-xs">
+          <div className="grid grid-cols-2 gap-2">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-full min-h-8 rounded-md" />
+              <Skeleton key={i} className="h-[3.25rem] rounded-md" />
             ))}
           </div>
         </div>
-        <Skeleton className="hidden min-h-48 rounded-lg lg:block lg:h-full lg:min-h-0" />
+        <Skeleton className="hidden max-h-[min(19rem,44vh)] rounded-lg lg:block" />
       </div>
     );
   }
@@ -66,9 +66,6 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
   if (!data) return null;
 
   const hasMethodBreakdown = data.method_breakdown_last_7d.length > 0;
-  const metricCardFillClass = hasMethodBreakdown
-    ? "h-full min-h-0 justify-center"
-    : undefined;
 
   const logWord = pluralEn(data.metrics_sample_size_last_7d, "log", "logs");
   const successHint =
@@ -102,53 +99,34 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
       </div>
       <div
         className={
-          hasMethodBreakdown
-            ? "grid min-w-0 gap-4 lg:min-h-[min(22rem,55vh)] lg:grid-cols-2 lg:items-stretch"
-            : "contents"
+          hasMethodBreakdown ? "grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start" : "contents"
         }
       >
-        <div
-          className={
-            hasMethodBreakdown
-              ? "flex min-w-0 min-h-48 flex-col rounded-lg border bg-card/50 p-2 shadow-xs lg:h-full lg:min-h-0"
-              : "min-w-0 rounded-lg border bg-card/50 p-2 shadow-xs"
-          }
-        >
-          <div
-            className={
-              hasMethodBreakdown
-                ? "grid min-h-0 flex-1 grid-cols-2 grid-rows-[repeat(3,minmax(0,1fr))] gap-2"
-                : "grid grid-cols-2 gap-2 items-start"
-            }
-          >
+        <div className="min-w-0 rounded-lg border bg-card/50 p-2 shadow-xs">
+          <div className="grid grid-cols-2 gap-2 items-start">
             <DashboardStatCard
               compact
-              className={metricCardFillClass}
               title="Total requests"
               value={data.total_requests.toLocaleString()}
             />
             <DashboardStatCard
               compact
-              className={metricCardFillClass}
               title="Last 24h"
               value={data.requests_last_24h.toLocaleString()}
             />
             <DashboardStatCard
               compact
-              className={metricCardFillClass}
               title="Last 7d"
               value={data.requests_last_7d.toLocaleString()}
             />
             <DashboardStatCard
               compact
-              className={metricCardFillClass}
               title="Success (7d)"
               value={formatPct(data.success_rate_last_7d)}
               hint={successHint}
             />
             <DashboardStatCard
               compact
-              className={metricCardFillClass}
               title="Avg latency"
               value={
                 data.avg_latency_ms_last_7d != null
@@ -158,7 +136,6 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
             />
             <DashboardStatCard
               compact
-              className={metricCardFillClass}
               title="p95 latency"
               value={
                 data.p95_latency_ms_last_7d != null ? `${data.p95_latency_ms_last_7d} ms` : "—"
@@ -167,18 +144,20 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
           </div>
         </div>
         {hasMethodBreakdown ? (
-          <div className="flex min-h-48 min-w-0 flex-col overflow-hidden rounded-lg border bg-card/50 shadow-xs lg:h-full lg:min-h-0">
-            <div className="border-b px-2 py-2">
+          <div className="flex max-h-[min(19rem,44vh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-card/50 shadow-xs">
+            <div className="shrink-0 border-b px-2 py-2">
               <p className="text-muted-foreground text-[10px] font-medium leading-none tracking-wide uppercase">
                 Methods (7d sample)
               </p>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
               <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="h-9 text-xs">Method</TableHead>
-                    <TableHead className="h-9 w-24 text-right text-xs">Count</TableHead>
+                <TableHeader className="bg-card sticky top-0 z-[1]">
+                  <TableRow className="border-0 hover:bg-transparent">
+                    <TableHead className="h-9 bg-card text-xs">Method</TableHead>
+                    <TableHead className="h-9 w-24 bg-card text-right text-xs">
+                      Count
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
