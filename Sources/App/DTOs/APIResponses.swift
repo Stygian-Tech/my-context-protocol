@@ -90,6 +90,10 @@ struct ReleaseResponse: Content {
     let error_summary: String?
     let is_active: Bool
     let skill_body_changes_count: Int
+    /// Compiled skills with blocking MCP metadata (invalid JSON, resource without URI, not publishable, etc.).
+    let mcp_metadata_blocking_skills: Int
+    /// Compiled skills with MCP metadata warnings (needs review, missing routing hints for resources, etc.).
+    let mcp_metadata_warning_skills: Int
 
     enum CodingKeys: String, CodingKey {
         case id, status
@@ -99,6 +103,8 @@ struct ReleaseResponse: Content {
         case error_summary = "error_summary"
         case is_active = "is_active"
         case skill_body_changes_count = "skill_body_changes_count"
+        case mcp_metadata_blocking_skills = "mcp_metadata_blocking_skills"
+        case mcp_metadata_warning_skills = "mcp_metadata_warning_skills"
     }
 }
 
@@ -126,6 +132,20 @@ struct ApiKeyCreateRequest: Content {
 
     func normalizedName() throws -> String? {
         guard let name else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.count <= 64 else {
+            throw Abort(.badRequest, reason: "API key name must be 64 characters or fewer")
+        }
+        return trimmed
+    }
+}
+
+/// PATCH `/projects/:id/api-keys/:keyId` — set or clear the human-readable label (`""` clears).
+struct ApiKeyPatchRequest: Content {
+    let name: String
+
+    func normalizedName() throws -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard trimmed.count <= 64 else {
@@ -185,6 +205,12 @@ struct ProjectCatalogResponse: Content {
     let release_id: String?
     let release_status: String?
     let mcp_url: String?
+    /// Same markdown returned by MCP tool `mycontext:catalog` for this project (dashboard preview).
+    let catalog_markdown: String
+    /// Auto-generated catalog for the active release (no custom override applied).
+    let catalog_markdown_generated: String
+    /// Custom markdown stored on the project, if any; when set, `catalog_markdown` matches this.
+    let catalog_markdown_override: String?
     let tools: [ProjectCatalogTool]
     let resources: [ProjectCatalogResource]
     let prompts: [ProjectCatalogPrompt]
@@ -194,6 +220,26 @@ struct ProjectCatalogResponse: Content {
         case release_id = "release_id"
         case release_status = "release_status"
         case mcp_url = "mcp_url"
+        case catalog_markdown = "catalog_markdown"
+        case catalog_markdown_generated = "catalog_markdown_generated"
+        case catalog_markdown_override = "catalog_markdown_override"
+    }
+}
+
+/// PATCH `/projects/:id/catalog-markdown` — set custom `mycontext:catalog` body; whitespace-only clears the override.
+struct ProjectCatalogMarkdownPatch: Content {
+    var markdown: String
+}
+
+struct ProjectCatalogMarkdownUpdateResponse: Content {
+    let catalog_markdown: String
+    let catalog_markdown_generated: String
+    let catalog_markdown_override: String?
+
+    enum CodingKeys: String, CodingKey {
+        case catalog_markdown = "catalog_markdown"
+        case catalog_markdown_generated = "catalog_markdown_generated"
+        case catalog_markdown_override = "catalog_markdown_override"
     }
 }
 

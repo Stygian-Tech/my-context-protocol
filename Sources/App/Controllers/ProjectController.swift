@@ -208,13 +208,19 @@ struct ProjectController {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
         let mcpUrl = McpUrlBuilder.publicMcpUrl(for: project)
+        let catalogGenerated = try await McpCatalogMarkdown.buildGenerated(db: req.db, projectId: project.id!)
+        let catalogMarkdown = try await McpCatalogMarkdown.build(db: req.db, projectId: project.id!)
+        let syntheticCatalogTool = Self.dashboardSyntheticCatalogTool()
 
         guard let releaseId = project.activeReleaseId else {
             return ProjectCatalogResponse(
                 release_id: nil,
                 release_status: nil,
                 mcp_url: mcpUrl,
-                tools: [],
+                catalog_markdown: catalogMarkdown,
+                catalog_markdown_generated: catalogGenerated,
+                catalog_markdown_override: project.mcpCatalogMarkdownOverride,
+                tools: [syntheticCatalogTool],
                 resources: [],
                 prompts: []
             )
@@ -239,7 +245,7 @@ struct ProjectController {
             db: req.db
         )
 
-        let tools = toolCaps.map { cap in
+        let skillTools = toolCaps.map { cap in
             ProjectCatalogTool(
                 name: cap.capabilityName,
                 description: cap.compiledSkill.summary,
@@ -272,9 +278,52 @@ struct ProjectController {
             release_id: releaseId.uuidString,
             release_status: release?.status,
             mcp_url: mcpUrl,
-            tools: tools,
+            catalog_markdown: catalogMarkdown,
+            catalog_markdown_generated: catalogGenerated,
+            catalog_markdown_override: project.mcpCatalogMarkdownOverride,
+            tools: [syntheticCatalogTool] + skillTools,
             resources: resources,
             prompts: prompts
+        )
+    }
+
+    /// Set or clear custom markdown for MCP tool `mycontext:catalog` (empty / whitespace clears).
+    static func updateCatalogMarkdown(req: Request) async throws -> ProjectCatalogMarkdownUpdateResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        let body = try req.content.decode(ProjectCatalogMarkdownPatch.self)
+        let trimmed = body.markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            project.mcpCatalogMarkdownOverride = nil
+        } else {
+            guard trimmed.count <= McpCatalogMarkdown.catalogOverrideMaxCharacterCount else {
+                throw Abort(.badRequest, reason: "Catalog markdown must be 512KB or smaller")
+            }
+            project.mcpCatalogMarkdownOverride = trimmed
+        }
+        try await project.save(on: req.db)
+        if let pid = project.id {
+            req.application.mcpCatalogNotifications.bumpCatalog(for: pid)
+        }
+        let catalogGenerated = try await McpCatalogMarkdown.buildGenerated(db: req.db, projectId: project.id!)
+        let catalogMarkdown = try await McpCatalogMarkdown.build(db: req.db, projectId: project.id!)
+        return ProjectCatalogMarkdownUpdateResponse(
+            catalog_markdown: catalogMarkdown,
+            catalog_markdown_generated: catalogGenerated,
+            catalog_markdown_override: project.mcpCatalogMarkdownOverride
+        )
+    }
+
+    /// Mirrors MCP `tools/list` synthetic row for `mycontext:catalog`.
+    private static func dashboardSyntheticCatalogTool() -> ProjectCatalogTool {
+        let schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
+            description: "Returns a markdown overview of tools, resources, and prompts for this project.",
+            summary: nil
+        )
+        return ProjectCatalogTool(
+            name: MCPConstants.catalogToolName,
+            description: "Overview of this project’s MCP catalog—call first when unsure which skill to use.",
+            input_schema_json: schemaJson
         )
     }
 
@@ -576,16 +625,55 @@ struct ProjectController {
             .sort(\.$createdAt, .descending)
             .all()
         let activeId = project.activeReleaseId
+        let releaseIds = releases.compactMap(\.id)
+        let mcpCounts: [UUID: (blocking: Int, warning: Int)]
+        if releaseIds.isEmpty {
+            mcpCounts = [:]
+        } else {
+            let compiled = try await CompiledSkill.query(on: req.db)
+                .filter(\.$release.$id ~~ releaseIds)
+                .all()
+            let skillIds = compiled.compactMap(\.id)
+            var schemaBySkillId: [UUID: String] = [:]
+            var ruleBySkillId: [UUID: RoutingRule] = [:]
+            if !skillIds.isEmpty {
+                let caps = try await CapabilityDef.query(on: req.db)
+                    .filter(\.$compiledSkill.$id ~~ skillIds)
+                    .all()
+                for cap in caps {
+                    let sid = cap.$compiledSkill.id
+                    if schemaBySkillId[sid] == nil, let sj = cap.schemaJson, !sj.isEmpty {
+                        schemaBySkillId[sid] = sj
+                    }
+                }
+                let rules = try await RoutingRule.query(on: req.db)
+                    .filter(\.$compiledSkill.$id ~~ skillIds)
+                    .all()
+                for rule in rules {
+                    ruleBySkillId[rule.$compiledSkill.id] = rule
+                }
+            }
+            mcpCounts = McpMetadataHealth.blockingAndWarningCountsByRelease(
+                releaseIds: releaseIds,
+                compiledSkills: compiled,
+                schemaBySkillId: schemaBySkillId,
+                ruleBySkillId: ruleBySkillId
+            )
+        }
         return releases.map { r in
-            ReleaseResponse(
-                id: r.id!.uuidString,
+            let rid = r.id!
+            let pair = mcpCounts[rid] ?? (0, 0)
+            return ReleaseResponse(
+                id: rid.uuidString,
                 project_id: project.id!.uuidString,
                 commit_sha: r.commitSha,
                 status: r.status,
                 created_at: formatDate(r.createdAt),
                 error_summary: r.errorSummary,
                 is_active: activeId == r.id,
-                skill_body_changes_count: r.skillBodyChangesCount
+                skill_body_changes_count: r.skillBodyChangesCount,
+                mcp_metadata_blocking_skills: pair.blocking,
+                mcp_metadata_warning_skills: pair.warning
             )
         }
     }
@@ -712,9 +800,6 @@ struct ProjectController {
         if let rl = body.risk_level, ["low", "medium", "high"].contains(rl) {
             compiled.riskLevel = rl
         }
-        if let st = body.status, ["ready", "needs_review", "not_publishable"].contains(st) {
-            compiled.status = st
-        }
         if let summary = body.summary {
             let t = summary.trimmingCharacters(in: .whitespacesAndNewlines)
             compiled.summary = t.isEmpty ? nil : t
@@ -769,6 +854,40 @@ struct ProjectController {
             cap.schemaJson = newSchema
             try await cap.save(on: req.db)
         }
+
+        let routingHintsAfter = RoutingHints.from(rule: routingRule)
+        let metadataTier = McpMetadataHealth.metadataOnlyTier(
+            exposureType: compiled.exposureType,
+            yamlFrontmatterPresent: compiled.yamlFrontmatterPresent,
+            skillBody: compiled.skillBody,
+            schemaJson: newSchema,
+            routing: routingHintsAfter
+        )
+        let hasDescription: Bool = {
+            guard let s = compiled.summary else { return false }
+            return !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }()
+        let inferredStatus = SkillInference.inferPublishabilityStatus(
+            exposureType: compiled.exposureType,
+            riskLevel: compiled.riskLevel,
+            hasDescription: hasDescription
+        )
+        let autoStatus = McpMetadataHealth.resolvedPublishStatus(
+            inferred: inferredStatus,
+            metadataTier: metadataTier
+        )
+        switch metadataTier {
+        case .blocking, .warning:
+            compiled.status = autoStatus
+        case .ok:
+            if let st = body.status, ["ready", "needs_review", "not_publishable"].contains(st) {
+                compiled.status = st
+            } else {
+                compiled.status = autoStatus
+            }
+        }
+        try await compiled.save(on: req.db)
+
         if releaseId == project.activeReleaseId, let pid = project.id {
             req.application.mcpCatalogNotifications.bumpCatalog(for: pid)
         }
@@ -811,6 +930,31 @@ struct ProjectController {
         )
         try await apiKey.save(on: req.db)
         return ApiKeyCreateResponse(key: rawKey, prefix: prefix, name: name)
+    }
+
+    static func updateApiKey(req: Request) async throws -> ApiKeyResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        guard let keyId = req.parameters.get("keyId", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid API key id")
+        }
+        guard let apiKey = try await ApiKey.find(keyId, on: req.db),
+              apiKey.$project.id == project.id! else {
+            throw Abort(.notFound, reason: "API key not found")
+        }
+        let body = try req.content.decode(ApiKeyPatchRequest.self)
+        let name = try body.normalizedName()
+        apiKey.name = name
+        try await apiKey.save(on: req.db)
+        return ApiKeyResponse(
+            id: apiKey.id!.uuidString,
+            project_id: project.id!.uuidString,
+            name: apiKey.name,
+            key_prefix: apiKey.keyPrefix,
+            status: apiKey.status,
+            created_at: formatDate(apiKey.createdAt),
+            last_used_at: apiKey.lastUsedAt.map { formatDate($0) }
+        )
     }
 
     static func listRequestLogs(req: Request) async throws -> [RequestLogResponse] {

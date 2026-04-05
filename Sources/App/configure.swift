@@ -179,6 +179,7 @@ public func configure(_ app: Application) throws {
     app.migrations.add(AddAdminFlagsToAccounts())
     app.migrations.add(AddAccountPrivilegeGrantedAt())
     app.migrations.add(CreateAdminAnalyticsHourly())
+    app.migrations.add(AddMcpCatalogMarkdownOverrideToProjects())
 
     try app.autoMigrate().wait()
 

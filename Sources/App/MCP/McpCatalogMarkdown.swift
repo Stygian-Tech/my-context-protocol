@@ -4,11 +4,29 @@ import Vapor
 
 /// Markdown snapshot of the MCP catalog for `mycontext:catalog` and related tooling.
 enum McpCatalogMarkdown {
+    private static let overrideMaxBytes = 512 * 1024
+
+    /// Max length enforced when persisting a custom catalog via the dashboard API.
+    static var catalogOverrideMaxCharacterCount: Int { overrideMaxBytes }
+
     static func routingHints(for compiled: CompiledSkill) -> RoutingHints {
         RoutingHints.from(rule: compiled.routingRules.first)
     }
 
+    /// Effective markdown for MCP: optional per-project override, otherwise `buildGenerated`.
     static func build(db: Database, projectId: UUID) async throws -> String {
+        if let project = try await Project.find(projectId, on: db),
+           let raw = project.mcpCatalogMarkdownOverride {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return try await buildGenerated(db: db, projectId: projectId)
+    }
+
+    /// Auto-generated catalog from the active release’s ready compiled skills (ignores any override).
+    static func buildGenerated(db: Database, projectId: UUID) async throws -> String {
         guard let releaseId = try await MCPCatalogService.activeReleaseId(projectId: projectId, db: db) else {
             return Self.emptyMessage(
                 reason: "No active release",

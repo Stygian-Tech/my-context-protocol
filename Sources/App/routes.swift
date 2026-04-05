@@ -56,6 +56,9 @@ func routes(_ app: Application) throws {
     protected.get("projects", ":id", "catalog") { req in
         try await ProjectController.catalog(req: req)
     }
+    protected.patch("projects", ":id", "catalog-markdown") { req in
+        try await ProjectController.updateCatalogMarkdown(req: req)
+    }
     protected.get("projects", ":id", "repo-connection") { req in
         try await ProjectController.getRepoConnection(req: req)
     }
@@ -85,6 +88,9 @@ func routes(_ app: Application) throws {
     }
     protected.post("projects", ":id", "api-keys") { req in
         try await ProjectController.createApiKey(req: req)
+    }
+    protected.patch("projects", ":id", "api-keys", ":keyId") { req in
+        try await ProjectController.updateApiKey(req: req)
     }
     protected.get("projects", ":id", "request-logs") { req in
         try await ProjectController.listRequestLogs(req: req)

@@ -18,10 +18,49 @@ struct Compiler {
             let summary = parsed.description.map { d in
                 d.count > 2048 ? String(d.prefix(2048)) : d
             } ?? String(parsed.body.prefix(200))
-            let status = SkillInference.inferPublishabilityStatus(
+            let inferredStatus = SkillInference.inferPublishabilityStatus(
                 exposureType: exposureType,
                 riskLevel: riskLevel,
                 hasDescription: parsed.description != nil && !parsed.description!.isEmpty
+            )
+
+            let capabilityName = "skill:\(package.name)"
+            let capabilityType = exposureType == "guidance" ? "prompt" : exposureType
+            let schemaJson: String?
+            switch capabilityType {
+            case "tool":
+                schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
+                    description: parsed.description,
+                    summary: summary
+                )
+            case "resource":
+                schemaJson = CapabilitySchemaBuilder.resourceMetaJson(
+                    skillName: package.name,
+                    useWhen: parsed.useWhen,
+                    avoidWhen: parsed.avoidWhen,
+                    failureModes: parsed.failureModes,
+                    invokeFirst: parsed.invokeFirst
+                )
+            case "prompt":
+                schemaJson = CapabilitySchemaBuilder.promptMetaJson()
+            default:
+                schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
+                    description: parsed.description,
+                    summary: summary
+                )
+            }
+
+            let routingHints = RoutingHints.from(parsed: parsed)
+            let metadataTier = McpMetadataHealth.metadataOnlyTier(
+                exposureType: exposureType,
+                yamlFrontmatterPresent: parsed.hadYamlFrontmatter,
+                skillBody: parsed.body,
+                schemaJson: schemaJson,
+                routing: routingHints
+            )
+            let status = McpMetadataHealth.resolvedPublishStatus(
+                inferred: inferredStatus,
+                metadataTier: metadataTier
             )
 
             let compiledSkill = CompiledSkill(
@@ -50,32 +89,6 @@ struct Compiler {
                 invokeFirst: parsed.invokeFirst
             )
             try await rule.save(on: db)
-
-            let capabilityName = "skill:\(package.name)"
-            let capabilityType = exposureType == "guidance" ? "prompt" : exposureType
-            let schemaJson: String?
-            switch capabilityType {
-            case "tool":
-                schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
-                    description: parsed.description,
-                    summary: summary
-                )
-            case "resource":
-                schemaJson = CapabilitySchemaBuilder.resourceMetaJson(
-                    skillName: package.name,
-                    useWhen: parsed.useWhen,
-                    avoidWhen: parsed.avoidWhen,
-                    failureModes: parsed.failureModes,
-                    invokeFirst: parsed.invokeFirst
-                )
-            case "prompt":
-                schemaJson = CapabilitySchemaBuilder.promptMetaJson()
-            default:
-                schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
-                    description: parsed.description,
-                    summary: summary
-                )
-            }
             let capDef = CapabilityDef(
                 compiledSkillId: compiledSkill.id!,
                 capabilityName: capabilityName,

@@ -31,6 +31,10 @@ final class Project: Model, Content {
     @OptionalField(key: "active_release_id")
     var activeReleaseId: UUID?
 
+    /// When set (non-empty after trim), `mycontext:catalog` returns this markdown instead of the auto-generated catalog.
+    @OptionalField(key: "mcp_catalog_markdown_override")
+    var mcpCatalogMarkdownOverride: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -57,7 +61,8 @@ final class Project: Model, Content {
         customDomain: String? = nil,
         customDomainVerifiedAt: Date? = nil,
         customDomainVerificationToken: String? = nil,
-        activeReleaseId: UUID? = nil
+        activeReleaseId: UUID? = nil,
+        mcpCatalogMarkdownOverride: String? = nil
     ) {
         self.id = id
         self.$account.id = accountId
@@ -68,6 +73,7 @@ final class Project: Model, Content {
         self.customDomainVerifiedAt = customDomainVerifiedAt
         self.customDomainVerificationToken = customDomainVerificationToken
         self.activeReleaseId = activeReleaseId
+        self.mcpCatalogMarkdownOverride = mcpCatalogMarkdownOverride
     }
 }
 

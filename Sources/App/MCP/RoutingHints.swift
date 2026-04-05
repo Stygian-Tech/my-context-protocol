@@ -9,6 +9,16 @@ struct RoutingHints: Equatable {
 
     static let empty = RoutingHints(useWhen: nil, avoidWhen: nil, failureModes: nil, invokeFirst: nil)
 
+    /// Routing fields from parsed SKILL.md before a `RoutingRule` row exists (compile pipeline).
+    static func from(parsed: ParsedSkill) -> RoutingHints {
+        RoutingHints(
+            useWhen: parsed.useWhen,
+            avoidWhen: parsed.avoidWhen,
+            failureModes: parsed.failureModes,
+            invokeFirst: parsed.invokeFirst
+        )
+    }
+
     static func from(rule: RoutingRule?) -> RoutingHints {
         guard let rule else {
             return RoutingHints(useWhen: nil, avoidWhen: nil, failureModes: nil, invokeFirst: nil)
