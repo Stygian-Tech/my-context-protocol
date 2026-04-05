@@ -22,6 +22,7 @@ const coverageExclude = [
 // (see tsconfig.json exclude); `bun run typecheck` also runs tsconfig.vitest.json.
 export default defineConfig({
   test: {
+    setupFiles: ["./vitest.setup.ts"],
     environment: "node",
     // Vercel + GitHub Actions set CI=1 / CI=true; cap workers on shared builders.
     maxWorkers: isCi ? "50%" : undefined,

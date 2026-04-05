@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
 
+import { MAIN_CONTENT_ID } from "@/lib/a11y"
+
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH_MOBILE = "18rem"
@@ -362,8 +364,8 @@ function SidebarResizeHandle({
   return (
     <button
       type="button"
-      aria-label="Resize sidebar"
       tabIndex={-1}
+      aria-hidden
       data-slot="sidebar-resize-handle"
       className={cn(
         "absolute inset-y-0 z-50 cursor-col-resize touch-none border-0 bg-transparent p-0 select-none",
@@ -430,7 +432,7 @@ function SidebarTrigger({
       }}
       {...props}
     >
-      <PanelLeftIcon />
+      <PanelLeftIcon aria-hidden />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   )
@@ -443,8 +445,8 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
     <button
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Toggle Sidebar"
       tabIndex={-1}
+      aria-hidden
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
@@ -461,7 +463,12 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   )
 }
 
-function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
+function SidebarInset({
+  className,
+  tabIndex,
+  "aria-label": ariaLabel,
+  ...props
+}: Omit<React.ComponentProps<"main">, "id">) {
   return (
     <main
       data-slot="sidebar-inset"
@@ -470,6 +477,9 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
         className
       )}
       {...props}
+      id={MAIN_CONTENT_ID}
+      tabIndex={tabIndex ?? -1}
+      aria-label={ariaLabel ?? "Main content"}
     />
   )
 }

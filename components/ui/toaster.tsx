@@ -21,10 +21,16 @@ export function Toaster() {
   }
 
   return (
-    <div className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-full max-w-sm flex-col gap-2">
+    <div
+      className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-full max-w-sm flex-col gap-2"
+      aria-label="Notifications"
+      role="region"
+    >
       {toasts.map((toast) => (
         <div
           key={toast.id}
+          role="status"
+          aria-live={toast.variant === "error" ? "assertive" : "polite"}
           className={`rounded-lg border px-3 py-2 text-sm shadow-lg ${toastClassName(toast.variant)}`}
         >
           {toast.message}

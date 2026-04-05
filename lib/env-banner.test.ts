@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bannerMessage,
+  bannerClasses,
   bannerVisible,
   envMismatch,
   parseAppEnv,
@@ -35,6 +36,13 @@ describe("env-banner", () => {
     expect(bannerMessage("local")).toContain("Local");
     expect(bannerMessage("dev")).toContain("Development");
     expect(bannerMessage("prod")).toBe("");
+  });
+
+  it("adds backdrop blur to keep banner text readable", () => {
+    expect(bannerClasses("local", false)).toContain("supports-backdrop-filter:backdrop-blur-sm");
+    expect(bannerClasses("local", false)).toContain("bg-yellow-400/40");
+    expect(bannerClasses("dev", false)).toContain("bg-red-500/28");
+    expect(bannerClasses("dev", true)).toContain("bg-amber-500/20");
   });
 
   it("primaryEnvForCopy prefers API non-prod", () => {

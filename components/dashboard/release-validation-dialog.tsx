@@ -14,6 +14,7 @@ import {
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -155,6 +156,9 @@ export function ReleaseValidationDialog({
                   repo).
                 </p>
                 <Table className="table-fixed">
+                  <TableCaption className="sr-only">
+                    Validation warnings by skill path and message.
+                  </TableCaption>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[34%] font-medium whitespace-normal">Path</TableHead>
@@ -180,6 +184,9 @@ export function ReleaseValidationDialog({
               <p className="text-muted-foreground text-sm">No structured errors.</p>
             ) : (
               <Table className="table-fixed">
+                <TableCaption className="sr-only">
+                  Validation errors by path or source and message.
+                </TableCaption>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[34%] font-medium whitespace-normal">

@@ -5,6 +5,7 @@ import { fetchRequestLogs } from "@/lib/projects-api";
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -128,6 +129,10 @@ export function RequestLogsTable({ projectId }: RequestLogsTableProps) {
         </Button>
       </div>
       <Table>
+        <TableCaption className="sr-only">
+          Recent MCP request logs: timestamp, method, HTTP status, latency,
+          client id, and error details. Right-click a row for copy actions.
+        </TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead>Timestamp</TableHead>

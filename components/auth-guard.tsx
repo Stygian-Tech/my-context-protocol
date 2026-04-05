@@ -28,7 +28,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (isLoading || isConfirmingOAuth) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
+        <div
+          className="text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          {isConfirmingOAuth ? "Completing sign-in…" : "Loading…"}
+        </div>
       </div>
     );
   }

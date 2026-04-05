@@ -31,7 +31,12 @@ export default function ProjectDetailPage() {
 
   if (isLoading || !project) {
     return (
-      <div className="space-y-6">
+      <div
+        className="space-y-6"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-64" />
       </div>
@@ -75,7 +80,7 @@ export default function ProjectDetailPage() {
                 })
               }
             >
-              <CopyIcon className="mr-1 h-3.5 w-3.5" />
+              <CopyIcon className="mr-1 h-3.5 w-3.5" aria-hidden />
               Copy MCP URL
             </Button>
           ) : null}

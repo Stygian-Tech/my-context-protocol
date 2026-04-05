@@ -8,6 +8,7 @@ import { ReleaseValidationDialog } from "@/components/dashboard/release-validati
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -97,6 +98,10 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
   return (
     <div className="space-y-4">
       <Table>
+        <TableCaption className="sr-only">
+          Project releases: commit, status, created time, errors, and actions
+          including activate and MCP metadata.
+        </TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead>Commit</TableHead>

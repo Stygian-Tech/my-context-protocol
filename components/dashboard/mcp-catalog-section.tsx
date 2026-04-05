@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -151,7 +152,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
         )}
 
         <div className="space-y-2">
-          <h4 className="text-sm font-medium">Connect</h4>
+          <h3 className="text-sm font-medium">Connect</h3>
           <ol className="text-muted-foreground list-inside list-decimal space-y-1 text-sm">
             <li>Create an API key (API Keys tab).</li>
             <li>
@@ -278,11 +279,14 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
         </div>
 
         <div className="space-y-2">
-          <h4 className="text-sm font-medium">Tools</h4>
+          <h3 className="text-sm font-medium">Tools</h3>
           {data.tools.length === 0 ? (
             <p className="text-muted-foreground text-sm">None.</p>
           ) : (
             <Table>
+              <TableCaption className="sr-only">
+                MCP tools exposed for this project&apos;s active release.
+              </TableCaption>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -304,7 +308,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
         </div>
 
         <div className="space-y-2">
-          <h4 className="text-sm font-medium">Resources</h4>
+          <h3 className="text-sm font-medium">Resources</h3>
           {data.resources.length === 0 ? (
             <p className="text-muted-foreground text-sm">None.</p>
           ) : (
@@ -445,11 +449,14 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
         </div>
 
         <div className="space-y-2">
-          <h4 className="text-sm font-medium">Prompts</h4>
+          <h3 className="text-sm font-medium">Prompts</h3>
           {data.prompts.length === 0 ? (
             <p className="text-muted-foreground text-sm">None.</p>
           ) : (
             <Table>
+              <TableCaption className="sr-only">
+                MCP prompts exposed for this project&apos;s active release.
+              </TableCaption>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>

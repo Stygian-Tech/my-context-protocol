@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchProjects } from "@/lib/projects-api";
 import {
@@ -87,6 +87,7 @@ function ProjectsNavAccordion({
   pathname: string;
   navStaggerIndex: number;
 }) {
+  const projectsSubListId = useId();
   const { data: projects, isLoading, isError } = useQuery({
     queryKey: ["projects"],
     queryFn: fetchProjects,
@@ -114,10 +115,12 @@ function ProjectsNavAccordion({
   }, []);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- hydrate accordion from localStorage after mount */
     const stored = readStoredProjectsAccordionOpen();
     if (stored !== null) {
       setSubOpen(stored);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   useEffect(() => {
@@ -182,7 +185,7 @@ function ProjectsNavAccordion({
         tooltip="Projects"
         render={
           <Link href="/projects">
-            <FolderIcon />
+            <FolderIcon aria-hidden />
             <span className="truncate">Projects</span>
           </Link>
         }
@@ -199,8 +202,15 @@ function ProjectsNavAccordion({
             type="button"
             onClick={toggleSub}
             aria-expanded={subOpen || subExiting}
+            aria-controls={projectsListOpen ? projectsSubListId : undefined}
+            aria-label={
+              subOpen || subExiting
+                ? "Collapse projects list"
+                : "Expand projects list"
+            }
           >
             <ChevronRightIcon
+              aria-hidden
               className={cn(
                 "transition-transform duration-200",
                 subOpen && "rotate-90"
@@ -210,7 +220,10 @@ function ProjectsNavAccordion({
         }
       />
       {subOpen || subExiting ? (
-        <SidebarMenuSub className="max-h-48 overflow-y-auto border-sidebar-border">
+        <SidebarMenuSub
+          id={projectsSubListId}
+          className="max-h-48 overflow-y-auto border-sidebar-border"
+        >
           {isLoading ? (
             <SidebarMenuSubItem>
               <span className="text-muted-foreground px-2 text-xs">
@@ -278,12 +291,14 @@ export function AppSidebar() {
   const sidebarWasOpenRef = useRef<boolean | null>(null);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- replay nav entrance when sidebar opens from closed */
     const open = isMobile ? openMobile : state === "expanded";
     const prev = sidebarWasOpenRef.current;
     if (open && prev === false) {
       setSidebarCascadeGen((n) => n + 1);
     }
     sidebarWasOpenRef.current = open;
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [isMobile, openMobile, state]);
 
   const items = user?.is_admin
@@ -298,96 +313,105 @@ export function AppSidebar() {
       <SidebarHeader className="gap-2 pb-2 pt-2.5 pl-4 pr-2.5">
         <span className="font-semibold">MyContextProtocol</span>
       </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {items.map((item, navIndex) => {
-                if (item.href === "/projects") {
-                  return (
-                    <ProjectsNavAccordion
-                      key={`${item.href}-${sidebarCascadeGen}`}
-                      pathname={pathname}
-                      navStaggerIndex={navIndex}
-                    />
-                  );
-                }
-                const isActive =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href);
-                return (
-                  <SidebarMenuItem
-                    key={`${item.href}-${sidebarCascadeGen}`}
-                    className="sidebar-nav-menu-item-cascade"
-                    style={{ animationDelay: navCascadeDelayMs(navIndex) }}
-                  >
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      tooltip={item.label}
-                      render={
-                        <Link href={item.href}>
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </Link>
-                      }
-                    />
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-      <SidebarFooter className="border-sidebar-border border-t">
-        <SidebarGroup className="p-0">
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {footerNavItems.map((item, footerIndex) => {
-                const isActive = pathname.startsWith(item.href);
-                const staggerIndex = items.length + footerIndex;
-                return (
-                  <SidebarMenuItem
-                    key={`${item.href}-${sidebarCascadeGen}`}
-                    className="sidebar-nav-menu-item-cascade"
-                    style={{ animationDelay: navCascadeDelayMs(staggerIndex) }}
-                  >
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      tooltip={item.label}
-                      render={
-                        <Link href={item.href}>
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </Link>
-                      }
-                    />
-                  </SidebarMenuItem>
-                );
-              })}
-              <SidebarMenuItem
-                key={`sign-out-${sidebarCascadeGen}`}
-                className="sidebar-nav-menu-item-cascade"
-                style={{
-                  animationDelay: navCascadeDelayMs(
-                    items.length + footerNavItems.length
-                  ),
-                }}
-              >
-                <SidebarMenuButton
-                  tooltip="Sign out"
-                  render={
-                    <button type="button" onClick={() => void logout()}>
-                      <LogOutIcon />
-                      <span>Sign out</span>
-                    </button>
+      <nav
+        className="flex min-h-0 min-w-0 flex-1 flex-col"
+        aria-label="Primary"
+      >
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {items.map((item, navIndex) => {
+                  if (item.href === "/projects") {
+                    return (
+                      <ProjectsNavAccordion
+                        key={`${item.href}-${sidebarCascadeGen}`}
+                        pathname={pathname}
+                        navStaggerIndex={navIndex}
+                      />
+                    );
                   }
-                />
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarFooter>
+                  const isActive =
+                    item.href === "/"
+                      ? pathname === "/"
+                      : pathname.startsWith(item.href);
+                  return (
+                    <SidebarMenuItem
+                      key={`${item.href}-${sidebarCascadeGen}`}
+                      className="sidebar-nav-menu-item-cascade"
+                      style={{ animationDelay: navCascadeDelayMs(navIndex) }}
+                    >
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        tooltip={item.label}
+                        render={
+                          <Link href={item.href}>
+                            <item.icon aria-hidden />
+                            <span>{item.label}</span>
+                          </Link>
+                        }
+                      />
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+      </nav>
+      <nav aria-label="Account, billing, and sign out">
+        <SidebarFooter className="border-sidebar-border border-t">
+          <SidebarGroup className="p-0">
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {footerNavItems.map((item, footerIndex) => {
+                  const isActive = pathname.startsWith(item.href);
+                  const staggerIndex = items.length + footerIndex;
+                  return (
+                    <SidebarMenuItem
+                      key={`${item.href}-${sidebarCascadeGen}`}
+                      className="sidebar-nav-menu-item-cascade"
+                      style={{
+                        animationDelay: navCascadeDelayMs(staggerIndex),
+                      }}
+                    >
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        tooltip={item.label}
+                        render={
+                          <Link href={item.href}>
+                            <item.icon aria-hidden />
+                            <span>{item.label}</span>
+                          </Link>
+                        }
+                      />
+                    </SidebarMenuItem>
+                  );
+                })}
+                <SidebarMenuItem
+                  key={`sign-out-${sidebarCascadeGen}`}
+                  className="sidebar-nav-menu-item-cascade"
+                  style={{
+                    animationDelay: navCascadeDelayMs(
+                      items.length + footerNavItems.length
+                    ),
+                  }}
+                >
+                  <SidebarMenuButton
+                    tooltip="Sign out"
+                    render={
+                      <button type="button" onClick={() => void logout()}>
+                        <LogOutIcon aria-hidden />
+                        <span>Sign out</span>
+                      </button>
+                    }
+                  />
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarFooter>
+      </nav>
       <SidebarResizeHandle />
     </Sidebar>
   );

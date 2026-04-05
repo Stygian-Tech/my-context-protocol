@@ -34,6 +34,7 @@ import {
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -332,6 +333,9 @@ export default function AdminPage() {
             </p>
           ) : (
             <Table>
+              <TableCaption className="sr-only">
+                Accounts with admin or paywall-bypass overrides and grant times.
+              </TableCaption>
               <TableHeader>
                 <TableRow>
                   <TableHead>GitHub Login</TableHead>

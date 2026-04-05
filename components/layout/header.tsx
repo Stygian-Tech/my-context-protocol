@@ -39,12 +39,19 @@ export function Header() {
               buttonVariants({ variant: "ghost", size: "icon" }),
               "rounded-full"
             )}
+            aria-label={
+              user?.login
+                ? `Account menu, signed in as ${user.login}`
+                : user?.email
+                  ? `Account menu, signed in as ${user.email}`
+                  : "Account menu"
+            }
           >
             <Avatar className="h-8 w-8">
               {user?.avatar_url ? (
                 <AvatarImage src={user.avatar_url} alt="" />
               ) : null}
-              <AvatarFallback>{initials}</AvatarFallback>
+              <AvatarFallback aria-hidden>{initials}</AvatarFallback>
             </Avatar>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
@@ -65,11 +72,11 @@ export function Header() {
               nativeButton={false}
               render={<Link href="/account" />}
             >
-              <UserCircleIcon className="mr-2 h-4 w-4" />
+              <UserCircleIcon className="mr-2 h-4 w-4" aria-hidden />
               Account
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => logout()}>
-              <LogOutIcon className="mr-2 h-4 w-4" />
+              <LogOutIcon className="mr-2 h-4 w-4" aria-hidden />
               Sign Out
             </DropdownMenuItem>
           </DropdownMenuContent>

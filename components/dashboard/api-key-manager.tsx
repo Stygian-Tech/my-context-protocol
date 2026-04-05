@@ -6,6 +6,7 @@ import { fetchApiKeys, createApiKey } from "@/lib/projects-api";
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -89,13 +90,17 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
             onClick={() => createMutation.mutate()}
             disabled={createMutation.isPending}
           >
-            <KeyIcon className="h-4 w-4" />
+            <KeyIcon className="h-4 w-4" aria-hidden />
             {createMutation.isPending ? "Creating..." : "Create Key"}
           </Button>
         </div>
       </div>
       {keys && keys.length > 0 ? (
         <Table>
+          <TableCaption className="sr-only">
+            API keys for this project: display name, key prefix, status, and
+            usage times.
+          </TableCaption>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>

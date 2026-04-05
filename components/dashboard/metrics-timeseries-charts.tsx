@@ -109,6 +109,19 @@ export function MetricsTimeseriesCharts({
     });
   }, [query.data?.buckets, hourAxisLabels]);
 
+  const rangeLabel =
+    DASHBOARD_TIMESERIES_OPTIONS.find((o) => o.value === range)?.label ?? range;
+
+  const metricsSummaryText = useMemo(() => {
+    if (chartRows.length === 0) {
+      return `No traffic data for ${rangeLabel}.`;
+    }
+    const totalReq = chartRows.reduce((s, r) => s + r.requests, 0);
+    const totalOk = chartRows.reduce((s, r) => s + r.ok, 0);
+    const last = chartRows[chartRows.length - 1];
+    return `${rangeLabel}: ${chartRows.length} time buckets, ${totalReq.toLocaleString()} total requests, ${totalOk.toLocaleString()} successful responses. Latest bucket ${last.label}: ${last.requests} requests, ${last.err} non-success.`;
+  }, [chartRows, rangeLabel]);
+
   const tooltipLabel = (label: string, payload: readonly { payload?: { startIso?: string; endIso?: string } }[]) => {
     const row = payload[0]?.payload;
     if (row?.startIso && row?.endIso) {
@@ -131,7 +144,7 @@ export function MetricsTimeseriesCharts({
 
   if (query.isLoading) {
     return (
-      <div className="rounded-lg border p-4">
+      <div className="rounded-lg border p-4" role="status" aria-live="polite">
         <div className="text-muted-foreground text-sm">Loading charts…</div>
       </div>
     );
@@ -141,7 +154,11 @@ export function MetricsTimeseriesCharts({
     const err = query.error;
     if (variant !== "admin" && err instanceof ApiError && err.status === 402) {
       return (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+        <div
+          className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm"
+          role="status"
+          aria-live="polite"
+        >
           <p className="font-medium text-amber-700 dark:text-amber-400">
             This time range requires Pro.
           </p>
@@ -158,7 +175,10 @@ export function MetricsTimeseriesCharts({
       );
     }
     return (
-      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
+      <div
+        className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm"
+        role="alert"
+      >
         <p className="font-medium text-destructive">Could not load time series.</p>
         {err instanceof ApiError ? (
           <pre className="text-muted-foreground mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-xs">
@@ -172,14 +192,23 @@ export function MetricsTimeseriesCharts({
   }
 
   return (
-    <div className="space-y-6">
+    <section
+      className="space-y-6"
+      aria-labelledby="traffic-over-time-heading"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-medium">Traffic Over Time</h3>
+        <h3 id="traffic-over-time-heading" className="font-medium">
+          Traffic over time
+        </h3>
         <Select
           value={range}
           onValueChange={(v) => v && setRange(v as DashboardTimeseriesRange)}
         >
-          <SelectTrigger className="h-9 w-[200px]" size="sm">
+          <SelectTrigger
+            className="h-9 w-[200px]"
+            size="sm"
+            aria-label="Time range for traffic charts"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -219,12 +248,55 @@ export function MetricsTimeseriesCharts({
         </div>
       ) : null}
 
+      <p id="metrics-chart-summary" className="sr-only">
+        {metricsSummaryText} A full numeric table of all buckets follows for
+        screen readers.
+      </p>
+      <div className="sr-only">
+        <table>
+          <caption>
+            Traffic metrics by time bucket ({rangeLabel})
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Bucket label</th>
+              <th scope="col">Requests</th>
+              <th scope="col">Successful</th>
+              <th scope="col">Other</th>
+              <th scope="col">Success %</th>
+              <th scope="col">Avg latency ms</th>
+            </tr>
+          </thead>
+          <tbody>
+            {chartRows.map((row) => (
+              <tr key={row.startIso}>
+                <td>{row.label}</td>
+                <td>{row.requests}</td>
+                <td>{row.ok}</td>
+                <td>{row.err}</td>
+                <td>
+                  {row.successPct != null ? `${row.successPct}%` : "—"}
+                </td>
+                <td>{row.latency != null ? row.latency : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border p-3 pt-4">
-          <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide">
-            Request Volume
+        <figure
+          className="rounded-lg border p-3 pt-4"
+          aria-labelledby="chart-request-volume-title"
+          aria-describedby="metrics-chart-summary"
+        >
+          <p
+            id="chart-request-volume-title"
+            className="text-muted-foreground mb-2 text-xs font-medium tracking-wide"
+          >
+            Request volume
           </p>
-          <div className="h-[240px] w-full min-w-0">
+          <div className="h-[240px] w-full min-w-0" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartRows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
                 <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
@@ -260,13 +332,20 @@ export function MetricsTimeseriesCharts({
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </figure>
 
-        <div className="rounded-lg border p-3 pt-4">
-          <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide">
-            Success vs. Errors (Per Bucket)
+        <figure
+          className="rounded-lg border p-3 pt-4"
+          aria-labelledby="chart-success-errors-title"
+          aria-describedby="metrics-chart-summary"
+        >
+          <p
+            id="chart-success-errors-title"
+            className="text-muted-foreground mb-2 text-xs font-medium tracking-wide"
+          >
+            Success vs. errors (per bucket)
           </p>
-          <div className="h-[240px] w-full min-w-0">
+          <div className="h-[240px] w-full min-w-0" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartRows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
                 <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
@@ -292,14 +371,21 @@ export function MetricsTimeseriesCharts({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </figure>
       </div>
 
-      <div className="rounded-lg border p-3 pt-4">
-        <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide">
-          Success Rate &amp; Average Latency
+      <figure
+        className="rounded-lg border p-3 pt-4"
+        aria-labelledby="chart-success-latency-title"
+        aria-describedby="metrics-chart-summary"
+      >
+        <p
+          id="chart-success-latency-title"
+          className="text-muted-foreground mb-2 text-xs font-medium tracking-wide"
+        >
+          Success rate and average latency
         </p>
-        <div className="h-[260px] w-full min-w-0">
+        <div className="h-[260px] w-full min-w-0" aria-hidden="true">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartRows} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
               <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
@@ -362,8 +448,8 @@ export function MetricsTimeseriesCharts({
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-      </div>
-    </div>
+      </figure>
+    </section>
   );
 }
 

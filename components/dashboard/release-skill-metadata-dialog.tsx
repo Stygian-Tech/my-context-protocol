@@ -480,7 +480,9 @@ export function ReleaseSkillMetadataDialog({
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- clear selection when dialog closes */
     if (!open) setSelectedSkillId(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open]);
 
   const { data: skills, isLoading, error } = useQuery({

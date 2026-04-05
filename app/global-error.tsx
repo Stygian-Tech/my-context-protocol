@@ -10,10 +10,15 @@ export default function GlobalError({
   const message = error?.message?.trim();
   const digest = error?.digest;
   return (
-    <html>
+    <html lang="en">
       <body>
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
-          <h2 className="text-xl font-semibold">Something Went Wrong</h2>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex min-h-screen flex-col items-center justify-center gap-4 p-8"
+          aria-label="Error"
+        >
+          <h1 className="text-xl font-semibold">Something went wrong</h1>
           <p className="text-muted-foreground text-center">
             A critical error occurred. Please refresh the page.
           </p>
@@ -26,12 +31,13 @@ export default function GlobalError({
             <p className="text-muted-foreground font-mono text-xs">Digest: {digest}</p>
           ) : null}
           <button
+            type="button"
             onClick={() => reset()}
             className="rounded-lg bg-primary px-4 py-2 text-primary-foreground"
           >
             Try again
           </button>
-        </div>
+        </main>
       </body>
     </html>
   );
