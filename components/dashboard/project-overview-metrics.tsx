@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { ProjectDashboardSummary } from "@/lib/types";
 
 function shortSha(sha: string | null | undefined): string {
   if (!sha?.trim()) return "—";
@@ -28,6 +29,52 @@ function formatPct(x: number | null | undefined): string {
   return `${Math.round(x * 1000) / 10}%`;
 }
 
+function ProjectMetricCards({
+  data,
+  successHint,
+}: {
+  data: ProjectDashboardSummary;
+  successHint: string;
+}) {
+  return (
+    <>
+      <DashboardStatCard
+        title="Total MCP requests"
+        value={data.total_requests.toLocaleString()}
+      />
+      <DashboardStatCard
+        title="Last 24 hours"
+        value={data.requests_last_24h.toLocaleString()}
+      />
+      <DashboardStatCard
+        title="Last 7 days"
+        value={data.requests_last_7d.toLocaleString()}
+      />
+      <DashboardStatCard
+        title="Success rate (7d)"
+        value={formatPct(data.success_rate_last_7d)}
+        hint={successHint}
+      />
+      <DashboardStatCard
+        title="Avg latency (7d)"
+        value={
+          data.avg_latency_ms_last_7d != null
+            ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
+            : "—"
+        }
+      />
+      <DashboardStatCard
+        title="p95 latency (7d)"
+        value={
+          data.p95_latency_ms_last_7d != null
+            ? `${data.p95_latency_ms_last_7d} ms`
+            : "—"
+        }
+      />
+    </>
+  );
+}
+
 export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["project-dashboard-summary", projectId],
@@ -37,15 +84,10 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
 
   if (isLoading) {
     return (
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <div className="rounded-lg border bg-card/50 p-2 shadow-xs">
-          <div className="grid grid-cols-2 gap-2">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-[3.25rem] rounded-md" />
-            ))}
-          </div>
-        </div>
-        <Skeleton className="hidden max-h-[min(19rem,44vh)] rounded-lg lg:block" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 rounded-lg" />
+        ))}
       </div>
     );
   }
@@ -70,7 +112,7 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
   const logWord = pluralEn(data.metrics_sample_size_last_7d, "log", "logs");
   const successHint =
     data.requests_last_7d > data.metrics_sample_size_last_7d
-      ? `Success rate from newest ${data.metrics_sample_size_last_7d.toLocaleString()} ${logWord} (7d).`
+      ? `Based on newest ${data.metrics_sample_size_last_7d.toLocaleString()} ${logWord} in the last 7 days.`
       : "Based on MCP request logs: HTTP 2xx/3xx with no logged JSON-RPC error. Failed calls use non-success HTTP status and/or a logged error code.";
 
   const activeCapsSummary = `${data.active_tools} ${pluralEn(data.active_tools, "tool", "tools")}, ${data.active_resources} ${pluralEn(data.active_resources, "resource", "resources")}, ${data.active_prompts} ${pluralEn(data.active_prompts, "prompt", "prompts")}`;
@@ -97,60 +139,18 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
           · {activeCapsSummary}
         </span>
       </div>
-      <div
-        className={
-          hasMethodBreakdown ? "grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start" : "contents"
-        }
-      >
-        <div className="min-w-0 rounded-lg border bg-card/50 p-2 shadow-xs">
-          <div className="grid grid-cols-2 gap-2 items-start">
-            <DashboardStatCard
-              compact
-              title="Total requests"
-              value={data.total_requests.toLocaleString()}
-            />
-            <DashboardStatCard
-              compact
-              title="Last 24h"
-              value={data.requests_last_24h.toLocaleString()}
-            />
-            <DashboardStatCard
-              compact
-              title="Last 7d"
-              value={data.requests_last_7d.toLocaleString()}
-            />
-            <DashboardStatCard
-              compact
-              title="Success (7d)"
-              value={formatPct(data.success_rate_last_7d)}
-              hint={successHint}
-            />
-            <DashboardStatCard
-              compact
-              title="Avg latency"
-              value={
-                data.avg_latency_ms_last_7d != null
-                  ? `${Math.round(data.avg_latency_ms_last_7d)} ms`
-                  : "—"
-              }
-            />
-            <DashboardStatCard
-              compact
-              title="p95 latency"
-              value={
-                data.p95_latency_ms_last_7d != null ? `${data.p95_latency_ms_last_7d} ms` : "—"
-              }
-            />
-          </div>
-        </div>
-        {hasMethodBreakdown ? (
-          <div className="flex max-h-[min(19rem,44vh)] min-w-0 flex-col overflow-hidden rounded-lg border bg-card/50 shadow-xs">
-            <div className="shrink-0 border-b px-2 py-2">
-              <p className="text-muted-foreground text-[10px] font-medium leading-none tracking-wide uppercase">
-                Methods (7d sample)
-              </p>
+      {hasMethodBreakdown ? (
+        <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-card/50 shadow-xs lg:grid lg:grid-cols-2 lg:items-stretch">
+          <div className="flex min-h-0 min-w-0 flex-col border-b border-border p-4 lg:border-b-0 lg:border-r lg:border-border">
+            <div className="grid grid-cols-2 gap-4">
+              <ProjectMetricCards data={data} successHint={successHint} />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-col">
+            <div className="shrink-0 border-b border-border px-4 py-3">
+              <h3 className="font-medium">MCP methods (7d sample)</h3>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4 pt-2">
               <Table>
                 <TableHeader className="bg-card sticky top-0 z-[1]">
                   <TableRow className="border-0 hover:bg-transparent">
@@ -175,8 +175,12 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
               </Table>
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ProjectMetricCards data={data} successHint={successHint} />
+        </div>
+      )}
 
       <MetricsTimeseriesCharts variant="project" projectId={projectId} />
     </div>
