@@ -339,13 +339,15 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: depot/setup-action@v1
-      - name: Set Tag
+      # Image tags match AppEnvironment APP_ENV values used in docker-compose.yml (`image: …:${APP_ENV}`).
+      # refs/heads/main → prod; refs/heads/dev → dev. (No CI push for `local`; build locally if needed.)
+      - name: Set APP_ENV image tag
         id: vars
         run: |
           if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-            echo "TAG=prod" >> $GITHUB_OUTPUT
+            echo "APP_ENV=prod" >> $GITHUB_OUTPUT
           else
-            echo "TAG=dev" >> $GITHUB_OUTPUT
+            echo "APP_ENV=dev" >> $GITHUB_OUTPUT
           fi
       - uses: depot/build-push-action@v1
         with:
@@ -353,5 +355,5 @@ jobs:
           push: true
           project: mp735xms8r
           tags: |
-            stygiantech/my-context-protocol:${{ steps.vars.outputs.TAG }}
+            stygiantech/my-context-protocol:${{ steps.vars.outputs.APP_ENV }}
             stygiantech/my-context-protocol:sha-${{ github.sha }}

@@ -5,6 +5,7 @@
 # Build context: Dockerfile. Host `.env` is injected at runtime via env_file (not baked into the image).
 services:
   app:
+    image: stygiantech/my-context-protocol:${APP_ENV}
     build: .
     ports:
       - "8080:8080"
