@@ -1,34 +1,12 @@
+# Runs the API only. Database and all runtime config come from `.env` (see root `.env.example`).
+# No bundled Postgres — use Supabase or another host: set USE_SQLITE=0 and DATABASE_URL or
+# SUPABASE_DB_URL in `.env` (optional DATABASE_INSECURE_TLS for pooler/TLS quirks).
+#
+# Build context: Dockerfile. Host `.env` is injected at runtime via env_file (not baked into the image).
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: vapor_username
-      POSTGRES_PASSWORD: vapor_password
-      POSTGRES_DB: vapor_database
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vapor_username -d vapor_database"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   app:
     build: .
     ports:
       - "8080:8080"
-    # Loads host `.env` into the container (INTERNAL_ADMIN_*, GITHUB_*, ENCRYPTION_KEY, etc.).
-    # Explicit `environment:` entries below override keys from the file.
     env_file:
       - .env
-    environment:
-      APP_ENV: local
-      DATABASE_HOST: db
-      DATABASE_PORT: 5432
-      DATABASE_USERNAME: vapor_username
-      DATABASE_PASSWORD: vapor_password
-      DATABASE_NAME: vapor_database
-      CORS_ORIGIN: http://localhost:3000
-    depends_on:
-      db:
-        condition: service_healthy

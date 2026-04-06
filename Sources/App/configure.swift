@@ -12,7 +12,7 @@ private func isTruthyEnv(_ key: String) -> Bool {
     return v == "1" || v == "true" || v == "yes"
 }
 
-public func configure(_ app: Application) throws {
+public func configure(_ app: Application) async throws {
     // Non-production: default root log level to `.debug` so MCP handler traces (`mcpTrace`) are visible unless LOG_LEVEL is set.
     if AppEnvironment.isNonProduction {
         let raw = Environment.get("LOG_LEVEL")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -163,6 +163,9 @@ public func configure(_ app: Application) throws {
     app.migrations.add(CreateCapabilityDefs())
     app.migrations.add(CreateValidationReports())
     app.migrations.add(AddBillingToAccounts())
+    // Before AlterProjectsTenantAndDomain: `Project` queries (e.g. subdomain backfill) and the
+    // SQLite table swap must see `mcp_catalog_markdown_override` if the model declares it.
+    app.migrations.add(AddMcpCatalogMarkdownOverrideToProjects())
     app.migrations.add(AlterProjectsTenantAndDomain())
     app.migrations.add(AddGithubInstallationToRepoConnections())
     app.migrations.add(CreateGitHubAppInstallIntents())
@@ -179,9 +182,8 @@ public func configure(_ app: Application) throws {
     app.migrations.add(AddAdminFlagsToAccounts())
     app.migrations.add(AddAccountPrivilegeGrantedAt())
     app.migrations.add(CreateAdminAnalyticsHourly())
-    app.migrations.add(AddMcpCatalogMarkdownOverrideToProjects())
 
-    try app.autoMigrate().wait()
+    try await app.autoMigrate()
 
     app.lifecycle.use(AdminAnalyticsRollupLifecycle())
     app.lifecycle.use(LocalDevFixtureLifecycle())

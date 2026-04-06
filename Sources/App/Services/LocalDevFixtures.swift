@@ -2,24 +2,48 @@ import Fluent
 import Foundation
 import Vapor
 
-/// Seeds a rich demo project + request logs for **local** UI preview when `SEED_LOCAL_FIXTURES=1`.
+/// Seeds a rich demo project + request logs when `SEED_LOCAL_FIXTURES=1` and the environment is safe for fixtures:
+/// - `APP_ENV=local`, or
+/// - any non-production `APP_ENV` with `USE_SQLITE=1` (file DB — avoids polluting shared Postgres).
 /// Attaches to the **first** account (oldest `created_at`) — sign in with GitHub once, then restart with the env var.
 enum LocalDevFixtures {
     static let showcaseSlug = "local-dev-showcase"
     static let draftSlug = "local-dev-draft"
 
-    private static func seedEnabled() -> Bool {
-        guard AppEnvironment.deployKind() == .local else { return false }
+    private static func seedFlagSet() -> Bool {
         guard let raw = Environment.get("SEED_LOCAL_FIXTURES") else { return false }
         let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return v == "1" || v == "true" || v == "yes"
     }
 
+    private static func useSqliteFileEnabled() -> Bool {
+        guard let raw = Environment.get("USE_SQLITE") else { return false }
+        let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return v == "1" || v == "true" || v == "yes"
+    }
+
+    private static func seedEnabled() -> Bool {
+        guard seedFlagSet() else { return false }
+        if AppEnvironment.deployKind() == .local { return true }
+        if AppEnvironment.isNonProduction, useSqliteFileEnabled() { return true }
+        return false
+    }
+
     static func seedIfNeeded(application: Application) async throws {
+        let logger = application.logger
+
+        if seedFlagSet(), !seedEnabled() {
+            let env = AppEnvironment.deployKind().rawValue
+            let sqlite = Environment.get("USE_SQLITE") ?? "unset"
+            logger.warning(
+                "SEED_LOCAL_FIXTURES is set but demo seed is disabled: use APP_ENV=local, or non-production APP_ENV with USE_SQLITE=1 (file SQLite). Current APP_ENV=\(env), USE_SQLITE=\(sqlite)."
+            )
+            return
+        }
+
         guard seedEnabled() else { return }
 
         let db = application.db
-        let logger = application.logger
 
         guard let account = try await Account.query(on: db).sort(\.$createdAt, .ascending).first() else {
             logger.warning(
@@ -141,13 +165,19 @@ enum LocalDevFixtures {
         }
     }
 
-    /// ~420 logs across 7d with MCP-like method mix, failures, and latencies for metrics + charts.
+    /// ~3k logs across ~400d (biased toward recent traffic) for 7d / 1mo / 3mo / 1y / “all” chart ranges.
     private static func seedRequestLogs(
         projectId: UUID,
         releaseId: UUID,
         on db: Database
     ) async throws {
         let now = Date()
+        let sevenDays = 7 * 86_400
+        let ninetyDays = 90 * 86_400
+        let fourHundredDays = 400 * 86_400
+        let midSpan = max(1, ninetyDays - sevenDays)
+        let tailSpan = max(1, fourHundredDays - ninetyDays)
+
         let methodCycle: [String] = [
             "tools/list",
             "ping",
@@ -163,12 +193,20 @@ enum LocalDevFixtures {
             "resources/unsubscribe",
         ]
 
-        for i in 0..<420 {
+        for i in 0..<3_000 {
             let method = methodCycle[i % methodCycle.count]
             let secondsAgo: TimeInterval = {
-                let r = (i * 1_039) % (7 * 86_400)
-                if i % 4 == 0 { return TimeInterval(r % 86_400) }
-                return TimeInterval(r)
+                switch i % 10 {
+                case 0 ..< 4:
+                    // 40% in the last 7d — fuller 1h / 24h / 7d buckets
+                    return TimeInterval((i * 1_039 + (i % 97) * 37) % sevenDays)
+                case 4 ..< 8:
+                    // 40% between 7d and 90d
+                    return TimeInterval(sevenDays + (i * 7_919) % midSpan)
+                default:
+                    // 20% between 90d and 400d — Pro ranges / YTD / “all”
+                    return TimeInterval(ninetyDays + (i * 104_729) % tailSpan)
+                }
             }()
             let ts = now.addingTimeInterval(-secondsAgo)
 
