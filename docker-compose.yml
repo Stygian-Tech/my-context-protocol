@@ -3,10 +3,13 @@
 # SUPABASE_DB_URL in `.env` (optional DATABASE_INSECURE_TLS for pooler/TLS quirks).
 #
 # Build context: Dockerfile. Host `.env` is injected at runtime via env_file (not baked into the image).
+#
+# Portainer / remote builders: `swift package resolve` needs outbound HTTPS to github.com. If the build still fails,
+# open the full build log (plain/progress output); common causes are firewall/DNS, no GitHub access, or an outdated
+# builder. You can skip local builds and use the CI-pushed image only: set APP_ENV=dev|prod and omit `build:`.
 services:
   app:
     image: stygiantech/my-context-protocol:${APP_ENV}
-    build: .
     ports:
       - "8080:8080"
     env_file:

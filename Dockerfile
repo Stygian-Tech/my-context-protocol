@@ -4,6 +4,12 @@
 FROM swift:6.2-jammy AS build
 WORKDIR /build
 
+# SwiftPM uses git for dependencies. Git 2.35+ may refuse checkouts under `.build` (dubious ownership)
+# when UIDs differ — common with Portainer, rootless builders, or custom build users.
+# Non-interactive git avoids hangs if a dependency URL ever misbehaves.
+RUN git config --global --add safe.directory '*'
+ENV GIT_TERMINAL_PROMPT=0
+
 COPY Package.swift Package.resolved ./
 
 RUN --mount=type=cache,target=/root/.cache \
