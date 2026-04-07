@@ -12,5 +12,3 @@ services:
     image: stygiantech/my-context-protocol:${APP_ENV}
     ports:
       - "8080:8080"
-    env_file:
-      - .env
