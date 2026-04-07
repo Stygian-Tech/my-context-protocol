@@ -129,18 +129,19 @@ public func configure(_ app: Application) async throws {
     } else if app.environment == .testing {
         app.databases.use(.sqlite(.memory, sqlLogLevel: sqlLiteLevel), as: .sqlite)
     } else {
-        let hostname = Environment.get("DATABASE_HOST") ?? "localhost"
-        let username = Environment.get("DATABASE_USERNAME") ?? "vapor_username"
-        let password = Environment.get("DATABASE_PASSWORD") ?? "vapor_password"
-        let database = Environment.get("DATABASE_NAME") ?? "vapor_database"
-        let port = Environment.get("DATABASE_PORT").flatMap(Int.init) ?? 5432
-
+        let params: PostgresDiscreteConnectionParams
+        do {
+            params = try DatabaseBootstrap.postgresDiscreteParameters(for: AppEnvironment.deployKind())
+        } catch let error as DatabaseBootstrapError {
+            app.logger.critical("\(error.description)")
+            throw error
+        }
         let pgConfig = SQLPostgresConfiguration(
-            hostname: hostname,
-            port: port,
-            username: username,
-            password: password,
-            database: database,
+            hostname: params.hostname,
+            port: params.port,
+            username: params.username,
+            password: params.password,
+            database: params.database,
             tls: .disable
         )
         app.databases.use(.postgres(configuration: pgConfig, sqlLogLevel: sqlPostgresLevel), as: .psql)

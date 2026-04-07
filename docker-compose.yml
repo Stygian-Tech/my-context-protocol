@@ -1,4 +1,4 @@
-# Runs the API only. No bundled Postgres — use Supabase or set DATABASE_URL / SUPABASE_DB_URL.
+# Runs the API only. No bundled Postgres — use Supabase or set DATABASE_URL / SUPABASE_DB_URL (or all DATABASE_* for dev/prod; see DatabaseBootstrap.swift).
 #
 # Portainer / stack env: variables you set in the Portainer UI are NOT automatically visible inside
 # the container. Each name must appear under `environment:` below (value omitted = pass from Compose’s
