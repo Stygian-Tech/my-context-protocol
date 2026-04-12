@@ -11,9 +11,11 @@ struct PostgresDiscreteConnectionParams: Equatable, Sendable {
 }
 
 /// Misconfiguration detected before opening a DB pool (avoids silent `localhost` + `vapor_*` in dev/prod).
-enum DatabaseBootstrapError: Error, CustomStringConvertible, LocalizedError {
+enum DatabaseBootstrapError: Error, Equatable, CustomStringConvertible, LocalizedError {
     /// `APP_ENV` is `dev` or `prod` but neither URL nor all discrete Postgres fields are set.
     case missingRemotePostgresConfiguration
+    /// `APP_ENV` is `dev` or `prod` but Postgres host resolves to loopback (common bad copy-paste into containers).
+    case loopbackPostgresHostInDeployedAppEnv(host: String)
 
     var description: String {
         switch self {
@@ -30,6 +32,14 @@ enum DatabaseBootstrapError: Error, CustomStringConvertible, LocalizedError {
 
             In containers, `localhost` refers to the container itself — use your managed Postgres hostname or a full connection URL.
             """
+        case .loopbackPostgresHostInDeployedAppEnv(let host):
+            """
+            Postgres host `\(host)` is loopback, which is invalid for APP_ENV=dev or APP_ENV=prod in most Docker/Kubernetes deployments (nothing listens on 127.0.0.1 inside the API container).
+
+            Point DATABASE_URL, SUPABASE_DB_URL, or DATABASE_HOST at your real database hostname (e.g. Supabase pooler).
+
+            If you intentionally use loopback (rare), set DATABASE_ALLOW_LOOPBACK=1.
+            """
         }
     }
 
@@ -37,6 +47,47 @@ enum DatabaseBootstrapError: Error, CustomStringConvertible, LocalizedError {
 }
 
 enum DatabaseBootstrap {
+    /// Host from `postgres://…` / `postgresql://…` for loopback checks. Returns `nil` if the string is not URL-parseable.
+    static func hostnameForPostgresConnectionURL(_ string: String) -> String? {
+        guard let url = URL(string: string), let host = url.host, !host.isEmpty else { return nil }
+        return host
+    }
+
+    /// Rejects loopback Postgres targets when `APP_ENV` is `dev` or `prod`, unless `DATABASE_ALLOW_LOOPBACK` is truthy.
+    static func assertPostgresConnectionURLHostAllowedIfResolvable(_ urlString: String) throws {
+        guard let host = hostnameForPostgresConnectionURL(urlString) else { return }
+        try assertPostgresHostAllowedForDeployedAppEnv(host)
+    }
+
+    static func assertPostgresHostAllowedForDeployedAppEnv(_ hostname: String) throws {
+        switch AppEnvironment.deployKind() {
+        case .local:
+            return
+        case .dev, .prod:
+            break
+        }
+        guard !isTruthyEnv("DATABASE_ALLOW_LOOPBACK") else { return }
+        guard isLoopbackPostgresHost(hostname) else { return }
+        throw DatabaseBootstrapError.loopbackPostgresHostInDeployedAppEnv(host: hostname)
+    }
+
+    private static func isLoopbackPostgresHost(_ hostname: String) -> Bool {
+        var h = hostname.lowercased()
+        if h.hasPrefix("[") && h.hasSuffix("]") {
+            h.removeFirst()
+            h.removeLast()
+        }
+        if h == "localhost" || h == "::1" || h == "0:0:0:0:0:0:0:1" { return true }
+        if h.hasPrefix("127.") { return true }
+        return false
+    }
+
+    private static func isTruthyEnv(_ key: String) -> Bool {
+        guard let raw = Environment.get(key) else { return false }
+        let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return v == "1" || v == "true" || v == "yes"
+    }
+
     /// Builds discrete Postgres settings for the final `configure` branch (no URL, not SQLite, not testing fallback).
     ///
     /// - **local**: Missing fields fall back to `localhost` / `vapor_*` for bare-metal dev with a local Postgres.

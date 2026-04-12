@@ -72,6 +72,10 @@ struct MCPController {
         case "prompts/get":
             req.logger.mcpTrace("mcp dispatch handler=prompts/get projectId=\(projectId.uuidString)")
             out = try await handlePromptsGet(req: req, projectId: projectId, params: body.params, id: body.id)
+        case "notifications/initialized", "notifications/cancelled":
+            // Lifecycle / cancellation JSON-RPC notifications: no `id`, no result body (MCP over HTTP).
+            req.logger.mcpTrace("mcp dispatch handler=\(body.method) projectId=\(projectId.uuidString)")
+            out = serveNotificationAck()
         default:
             req.logger.mcpTrace(
                 "mcp dispatch handler=method_not_found projectId=\(projectId.uuidString) requestedMethod=\(body.method)"
@@ -102,6 +106,16 @@ struct MCPController {
 
     private static func serveSuccess(_ content: some Content, req: Request) async throws -> MCPDispatchOutput {
         let response = try await content.encodeResponse(for: req)
+        return MCPDispatchOutput(
+            response: response,
+            httpStatus: Int(response.status.code),
+            jsonRpcErrorCode: nil,
+            jsonRpcErrorMessage: nil
+        )
+    }
+
+    private static func serveNotificationAck() -> MCPDispatchOutput {
+        let response = Response(status: .noContent)
         return MCPDispatchOutput(
             response: response,
             httpStatus: Int(response.status.code),
