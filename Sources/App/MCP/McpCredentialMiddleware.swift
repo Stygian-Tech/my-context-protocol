@@ -39,7 +39,7 @@ struct McpCredentialMiddleware: AsyncMiddleware {
         request.logger.devTrace("mcp_credential missing")
         if AppEnvironment.mcpOAuthEnabled, let origin = RequestPublicOrigin.origin(for: request) {
             let meta = "\(origin)/.well-known/oauth-protected-resource"
-            var res = Response(status: .unauthorized, body: .init(string: "Unauthorized"))
+            let res = Response(status: .unauthorized, body: .init(string: "Unauthorized"))
             res.headers.replaceOrAdd(
                 name: .wwwAuthenticate,
                 value: "Bearer resource_metadata=\"\(meta)\""
@@ -159,7 +159,7 @@ struct McpCredentialMiddleware: AsyncMiddleware {
     private static func unauthorizedResponse(request: Request, message: String) -> Response {
         if AppEnvironment.mcpOAuthEnabled, let origin = RequestPublicOrigin.origin(for: request) {
             let meta = "\(origin)/.well-known/oauth-protected-resource"
-            var res = Response(status: .unauthorized, body: .init(string: message))
+            let res = Response(status: .unauthorized, body: .init(string: message))
             res.headers.replaceOrAdd(
                 name: .wwwAuthenticate,
                 value: "Bearer resource_metadata=\"\(meta)\""

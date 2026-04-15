@@ -152,29 +152,28 @@ struct McpOAuthTests {
 
 private func withMcpOAuthApp(
     env: [String: String?],
-    _ run: (Application) async throws -> Void
+    _ run: @Sendable @escaping (Application) async throws -> Void
 ) async throws {
-    TestProcessEnvLock.shared.lock()
-    defer { TestProcessEnvLock.shared.unlock() }
+    try await TestProcessEnvGate.shared.run {
+        let prev = AppEnvironment._testOverrideAppEnv
+        AppEnvironment._testOverrideAppEnv = "local"
+        let (apply, restore) = mcpOAuthTemporaryEnv(env)
+        apply()
+        defer {
+            restore()
+            AppEnvironment._testOverrideAppEnv = prev
+        }
 
-    let prev = AppEnvironment._testOverrideAppEnv
-    AppEnvironment._testOverrideAppEnv = "local"
-    let (apply, restore) = mcpOAuthTemporaryEnv(env)
-    apply()
-    defer {
-        restore()
-        AppEnvironment._testOverrideAppEnv = prev
-    }
-
-    let app = try await Application.make(.testing)
-    try await configure(app)
-    do {
-        try await run(app)
-    } catch {
+        let app = try await Application.make(.testing)
+        try await configure(app)
+        do {
+            try await run(app)
+        } catch {
+            try await app.asyncShutdown()
+            throw error
+        }
         try await app.asyncShutdown()
-        throw error
     }
-    try await app.asyncShutdown()
 }
 
 private func mcpOAuthTemporaryEnv(_ overrides: [String: String?]) -> (() -> Void, () -> Void) {

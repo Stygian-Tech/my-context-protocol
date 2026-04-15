@@ -130,7 +130,7 @@ struct ApiKeyRevocationTests {
                 }
             )
 
-            var patch = Self.authedRequest(
+            let patch = Self.authedRequest(
                 app: app,
                 method: .PATCH,
                 path: "/projects/\(pid)/api-keys/\(kid)",
@@ -204,36 +204,35 @@ struct ApiKeyRevocationTests {
 }
 
 private func withApiKeyRevocationApp(
-    _ run: (Application) async throws -> Void
+    _ run: @Sendable @escaping (Application) async throws -> Void
 ) async throws {
-    TestProcessEnvLock.shared.lock()
-    defer { TestProcessEnvLock.shared.unlock() }
+    try await TestProcessEnvGate.shared.run {
+        let prev = AppEnvironment._testOverrideAppEnv
+        AppEnvironment._testOverrideAppEnv = "local"
+        let (apply, restore) = apiKeyRevocationTemporaryEnv([
+            "USE_SQLITE": "1",
+            "USE_MEMORY_SESSIONS": "1",
+            "MCP_OAUTH_ENABLED": "0",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ])
+        apply()
+        defer {
+            restore()
+            AppEnvironment._testOverrideAppEnv = prev
+        }
 
-    let prev = AppEnvironment._testOverrideAppEnv
-    AppEnvironment._testOverrideAppEnv = "local"
-    let (apply, restore) = apiKeyRevocationTemporaryEnv([
-        "USE_SQLITE": "1",
-        "USE_MEMORY_SESSIONS": "1",
-        "MCP_OAUTH_ENABLED": "0",
-        "FRONTEND_URL": "http://localhost:3000",
-        "DATABASE_URL": nil,
-        "SUPABASE_DB_URL": nil,
-    ])
-    apply()
-    defer {
-        restore()
-        AppEnvironment._testOverrideAppEnv = prev
-    }
-
-    let app = try await Application.make(.testing)
-    try await configure(app)
-    do {
-        try await run(app)
-    } catch {
+        let app = try await Application.make(.testing)
+        try await configure(app)
+        do {
+            try await run(app)
+        } catch {
+            try await app.asyncShutdown()
+            throw error
+        }
         try await app.asyncShutdown()
-        throw error
     }
-    try await app.asyncShutdown()
 }
 
 private func apiKeyRevocationTemporaryEnv(_ overrides: [String: String?]) -> (() -> Void, () -> Void) {
