@@ -41,6 +41,8 @@ struct BrowserOriginValidationMiddleware: AsyncMiddleware {
         if path.hasPrefix("/auth/github") { return true }
         if path == "/auth/github/callback" || path == "/auth/github/app/callback" { return true }
         if path == "/auth/confirm" { return true }
+        // OAuth 2.0 token endpoint (tenant host): non-browser clients often omit Origin.
+        if path == "/token" { return true }
         return false
     }
 

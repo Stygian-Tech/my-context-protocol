@@ -183,6 +183,11 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddAdminFlagsToAccounts())
     app.migrations.add(AddAccountPrivilegeGrantedAt())
     app.migrations.add(CreateAdminAnalyticsHourly())
+    app.migrations.add(AddPerformanceIndexes())
+    app.migrations.add(CreateMcpOauthClients())
+    app.migrations.add(CreateMcpOauthPendingAuthorizations())
+    app.migrations.add(CreateMcpOauthAuthorizationCodes())
+    app.migrations.add(CreateMcpOauthAccessTokens())
 
     try await app.autoMigrate()
 

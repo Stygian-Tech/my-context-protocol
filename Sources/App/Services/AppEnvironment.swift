@@ -102,6 +102,12 @@ enum AppEnvironment {
         }
     }
 
+    /// When `true`, tenant hosts expose MCP OAuth metadata, authorization/token endpoints, and accept OAuth bearer access tokens on MCP.
+    /// Default is off when unset so production does not advertise OAuth until explicitly enabled.
+    static var mcpOAuthEnabled: Bool {
+        envFlag("MCP_OAUTH_ENABLED")
+    }
+
     private static func envFlag(_ key: String) -> Bool {
         guard let raw = Environment.get(key) else { return false }
         let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

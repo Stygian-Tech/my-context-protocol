@@ -57,12 +57,27 @@ struct RepoFetcher {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
         process.arguments = ["-xzf", tarballPath.path, "-C", extractPath.path]
-        try process.run()
-        process.waitUntilExit()
 
-        guard process.terminationStatus == 0 else {
+        // Use a continuation so the async task is not blocked on tar exiting (can take several
+        // seconds for large repos). `waitUntilExit()` ties up a thread for the whole duration.
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                process.terminationHandler = { p in
+                    if p.terminationStatus == 0 {
+                        continuation.resume()
+                    } else {
+                        continuation.resume(throwing: RepoFetcherError.extractFailed)
+                    }
+                }
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        } catch {
             try? FileManager.default.removeItem(at: tempDir)
-            throw RepoFetcherError.extractFailed
+            throw error
         }
 
         let repoRoot = try resolveRepositoryRoot(extractPath: extractPath)
@@ -93,12 +108,13 @@ struct RepoFetcher {
         return try? JSONDecoder().decode(CommitDto.self, from: data).sha
     }
 
+    /// Compiled once; reused across all sync calls.
+    private static let _shaRegex = try? NSRegularExpression(pattern: "[a-f0-9]{40}$", options: .caseInsensitive)
+
     /// GitHub tarball extracts to a single directory named `{owner}-{repo}-{fullSha}`.
     static func parseCommitShaFromArchiveDirectoryName(_ repoRoot: URL) -> String? {
         let name = repoRoot.lastPathComponent
-        guard let regex = try? NSRegularExpression(pattern: "[a-f0-9]{40}$", options: .caseInsensitive) else {
-            return nil
-        }
+        guard let regex = _shaRegex else { return nil }
         let range = NSRange(name.startIndex..., in: name)
         guard let m = regex.firstMatch(in: name, options: [], range: range),
               let swiftRange = Range(m.range, in: name) else { return nil }

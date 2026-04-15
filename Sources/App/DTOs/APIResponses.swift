@@ -14,6 +14,8 @@ struct ProjectResponse: Content {
     let active_release_id: String?
     /// Public MCP endpoint (`SAAS_MCP_URL_SCHEME`, host, `SAAS_MCP_PATH`). Nil if tenant base domain unset and no verified custom domain.
     let mcp_url: String?
+    /// True when `MCP_OAUTH_ENABLED` is set on the API (tenant MCP host exposes OAuth alongside API keys).
+    let mcp_oauth_enabled: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, name, slug, subdomain
@@ -23,6 +25,7 @@ struct ProjectResponse: Content {
         case custom_domain_verified_at = "custom_domain_verified_at"
         case active_release_id = "active_release_id"
         case mcp_url = "mcp_url"
+        case mcp_oauth_enabled = "mcp_oauth_enabled"
     }
 }
 
@@ -156,12 +159,13 @@ struct ApiKeyPatchRequest: Content {
 }
 
 struct ApiKeyCreateResponse: Content {
+    let id: String
     let key: String
     let prefix: String
     let name: String?
 
     enum CodingKeys: String, CodingKey {
-        case key, prefix, name
+        case id, key, prefix, name
     }
 }
 
@@ -205,6 +209,8 @@ struct ProjectCatalogResponse: Content {
     let release_id: String?
     let release_status: String?
     let mcp_url: String?
+    /// Mirrors `ProjectResponse.mcp_oauth_enabled` for dashboard copy that references OAuth discovery on the MCP host.
+    let mcp_oauth_enabled: Bool
     /// Same markdown returned by MCP tool `mycontext:catalog` for this project (dashboard preview).
     let catalog_markdown: String
     /// Auto-generated catalog for the active release (no custom override applied).
@@ -220,6 +226,7 @@ struct ProjectCatalogResponse: Content {
         case release_id = "release_id"
         case release_status = "release_status"
         case mcp_url = "mcp_url"
+        case mcp_oauth_enabled = "mcp_oauth_enabled"
         case catalog_markdown = "catalog_markdown"
         case catalog_markdown_generated = "catalog_markdown_generated"
         case catalog_markdown_override = "catalog_markdown_override"

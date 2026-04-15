@@ -18,6 +18,8 @@ struct MCPController {
             return Response(status: .internalServerError, body: .init(string: "Invalid project"))
         }
 
+        let clientName: String? = mcpClientLabel(req: req)
+
         let body: JSONRPCRequest
         do {
             body = try req.content.decode(JSONRPCRequest.self)
@@ -33,7 +35,7 @@ struct MCPController {
             try? await RequestLog(
                 projectId: projectId,
                 releaseId: project.activeReleaseId,
-                clientId: nil,
+                clientId: clientName,
                 method: "parse_error",
                 latencyMs: latencyMs,
                 status: String(res.status.code),
@@ -50,16 +52,16 @@ struct MCPController {
             out = try await handleInitialize(req: req, project: project, params: body.params, id: body.id)
         case "tools/list":
             req.logger.mcpTrace("mcp dispatch handler=tools/list projectId=\(projectId.uuidString)")
-            out = try await handleToolsList(req: req, projectId: projectId, id: body.id)
+            out = try await handleToolsList(req: req, project: project, id: body.id)
         case "tools/call":
             req.logger.mcpTrace("mcp dispatch handler=tools/call projectId=\(projectId.uuidString)")
             out = try await handleToolsCall(req: req, projectId: projectId, params: body.params, id: body.id)
         case "resources/list":
             req.logger.mcpTrace("mcp dispatch handler=resources/list projectId=\(projectId.uuidString)")
-            out = try await handleResourcesList(req: req, projectId: projectId, id: body.id)
+            out = try await handleResourcesList(req: req, project: project, id: body.id)
         case "resources/read":
             req.logger.mcpTrace("mcp dispatch handler=resources/read projectId=\(projectId.uuidString)")
-            out = try await handleResourcesRead(req: req, projectId: projectId, params: body.params, id: body.id)
+            out = try await handleResourcesRead(req: req, project: project, params: body.params, id: body.id)
         case "resources/subscribe":
             req.logger.mcpTrace("mcp dispatch handler=resources/subscribe projectId=\(projectId.uuidString)")
             out = try await handleResourcesSubscribe(req: req, params: body.params, id: body.id)
@@ -68,10 +70,10 @@ struct MCPController {
             out = try await handleResourcesUnsubscribe(req: req, params: body.params, id: body.id)
         case "prompts/list":
             req.logger.mcpTrace("mcp dispatch handler=prompts/list projectId=\(projectId.uuidString)")
-            out = try await handlePromptsList(req: req, projectId: projectId, id: body.id)
+            out = try await handlePromptsList(req: req, project: project, id: body.id)
         case "prompts/get":
             req.logger.mcpTrace("mcp dispatch handler=prompts/get projectId=\(projectId.uuidString)")
-            out = try await handlePromptsGet(req: req, projectId: projectId, params: body.params, id: body.id)
+            out = try await handlePromptsGet(req: req, project: project, params: body.params, id: body.id)
         case "notifications/initialized", "notifications/cancelled":
             // Lifecycle / cancellation JSON-RPC notifications: no `id`, no result body (MCP over HTTP).
             req.logger.mcpTrace("mcp dispatch handler=\(body.method) projectId=\(projectId.uuidString)")
@@ -92,7 +94,7 @@ struct MCPController {
         try? await RequestLog(
             projectId: projectId,
             releaseId: releaseId,
-            clientId: nil,
+            clientId: clientName,
             method: body.method,
             latencyMs: latencyMs,
             status: String(out.httpStatus),
@@ -215,7 +217,7 @@ struct MCPController {
         )
     }
 
-    private static func handleToolsList(req: Request, projectId: UUID, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handleToolsList(req: Request, project: Project, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct ToolsListPayload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
@@ -224,7 +226,8 @@ struct MCPController {
 
         let catalogTool = syntheticCatalogTool()
 
-        guard let releaseId = try await Project.find(projectId, on: req.db)?.activeReleaseId else {
+        // activeReleaseId is already populated from storage — no DB round-trip needed.
+        guard let releaseId = project.activeReleaseId else {
             req.logger.mcpTrace("mcp tools/list result=catalog_only reason=no_active_release")
             return try await serveSuccess(
                 ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [catalogTool])),
@@ -295,13 +298,13 @@ struct MCPController {
         }
     }
 
-    private static func handleResourcesList(req: Request, projectId: UUID, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handleResourcesList(req: Request, project: Project, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct Payload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
             let result: ResourcesListResult
         }
-        guard let releaseId = try await Project.find(projectId, on: req.db)?.activeReleaseId else {
+        guard let releaseId = project.activeReleaseId else {
             return try await serveSuccess(
                 Payload(jsonrpc: "2.0", id: id, result: ResourcesListResult(resources: [], nextCursor: nil)),
                 req: req
@@ -334,7 +337,7 @@ struct MCPController {
         )
     }
 
-    private static func handleResourcesRead(req: Request, projectId: UUID, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handleResourcesRead(req: Request, project: Project, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct Payload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
@@ -345,7 +348,7 @@ struct MCPController {
         }
         let uriLog = uri.count > 120 ? String(uri.prefix(120)) + "…" : uri
         req.logger.mcpTrace("mcp resources/read uri=\(uriLog)")
-        guard let releaseId = try await Project.find(projectId, on: req.db)?.activeReleaseId else {
+        guard let releaseId = project.activeReleaseId else {
             return try await serveRpcError(id: id, code: -32602, message: "No active release", req: req)
         }
         let compiledSkillIds = try await MCPCatalogService.readyCompiledSkillIds(releaseId: releaseId, db: req.db)
@@ -385,10 +388,10 @@ struct MCPController {
         guard let uri = params?.uri?.trimmingCharacters(in: .whitespacesAndNewlines), !uri.isEmpty else {
             return try await serveRpcError(id: id, code: -32602, message: "Invalid params: missing uri", req: req)
         }
-        guard let apiKey = req.storage[McpApiKeyRecordKey.self], let kid = apiKey.id else {
-            return try await serveRpcError(id: id, code: -32603, message: "Missing API key context", req: req)
+        guard let sid = mcpResourceSubscriberId(req: req) else {
+            return try await serveRpcError(id: id, code: -32603, message: "Missing subscriber context", req: req)
         }
-        req.application.mcpResourceSubscriptions.subscribe(apiKeyId: kid, uri: uri)
+        req.application.mcpResourceSubscriptions.subscribe(subscriberId: sid, uri: uri)
         let uriLog = uri.count > 80 ? String(uri.prefix(80)) + "…" : uri
         req.logger.mcpTrace("mcp resources/subscribe uri=\(uriLog)")
         return try await serveSuccess(
@@ -401,23 +404,23 @@ struct MCPController {
         guard let uri = params?.uri?.trimmingCharacters(in: .whitespacesAndNewlines), !uri.isEmpty else {
             return try await serveRpcError(id: id, code: -32602, message: "Invalid params: missing uri", req: req)
         }
-        guard let apiKey = req.storage[McpApiKeyRecordKey.self], let kid = apiKey.id else {
-            return try await serveRpcError(id: id, code: -32603, message: "Missing API key context", req: req)
+        guard let sid = mcpResourceSubscriberId(req: req) else {
+            return try await serveRpcError(id: id, code: -32603, message: "Missing subscriber context", req: req)
         }
-        req.application.mcpResourceSubscriptions.unsubscribe(apiKeyId: kid, uri: uri)
+        req.application.mcpResourceSubscriptions.unsubscribe(subscriberId: sid, uri: uri)
         return try await serveSuccess(
             JsonRpcDataResult(jsonrpc: "2.0", id: id, result: MCPJsonEmpty()),
             req: req
         )
     }
 
-    private static func handlePromptsList(req: Request, projectId: UUID, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handlePromptsList(req: Request, project: Project, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct Payload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
             let result: PromptsListResult
         }
-        guard let releaseId = try await Project.find(projectId, on: req.db)?.activeReleaseId else {
+        guard let releaseId = project.activeReleaseId else {
             return try await serveSuccess(
                 Payload(jsonrpc: "2.0", id: id, result: PromptsListResult(prompts: [])),
                 req: req
@@ -445,7 +448,7 @@ struct MCPController {
         )
     }
 
-    private static func handlePromptsGet(req: Request, projectId: UUID, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handlePromptsGet(req: Request, project: Project, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct Payload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
@@ -455,7 +458,7 @@ struct MCPController {
             return try await serveRpcError(id: id, code: -32602, message: "Invalid params: missing name", req: req)
         }
         req.logger.mcpTrace("mcp prompts/get name=\(name)")
-        guard let releaseId = try await Project.find(projectId, on: req.db)?.activeReleaseId else {
+        guard let releaseId = project.activeReleaseId else {
             return try await serveRpcError(id: id, code: -32602, message: "No active release", req: req)
         }
         let compiledSkillIds = try await MCPCatalogService.readyCompiledSkillIds(releaseId: releaseId, db: req.db)
@@ -483,5 +486,27 @@ struct MCPController {
             ]
         )
         return try await serveSuccess(Payload(jsonrpc: "2.0", id: id, result: result), req: req)
+    }
+
+    private static func mcpClientLabel(req: Request) -> String? {
+        if let apiKeyRecord = req.storage[McpApiKeyRecordKey.self] {
+            return apiKeyRecord.name ?? apiKeyRecord.keyPrefix
+        }
+        if let tok = req.storage[McpOAuthAccessTokenRecordKey.self] {
+            let pub = tok.client.publicClientId
+            let suffix = tok.subjectType == "service" ? "m2m" : "user"
+            return "oauth:\(pub):\(suffix)"
+        }
+        return nil
+    }
+
+    private static func mcpResourceSubscriberId(req: Request) -> UUID? {
+        if let apiKey = req.storage[McpApiKeyRecordKey.self], let id = apiKey.id {
+            return id
+        }
+        if let tok = req.storage[McpOAuthAccessTokenRecordKey.self], let id = tok.id {
+            return id
+        }
+        return nil
     }
 }

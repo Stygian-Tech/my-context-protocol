@@ -38,6 +38,56 @@ enum AppFrontendURL {
         return bases
     }
 
+    /// Extra allowed bases for GitHub OAuth `return_to` when resuming MCP OAuth on the API host.
+    /// Set `MCP_OAUTH_RESUME_BASE_URLS` to a comma-separated list of origins (no trailing slash), e.g. `https://api.example.com`.
+    static func allowedMcpOAuthResumeOriginBases() -> [String] {
+        guard let raw = Environment.get("MCP_OAUTH_RESUME_BASE_URLS") else { return [] }
+        var out: [String] = []
+        for part in raw.split(separator: ",") {
+            let t = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty { continue }
+            let b = t.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if !out.contains(b) { out.append(b) }
+        }
+        return out
+    }
+
+    /// Bases allowed for MCP OAuth resume redirects: frontend origins plus optional `MCP_OAUTH_RESUME_BASE_URLS`.
+    static func allowedOAuthReturnToBases() -> [String] {
+        var bases = allowedOriginBases()
+        for b in allowedMcpOAuthResumeOriginBases() where !bases.contains(b) {
+            bases.append(b)
+        }
+        return bases
+    }
+
+    /// Like `validateReturnTo`, but also allows `MCP_OAUTH_RESUME_BASE_URLS` entries (for API-hosted resume endpoints).
+    static func validateOAuthReturnTo(_ urlString: String, for req: Request) throws -> String {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme,
+              scheme == "http" || scheme == "https" else {
+            throw Abort(.badRequest, reason: "return_to must be a valid http(s) URL")
+        }
+        let allowed = allowedOAuthReturnToBases()
+        if allowed.isEmpty {
+            if AppEnvironment.deployKind() == .local {
+                return trimmed
+            }
+            throw Abort(
+                .badRequest,
+                reason: "FRONTEND_URL, CORS_ORIGIN, or MCP_OAUTH_RESUME_BASE_URLS must be configured for OAuth return_to validation"
+            )
+        }
+        for origin in allowed {
+            if trimmed == origin || trimmed.hasPrefix(origin + "/") || trimmed.hasPrefix(origin + "?") {
+                return trimmed
+            }
+        }
+        req.logger.warning("OAuth return_to rejected: does not match allowed origins")
+        throw Abort(.badRequest, reason: "return_to origin is not allowed")
+    }
+
     /// Validates `return_to` for OAuth / app-install redirects. When at least one origin is configured,
     /// only URLs under those origins are allowed (open-redirect protection).
     static func validateReturnTo(_ urlString: String, for req: Request) throws -> String {

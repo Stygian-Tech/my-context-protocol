@@ -1,5 +1,6 @@
 import Fluent
 import Foundation
+import SQLKit
 import Vapor
 
 enum MCPCatalogService {
@@ -7,8 +8,21 @@ enum MCPCatalogService {
         try await Project.find(projectId, on: db)?.activeReleaseId
     }
 
+    /// Fetches only the `id` column for ready compiled skills — avoids transferring `skill_body`,
+    /// `body_diff_unified`, and other large text fields that are not needed for ID-based catalog lookups.
     static func readyCompiledSkillIds(releaseId: UUID, db: Database) async throws -> [UUID] {
-        try await CompiledSkill.query(on: db)
+        if let sql = db as? SQLDatabase {
+            struct Row: Decodable { let id: UUID }
+            let rows = try await sql.select()
+                .column("id")
+                .from(CompiledSkill.schema)
+                .where(SQLColumn("release_id"), .equal, SQLBind(releaseId))
+                .where(SQLColumn("status"), .equal, SQLBind("ready"))
+                .all(decoding: Row.self)
+            return rows.map(\.id)
+        }
+        // Fallback for non-SQL backends (e.g. in-memory test doubles).
+        return try await CompiledSkill.query(on: db)
             .filter(\.$release.$id == releaseId)
             .filter(\.$status == "ready")
             .all()

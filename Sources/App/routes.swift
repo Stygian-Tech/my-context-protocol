@@ -12,6 +12,12 @@ func routes(_ app: Application) throws {
     app.get("auth", "github") { req in
         try await AuthController.githubInitiate(req: req)
     }
+    app.get("auth", "github", "mcp-oauth-start") { req in
+        try await McpOAuthController.githubMcpOauthStart(req: req)
+    }
+    app.get("auth", "mcp-oauth-resume") { req in
+        try await McpOAuthController.mcpOauthResume(req: req)
+    }
     app.get("auth", "github", "callback") { req in
         try await AuthController.githubCallback(req: req)
     }
@@ -92,6 +98,9 @@ func routes(_ app: Application) throws {
     protected.patch("projects", ":id", "api-keys", ":keyId") { req in
         try await ProjectController.updateApiKey(req: req)
     }
+    protected.delete("projects", ":id", "api-keys", ":keyId") { req in
+        try await ProjectController.revokeApiKey(req: req)
+    }
     protected.get("projects", ":id", "request-logs") { req in
         try await ProjectController.listRequestLogs(req: req)
     }
@@ -147,12 +156,32 @@ func routes(_ app: Application) throws {
         try await StripeWebhookController.handle(req: req)
     }
 
-    let mcpRoutes = app.grouped(
+    let mcpIngress = app.grouped(
         TenantHostMiddleware(),
         McpTenantHostRequiredMiddleware(),
-        McpIpRateLimitMiddleware(),
-        ApiKeyMiddleware()
+        McpIpRateLimitMiddleware()
     )
+
+    mcpIngress.get(".well-known", "oauth-protected-resource") { req async throws in
+        try await McpOAuthController.protectedResourceMetadata(req: req).encodeResponse(for: req)
+    }
+    mcpIngress.get(".well-known", "oauth-authorization-server") { req async throws in
+        try await McpOAuthController.authorizationServerMetadata(req: req).encodeResponse(for: req)
+    }
+    mcpIngress.get("authorize") { req async throws in
+        try await McpOAuthController.authorize(req: req)
+    }
+    mcpIngress.get("oauth", "consent") { req async throws in
+        try await McpOAuthController.consentPage(req: req)
+    }
+    mcpIngress.on(.POST, "oauth", "consent", body: .collect(maxSize: ByteCount(value: 256 * 1024))) { req async throws in
+        try await McpOAuthController.consentSubmit(req: req)
+    }
+    mcpIngress.on(.POST, "token", body: .collect(maxSize: ByteCount(value: 64 * 1024))) { req async throws in
+        try await McpOAuthController.token(req: req)
+    }
+
+    let mcpRoutes = mcpIngress.grouped(McpCredentialMiddleware())
     McpRoutePath.registerPost(on: mcpRoutes) { req in
         try await MCPController.handle(req: req)
     }

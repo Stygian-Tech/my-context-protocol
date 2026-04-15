@@ -12,6 +12,14 @@ services:
     image: stygiantech/my-context-protocol:${APP_ENV:?Set APP_ENV in stack env to dev or prod}
     ports:
       - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      # /health returns 200 "ok" — defined in routes.swift. curl is available in swift:6.2-jammy.
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       - APP_ENV
       - CORS_ORIGIN

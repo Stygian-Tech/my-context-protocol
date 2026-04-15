@@ -22,7 +22,8 @@ struct ProjectController {
             custom_domain: project.customDomain,
             custom_domain_verified_at: project.customDomainVerifiedAt.map { formatDate($0) },
             active_release_id: project.activeReleaseId?.uuidString,
-            mcp_url: McpUrlBuilder.publicMcpUrl(for: project)
+            mcp_url: McpUrlBuilder.publicMcpUrl(for: project),
+            mcp_oauth_enabled: AppEnvironment.mcpOAuthEnabled
         )
     }
 
@@ -217,6 +218,7 @@ struct ProjectController {
                 release_id: nil,
                 release_status: nil,
                 mcp_url: mcpUrl,
+                mcp_oauth_enabled: AppEnvironment.mcpOAuthEnabled,
                 catalog_markdown: catalogMarkdown,
                 catalog_markdown_generated: catalogGenerated,
                 catalog_markdown_override: project.mcpCatalogMarkdownOverride,
@@ -278,6 +280,7 @@ struct ProjectController {
             release_id: releaseId.uuidString,
             release_status: release?.status,
             mcp_url: mcpUrl,
+            mcp_oauth_enabled: AppEnvironment.mcpOAuthEnabled,
             catalog_markdown: catalogMarkdown,
             catalog_markdown_generated: catalogGenerated,
             catalog_markdown_override: project.mcpCatalogMarkdownOverride,
@@ -894,21 +897,28 @@ struct ProjectController {
         return Self.compiledSkillResponse(compiled, schemaJson: newSchema, routingRule: routingRule)
     }
 
+    private static func apiKeyResponse(_ k: ApiKey, projectId: UUID) -> ApiKeyResponse {
+        ApiKeyResponse(
+            id: k.id!.uuidString,
+            project_id: projectId.uuidString,
+            name: k.name,
+            key_prefix: k.keyPrefix,
+            status: k.status,
+            created_at: formatDate(k.createdAt),
+            last_used_at: k.lastUsedAt.map { formatDate($0) }
+        )
+    }
+
     static func listApiKeys(req: Request) async throws -> [ApiKeyResponse] {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
+        let includeRevoked = req.query[Bool.self, at: "include_revoked"] ?? false
         let keys = try await project.$apiKeys.get(on: req.db)
-        return keys.map { k in
-            ApiKeyResponse(
-                id: k.id!.uuidString,
-                project_id: project.id!.uuidString,
-                name: k.name,
-                key_prefix: k.keyPrefix,
-                status: k.status,
-                created_at: formatDate(k.createdAt),
-                last_used_at: k.lastUsedAt.map { formatDate($0) }
-            )
-        }
+        let filtered =
+            includeRevoked
+                ? keys
+                : keys.filter { $0.status == "active" }
+        return filtered.map { Self.apiKeyResponse($0, projectId: project.id!) }
     }
 
     static func createApiKey(req: Request) async throws -> ApiKeyCreateResponse {
@@ -929,7 +939,7 @@ struct ProjectController {
             status: "active"
         )
         try await apiKey.save(on: req.db)
-        return ApiKeyCreateResponse(key: rawKey, prefix: prefix, name: name)
+        return ApiKeyCreateResponse(id: apiKey.id!.uuidString, key: rawKey, prefix: prefix, name: name)
     }
 
     static func updateApiKey(req: Request) async throws -> ApiKeyResponse {
@@ -942,19 +952,32 @@ struct ProjectController {
               apiKey.$project.id == project.id! else {
             throw Abort(.notFound, reason: "API key not found")
         }
+        guard apiKey.status == "active" else {
+            throw Abort(.conflict, reason: "API key is revoked")
+        }
         let body = try req.content.decode(ApiKeyPatchRequest.self)
         let name = try body.normalizedName()
         apiKey.name = name
         try await apiKey.save(on: req.db)
-        return ApiKeyResponse(
-            id: apiKey.id!.uuidString,
-            project_id: project.id!.uuidString,
-            name: apiKey.name,
-            key_prefix: apiKey.keyPrefix,
-            status: apiKey.status,
-            created_at: formatDate(apiKey.createdAt),
-            last_used_at: apiKey.lastUsedAt.map { formatDate($0) }
-        )
+        return Self.apiKeyResponse(apiKey, projectId: project.id!)
+    }
+
+    /// Soft-revoke: sets `status` to `revoked`. Idempotent when already revoked.
+    static func revokeApiKey(req: Request) async throws -> Response {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        guard let keyId = req.parameters.get("keyId", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid API key id")
+        }
+        guard let apiKey = try await ApiKey.find(keyId, on: req.db),
+              apiKey.$project.id == project.id! else {
+            throw Abort(.notFound, reason: "API key not found")
+        }
+        if apiKey.status != "revoked" {
+            apiKey.status = "revoked"
+            try await apiKey.save(on: req.db)
+        }
+        return Response(status: .noContent)
     }
 
     static func listRequestLogs(req: Request) async throws -> [RequestLogResponse] {

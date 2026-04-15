@@ -30,7 +30,7 @@ MCP Client ← JSON-RPC over HTTP ← MCP Endpoint ← Active Release Catalog �
 
 - **Sync pipeline:** Fetches repo tarball at commit SHA, parses `SKILL.md` files, validates against Agent Skills spec, stores releases and skill catalog
 - **MCP endpoint:** Serves `tools/list` and `tools/call` from the active release’s catalog
-- **Auth:** API keys for MCP clients; user auth (login/session) for admin operations (sync, create-key)
+- **Auth:** API keys for MCP clients; optional OAuth 2.0 on the tenant MCP host when `MCP_OAUTH_ENABLED=1` (protected-resource + authorization-server metadata, authorization code + PKCE for users, client credentials for machine clients); user auth (GitHub OAuth session) for admin operations
 
 ## Quick Start
 

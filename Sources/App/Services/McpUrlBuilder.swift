@@ -49,4 +49,18 @@ enum McpUrlBuilder {
     private static func build(host: String) -> String {
         "\(normalizedScheme())://\(host)\(normalizedPath())"
     }
+
+    /// Origin for the tenant MCP host (no path), e.g. `https://sub.example.dev` or `https://custom.domain`.
+    static func tenantOrigin(for project: Project) -> String? {
+        if let host = customDomainHost(project) {
+            return "\(normalizedScheme())://\(host)"
+        }
+        guard let sub = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty,
+              let baseRaw = Environment.get("SAAS_MCP_BASE_DOMAIN"),
+              !baseRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        let base = normalizeBaseDomain(baseRaw)
+        return "\(normalizedScheme())://\(sub).\(base)"
+    }
 }

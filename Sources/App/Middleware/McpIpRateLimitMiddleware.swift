@@ -7,10 +7,15 @@ final class McpIpRateLimitMiddleware: AsyncMiddleware, @unchecked Sendable {
     private let buckets = NIOLockedValueBox<[String: (count: Int, reset: Date)]>([:])
     private let limit: Int
     private let windowSeconds: TimeInterval
+    /// Cached at init time so the env lookup does not happen on every MCP request.
+    private let trustXForwardedFor: Bool
 
     init(limit: Int, windowSeconds: TimeInterval) {
         self.limit = max(1, limit)
         self.windowSeconds = max(1, windowSeconds)
+        let raw = Environment.get("TRUST_X_FORWARDED_FOR")?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        self.trustXForwardedFor = (raw == "1" || raw == "true" || raw == "yes")
     }
 
     convenience init() {
@@ -22,7 +27,7 @@ final class McpIpRateLimitMiddleware: AsyncMiddleware, @unchecked Sendable {
         guard AppEnvironment.rateLimitMcpEnabled else {
             return try await next.respond(to: request)
         }
-        let key = Self.clientKey(for: request)
+        let key = clientKey(for: request)
         let now = Date()
         let allowed = buckets.withLockedValue { map in
             if map.count > 50_000 {
@@ -49,14 +54,11 @@ final class McpIpRateLimitMiddleware: AsyncMiddleware, @unchecked Sendable {
         return try await next.respond(to: request)
     }
 
-    private static func clientKey(for request: Request) -> String {
-        if let raw = Environment.get("TRUST_X_FORWARDED_FOR") {
-            let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if v == "1" || v == "true" || v == "yes",
-               let xff = request.headers.first(name: "X-Forwarded-For"),
-               let first = xff.split(separator: ",").first {
-                return String(first).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+    private func clientKey(for request: Request) -> String {
+        if trustXForwardedFor,
+           let xff = request.headers.first(name: "X-Forwarded-For"),
+           let first = xff.split(separator: ",").first {
+            return String(first).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         if let ip = request.peerAddress?.ipAddress {
             return ip

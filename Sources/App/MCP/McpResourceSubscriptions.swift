@@ -1,21 +1,21 @@
 import Foundation
 import Vapor
 
-/// Tracks `resources/subscribe` URIs per API key (in-memory; best-effort for HTTP MCP).
+/// Tracks `resources/subscribe` URIs per subscriber (API key id or OAuth access-token row id; in-memory; best-effort for HTTP MCP).
 final class McpResourceSubscriptions: @unchecked Sendable {
     private let lock = NSLock()
-    private var byKey: [UUID: Set<String>] = [:]
+    private var bySubscriber: [UUID: Set<String>] = [:]
 
-    func subscribe(apiKeyId: UUID, uri: String) {
+    func subscribe(subscriberId: UUID, uri: String) {
         lock.lock()
         defer { lock.unlock() }
-        byKey[apiKeyId, default: []].insert(uri)
+        bySubscriber[subscriberId, default: []].insert(uri)
     }
 
-    func unsubscribe(apiKeyId: UUID, uri: String) {
+    func unsubscribe(subscriberId: UUID, uri: String) {
         lock.lock()
         defer { lock.unlock() }
-        byKey[apiKeyId]?.remove(uri)
+        bySubscriber[subscriberId]?.remove(uri)
     }
 }
 
