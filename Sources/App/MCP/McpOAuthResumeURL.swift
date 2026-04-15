@@ -3,7 +3,7 @@ import Vapor
 enum McpOAuthResumeURL {
     /// URL the GitHub OAuth callback returns to, which establishes the session and resumes MCP consent on the tenant host.
     static func githubReturnTo(pending: UUID) throws -> String {
-        let path = "/auth/mcp-oauth/resume?pending=\(pending.uuidString)"
+        let path = "/auth/mcp-oauth-resume?pending=\(pending.uuidString)"
         if let raw = Environment.get("MCP_OAUTH_API_ORIGIN")?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
             let base = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             return "\(base)\(path)"

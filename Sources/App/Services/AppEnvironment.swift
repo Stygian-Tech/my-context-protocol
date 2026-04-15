@@ -108,6 +108,12 @@ enum AppEnvironment {
         envFlag("MCP_OAUTH_ENABLED")
     }
 
+    /// When `true`, MCP tenant resolution and OAuth issuer URLs use the first `X-Forwarded-Host` value (after the trusted edge) instead of `Host`.
+    /// Enable only behind a reverse proxy that **overwrites** this header; clients must not be able to spoof it.
+    static var mcpTrustXForwardedHost: Bool {
+        envFlag("MCP_TRUST_X_FORWARDED_HOST")
+    }
+
     private static func envFlag(_ key: String) -> Bool {
         guard let raw = Environment.get(key) else { return false }
         let v = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

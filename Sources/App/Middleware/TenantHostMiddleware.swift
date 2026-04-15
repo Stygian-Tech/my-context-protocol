@@ -8,11 +8,10 @@ struct ResolvedHostProjectKey: StorageKey {
 
 struct TenantHostMiddleware: AsyncMiddleware {
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
-        guard let hostFull = request.headers.first(name: .host) else {
+        guard let host = RequestPublicOrigin.routingHostname(for: request) else {
             request.logger.devTrace("tenant_host no Host header path=\(request.url.path)")
             return try await next.respond(to: request)
         }
-        let host = String(hostFull.split(separator: ":").first ?? Substring(hostFull)).lowercased()
 
         if let byCustom = try await Project.query(on: request.db).filter(\.$customDomain == host).first(),
            byCustom.customDomainVerifiedAt != nil {

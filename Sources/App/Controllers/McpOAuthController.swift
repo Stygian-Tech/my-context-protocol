@@ -247,7 +247,7 @@ enum McpOAuthController {
                 throw Abort(.unauthorized, reason: "Account not found")
             }
             req.session.data["accountId"] = account.id!.uuidString
-            let path = "/auth/mcp-oauth/resume?pending=\(pid.uuidString)"
+            let path = "/auth/mcp-oauth-resume?pending=\(pid.uuidString)"
             guard let base = AppFrontendURL.normalizedBase() else {
                 throw Abort(.internalServerError, reason: "FRONTEND_URL or CORS_ORIGIN must be set")
             }
