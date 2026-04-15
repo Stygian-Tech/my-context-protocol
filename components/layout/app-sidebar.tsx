@@ -377,7 +377,7 @@ export function AppSidebar() {
           </div>
           <SidebarGroup className="p-0">
             <SidebarGroupContent>
-              <SidebarMenu>
+              <SidebarMenu className="gap-0">
                 {footerNavItems.map((item, footerIndex) => {
                   const isActive = pathname.startsWith(item.href);
                   const staggerIndex = items.length + footerIndex;

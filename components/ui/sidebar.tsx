@@ -587,11 +587,11 @@ function Sidebar({
               ),
             peekGlassActive &&
               cn(
-                PEEK_SIDEBAR_GLASS_BACKDROP,
+                "supports-backdrop-filter:backdrop-blur-[6px]",
                 "border-0 border-transparent",
                 // Soft top edge where the rail meets the env strip (diffused highlight, not a hard rule).
                 "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)]",
-                "bg-sidebar/68 supports-backdrop-filter:bg-sidebar/44",
+                "bg-sidebar/50 supports-backdrop-filter:bg-sidebar/22",
                 "opacity-100",
               ),
             // Offcanvas hides via `left` on the container only — do not fade this wrapper,
@@ -892,7 +892,7 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
     <ul
       data-slot="sidebar-menu"
       data-sidebar="menu"
-      className={cn("flex w-full min-w-0 flex-col gap-0", className)}
+      className={cn("flex w-full min-w-0 flex-col gap-2", className)}
       {...props}
     />
   )
