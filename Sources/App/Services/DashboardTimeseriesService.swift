@@ -183,14 +183,11 @@ enum DashboardTimeseriesService {
         return c
     }()
 
-    private static let _isoFormatter: ISO8601DateFormatter = {
+    /// Avoid caching `ISO8601DateFormatter` in a `static let` (not `Sendable` under strict concurrency).
+    static func formatISO(_ date: Date) -> String {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    static func formatISO(_ date: Date) -> String {
-        _isoFormatter.string(from: date)
+        return f.string(from: date)
     }
 
     private static let formatterHourMinute: DateFormatter = {
