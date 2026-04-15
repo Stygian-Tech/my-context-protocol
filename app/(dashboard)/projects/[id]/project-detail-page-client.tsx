@@ -128,6 +128,7 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
             projectId={projectId}
             mcpUrl={project.mcp_url}
             projectSlug={project.slug}
+            mcpOAuthEnabled={project.mcp_oauth_enabled === true}
           />
         </TabsContent>
         <TabsContent value="logs">

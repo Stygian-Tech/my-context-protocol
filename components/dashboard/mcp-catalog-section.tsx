@@ -37,6 +37,14 @@ import {
 /** MCP synthetic discovery tool; matches backend `MCPConstants.catalogToolName`. */
 const MYCONTEXT_CATALOG_TOOL = "mycontext:catalog";
 
+function mcpHostOrigin(mcpUrl: string): string | null {
+  try {
+    return new URL(mcpUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
 const CATALOG_MARKDOWN_MAX_CHARS = 512 * 1024;
 
 /** Inset surface for subpanels, monospace blocks, and URL chips (shared fill). */
@@ -156,6 +164,8 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
   }
 
   const url = data.mcp_url;
+  const oauthOnHost = data.mcp_oauth_enabled === true;
+  const oauthOrigin = url ? mcpHostOrigin(url) : null;
   const sampleInitialize = JSON.stringify(
     {
       jsonrpc: "2.0",
@@ -461,17 +471,60 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             Connect
           </h2>
           <p className="text-sm text-muted-foreground">
-            Use an API key and your MCP URL to run JSON-RPC over HTTP, then list
-            tools, resources, and prompts.
+            {oauthOnHost
+              ? "Use an API key or an OAuth access token with your MCP URL to run JSON-RPC over HTTP, then list tools, resources, and prompts."
+              : "Use an API key and your MCP URL to run JSON-RPC over HTTP, then list tools, resources, and prompts."}
           </p>
         </div>
+        {oauthOnHost && oauthOrigin ? (
+          <div
+            className={cn(
+              MCP_CATALOG_SUBPANEL,
+              "text-muted-foreground space-y-2 text-sm",
+            )}
+          >
+            <p className="font-medium text-foreground">OAuth on this MCP host</p>
+            <p>
+              Discovery (same origin as your MCP URL):{" "}
+              <code className="font-mono text-xs break-all">
+                {oauthOrigin}/.well-known/oauth-protected-resource
+              </code>{" "}
+              and{" "}
+              <code className="font-mono text-xs break-all">
+                {oauthOrigin}/.well-known/oauth-authorization-server
+              </code>
+              . Interactive clients use authorization code + PKCE (
+              <code className="font-mono text-xs">/authorize</code>, consent, then{" "}
+              <code className="font-mono text-xs">POST /token</code>
+              ). Machine clients use{" "}
+              <code className="font-mono text-xs">client_credentials</code> on{" "}
+              <code className="font-mono text-xs">POST /token</code> when the server has a
+              registered confidential client. Send MCP traffic with{" "}
+              <code className="font-mono text-xs">
+                Authorization: Bearer &lt;access_token&gt;
+              </code>
+              .
+            </p>
+          </div>
+        ) : null}
         <ol className="text-muted-foreground list-inside list-decimal space-y-1 text-sm">
-          <li>Create an API key (API Keys tab).</li>
+          <li>
+            {oauthOnHost ? (
+              <>
+                Create an API key (API Keys tab) or obtain an OAuth access token via the MCP host
+                flow (GitHub sign-in when the consent step redirects you).
+              </>
+            ) : (
+              <>Create an API key (API Keys tab).</>
+            )}
+          </li>
           <li>
             Send JSON-RPC <code className="font-mono text-xs">POST</code> to
             your MCP URL with header{" "}
             <code className="font-mono text-xs">
-              Authorization: Bearer &lt;key&gt;
+              Authorization: Bearer &lt;
+              {oauthOnHost ? "api_key_or_access_token" : "key"}
+              &gt;
             </code>
             .
           </li>

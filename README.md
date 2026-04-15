@@ -48,6 +48,8 @@ Dashboard for **MyContextProtocol**—a hosted MCP endpoint that syncs SKILL.md 
 | `NEXT_PUBLIC_APP_URL`         | Frontend URL for OAuth return (optional, defaults to origin) |
 | `NEXT_PUBLIC_CLIENT_API_LOG`  | `0`/`false` disables `[client-api]` console traces; `1` forces them on (e.g. in tests). Default: on for local dev, Vercel preview, and when `NEXT_PUBLIC_APP_ENV` is `local` or `dev`; off in production and in Vitest. When on: logs request/response timing, warns on non-OK status, and prints a truncated error response body. |
 
+When the backend sets `MCP_OAUTH_ENABLED`, project and catalog API responses include `mcp_oauth_enabled: true` and the dashboard **Connect** section documents OAuth discovery URLs on the MCP host (API keys stay supported).
+
 ## Project Structure
 
 ```

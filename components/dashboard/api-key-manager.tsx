@@ -2,7 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchApiKeys, createApiKey, updateApiKey } from "@/lib/projects-api";
+import {
+  fetchApiKeys,
+  createApiKey,
+  updateApiKey,
+  revokeApiKey,
+} from "@/lib/projects-api";
 import {
   Table,
   TableBody,
@@ -25,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CopyIcon, KeyIcon, PencilIcon } from "lucide-react";
+import { BanIcon, CopyIcon, KeyIcon, PencilIcon } from "lucide-react";
 import { formatLocalDateTime } from "@/lib/format-local-time";
 import { buildMcpJsonConfig, copyTextToClipboard } from "@/lib/clipboard";
 import { getApiKeyDisplayName } from "@/lib/api-key-utils";
@@ -39,31 +44,92 @@ interface ApiKeyManagerProps {
   projectId: string;
   mcpUrl?: string | null;
   projectSlug?: string | null;
+  /** When true, MCP OAuth is enabled on the server; keys remain supported alongside OAuth tokens. */
+  mcpOAuthEnabled?: boolean;
 }
 
-interface CreatedApiKey {
+interface CreatedApiKeyResult {
+  id: string;
   key: string;
-  name?: string | null;
+  prefix: string;
+  name: string | null;
 }
 
-export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerProps) {
-  const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
-  const [keyName, setKeyName] = useState("");
+export function ApiKeyManager({
+  projectId,
+  mcpUrl,
+  projectSlug,
+  mcpOAuthEnabled = false,
+}: ApiKeyManagerProps) {
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createDraftName, setCreateDraftName] = useState("");
+  const [createdKey, setCreatedKey] = useState<CreatedApiKeyResult | null>(null);
+  const [postCreateName, setPostCreateName] = useState("");
   const [renameTarget, setRenameTarget] = useState<ApiKey | null>(null);
   const [renameName, setRenameName] = useState("");
+  const [showRevoked, setShowRevoked] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<ApiKey | null>(null);
   const queryClient = useQueryClient();
 
   const { data: keys, isLoading } = useQuery({
-    queryKey: ["api-keys", projectId],
-    queryFn: () => fetchApiKeys(projectId),
+    queryKey: ["api-keys", projectId, showRevoked],
+    queryFn: () =>
+      fetchApiKeys(projectId, { includeRevoked: showRevoked }),
   });
 
+  const resetCreateDialog = () => {
+    setCreateDialogOpen(false);
+    setCreateDraftName("");
+    setCreatedKey(null);
+    setPostCreateName("");
+    createMutation.reset();
+  };
+
+  const openCreateDialog = () => {
+    setCreateDraftName("");
+    setCreatedKey(null);
+    setPostCreateName("");
+    createMutation.reset();
+    setCreateDialogOpen(true);
+  };
+
   const createMutation = useMutation({
-    mutationFn: () => createApiKey(projectId, { name: keyName }),
+    mutationFn: (name: string) => {
+      const t = name.trim();
+      return createApiKey(projectId, { name: t.length > 0 ? t : null });
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["api-keys", projectId] });
-      setNewKey({ key: data.key, name: data.name });
-      setKeyName("");
+      setCreatedKey({
+        id: data.id,
+        key: data.key,
+        prefix: data.prefix,
+        name: data.name ?? null,
+      });
+      setPostCreateName(data.name?.trim() ?? "");
+    },
+  });
+
+  const postCreateNameMutation = useMutation({
+    mutationFn: (name: string) => {
+      if (!createdKey) throw new Error("No key");
+      return updateApiKey(projectId, createdKey.id, { name });
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["api-keys", projectId] });
+      const next = updated.name?.trim() ?? "";
+      setCreatedKey((prev) =>
+        prev ? { ...prev, name: updated.name ?? null } : prev,
+      );
+      setPostCreateName(next);
+      toastSuccess("Display name saved");
+    },
+    onError: (err: unknown) => {
+      const detail =
+        err instanceof ApiError
+          ? formatApiErrorDetail(err.body) || err.message
+          : String(err);
+      toastError(detail || "Could not update name");
     },
   });
 
@@ -84,9 +150,21 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
     },
   });
 
-  const closeNewKeyDialog = () => {
-    setNewKey(null);
-  };
+  const revokeMutation = useMutation({
+    mutationFn: (keyId: string) => revokeApiKey(projectId, keyId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["api-keys", projectId] });
+      setRevokeTarget(null);
+      toastSuccess("API key revoked");
+    },
+    onError: (err: unknown) => {
+      const detail =
+        err instanceof ApiError
+          ? formatApiErrorDetail(err.body) || err.message
+          : String(err);
+      toastError(detail || "Could not revoke API key");
+    },
+  });
 
   const handleRenameSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -102,6 +180,19 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
       return;
     }
     renameMutation.mutate({ keyId: renameTarget.id, name: next });
+  };
+
+  const postCreateNameDirty =
+    createdKey != null &&
+    postCreateName.trim() !== (createdKey.name?.trim() ?? "");
+
+  const handleCreateSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (createDraftName.trim().length > API_KEY_NAME_MAX_LEN) {
+      toastError(`Name must be at most ${API_KEY_NAME_MAX_LEN} characters`);
+      return;
+    }
+    createMutation.mutate(createDraftName);
   };
 
   if (isLoading) {
@@ -120,28 +211,33 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
             For agents: call MCP tool <code className="font-mono text-xs">mycontext:catalog</code>{" "}
             first for a markdown overview of this project&apos;s tools, resources, and prompts.
           </p>
+          {mcpOAuthEnabled ? (
+            <p>
+              OAuth is also available on your MCP host for supported clients (see the{" "}
+              <strong className="font-medium text-foreground">Connect</strong> section on
+              Overview). API keys continue to work unchanged.
+            </p>
+          ) : null}
         </div>
-        <div className="flex w-full max-w-md flex-col gap-2 sm:flex-row">
-          <Input
-            value={keyName}
-            onChange={(event) => setKeyName(event.target.value)}
-            placeholder="Key name (optional)"
-            maxLength={64}
-          />
-          <Button
-            onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending}
-          >
-            <KeyIcon className="h-4 w-4" aria-hidden />
-            {createMutation.isPending ? "Creating..." : "Create Key"}
-          </Button>
-        </div>
+        <Button type="button" onClick={openCreateDialog} className="shrink-0 self-start sm:self-end">
+          <KeyIcon className="h-4 w-4" aria-hidden />
+          Create API key
+        </Button>
       </div>
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+        <input
+          type="checkbox"
+          className="accent-primary h-4 w-4 rounded border"
+          checked={showRevoked}
+          onChange={(e) => setShowRevoked(e.target.checked)}
+        />
+        Show revoked keys
+      </label>
       {keys && keys.length > 0 ? (
         <Table>
           <TableCaption className="sr-only">
             API keys for this project: display name, key prefix, status, usage
-            times, and rename action.
+            times, and actions.
           </TableCaption>
           <TableHeader>
             <TableRow>
@@ -174,19 +270,33 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
                     : "Never"}
                 </TableCell>
                 <TableCell className="text-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8"
-                    onClick={() => {
-                      setRenameName(key.name ?? "");
-                      setRenameTarget(key);
-                    }}
-                  >
-                    <PencilIcon className="mr-1 h-3.5 w-3.5" aria-hidden />
-                    Rename
-                  </Button>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      disabled={key.status !== "active"}
+                      onClick={() => {
+                        setRenameName(key.name ?? "");
+                        setRenameTarget(key);
+                      }}
+                    >
+                      <PencilIcon className="mr-1 h-3.5 w-3.5" aria-hidden />
+                      Rename
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      disabled={key.status !== "active"}
+                      onClick={() => setRevokeTarget(key)}
+                    >
+                      <BanIcon className="mr-1 h-3.5 w-3.5" aria-hidden />
+                      Revoke
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -194,75 +304,224 @@ export function ApiKeyManager({ projectId, mcpUrl, projectSlug }: ApiKeyManagerP
         </Table>
       ) : (
         <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-          No API keys yet. Create one to use the MCP endpoint.
+          <p>
+            {mcpOAuthEnabled
+              ? "No API keys to show here. Create one for Bearer auth, or use OAuth from the Connect section on Overview."
+              : "No API keys to show here. Create one to use the MCP endpoint."}
+          </p>
+          <p className="mt-2 text-sm">
+            If you revoked all keys, enable &quot;Show revoked keys&quot; above to
+            see them.
+          </p>
         </div>
       )}
-      <Dialog open={!!newKey} onOpenChange={(open) => !open && closeNewKeyDialog()}>
-        <DialogContent>
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            resetCreateDialog();
+          }
+        }}
+      >
+        <DialogContent className="max-h-[min(90vh,calc(100vh-2rem))] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>API Key Created</DialogTitle>
+            <DialogTitle>
+              {createdKey ? "API key created" : "Create API key"}
+            </DialogTitle>
             <DialogDescription>
-              Copy this key now. You won&apos;t be able to see it again.
+              {createdKey
+                ? "Copy the secret now. You will not be able to see it again. You can still adjust the display name below."
+                : "Add an optional label so you can recognize this key in the list. You can change it later."}
             </DialogDescription>
           </DialogHeader>
-          {newKey ? (
+          {!createdKey ? (
+            <form onSubmit={handleCreateSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="api-key-create-name">Name (optional)</Label>
+                <Input
+                  id="api-key-create-name"
+                  value={createDraftName}
+                  onChange={(e) => setCreateDraftName(e.target.value)}
+                  placeholder="e.g. Laptop / CI / Claude Desktop"
+                  maxLength={API_KEY_NAME_MAX_LEN}
+                  disabled={createMutation.isPending}
+                  autoFocus
+                />
+                <p className="text-muted-foreground text-xs">
+                  Shown only in this dashboard. Leave blank for an unnamed key.
+                </p>
+              </div>
+              {createMutation.isError ? (
+                <p className="text-destructive text-sm">
+                  {createMutation.error instanceof ApiError
+                    ? formatApiErrorDetail(createMutation.error.body) ||
+                      createMutation.error.message
+                    : String(createMutation.error)}
+                </p>
+              ) : null}
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetCreateDialog}
+                  disabled={createMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? "Generating…" : "Generate key"}
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : (
             <div className="space-y-4">
               <div className="space-y-2">
+                <Label htmlFor="api-key-post-create-name">Display name</Label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    id="api-key-post-create-name"
+                    value={postCreateName}
+                    onChange={(e) => setPostCreateName(e.target.value)}
+                    placeholder="Key name (optional)"
+                    maxLength={API_KEY_NAME_MAX_LEN}
+                    disabled={postCreateNameMutation.isPending}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={
+                      !postCreateNameDirty ||
+                      postCreateNameMutation.isPending ||
+                      postCreateName.trim().length > API_KEY_NAME_MAX_LEN
+                    }
+                    onClick={() => {
+                      if (postCreateName.trim().length > API_KEY_NAME_MAX_LEN) {
+                        toastError(
+                          `Name must be at most ${API_KEY_NAME_MAX_LEN} characters`,
+                        );
+                        return;
+                      }
+                      postCreateNameMutation.mutate(postCreateName);
+                    }}
+                  >
+                    {postCreateNameMutation.isPending ? "Saving…" : "Save name"}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">
-                    {getApiKeyDisplayName(newKey.name)}
-                  </p>
+                  <p className="text-sm font-medium">Secret</p>
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      void copyTextToClipboard(newKey.key, {
+                      void copyTextToClipboard(createdKey.key, {
                         success: "API key copied to clipboard",
                         error: "Could not copy API key",
                       })
                     }
                   >
                     <CopyIcon className="h-4 w-4" />
-                    Copy Key
+                    Copy key
                   </Button>
                 </div>
                 <div className="flex items-center gap-2 rounded-lg bg-muted p-4">
-                  <code className="flex-1 break-all font-mono text-sm">{newKey.key}</code>
+                  <code className="flex-1 break-all font-mono text-sm">
+                    {createdKey.key}
+                  </code>
                 </div>
               </div>
               {mcpUrl ? (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium">mcp.json Object</p>
+                    <p className="text-sm font-medium">mcp.json object</p>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() =>
                         void copyTextToClipboard(
-                          buildMcpJsonConfig(mcpUrl, newKey.key, { projectSlug }),
+                          buildMcpJsonConfig(mcpUrl, createdKey.key, {
+                            projectSlug,
+                          }),
                           {
                             success: "mcp.json object copied to clipboard",
                             error: "Could not copy mcp.json object",
-                          }
+                          },
                         )
                       }
                     >
                       <CopyIcon className="h-4 w-4" />
-                      Copy mcp.json Object
+                      Copy mcp.json object
                     </Button>
                   </div>
-                  <pre className="bg-muted overflow-auto rounded-lg p-4 text-xs leading-relaxed">
-                    {buildMcpJsonConfig(mcpUrl, newKey.key, { projectSlug })}
+                  <pre className="bg-muted max-h-48 overflow-auto rounded-lg p-4 text-xs leading-relaxed">
+                    {buildMcpJsonConfig(mcpUrl, createdKey.key, { projectSlug })}
                   </pre>
                 </div>
               ) : (
                 <p className="text-muted-foreground text-sm">
-                  The `mcp.json` snippet will be available once this project has an
+                  The mcp.json snippet will be available once this project has an
                   MCP URL.
                 </p>
               )}
+              <DialogFooter>
+                <Button type="button" onClick={resetCreateDialog}>
+                  Done
+                </Button>
+              </DialogFooter>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={revokeTarget != null}
+        onOpenChange={(open) => !open && setRevokeTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Revoke API key</DialogTitle>
+            <DialogDescription>
+              This cannot be undone. MCP clients using this key will stop working
+              immediately.
+            </DialogDescription>
+          </DialogHeader>
+          {revokeTarget ? (
+            <p className="text-sm">
+              Revoke{" "}
+              <span className="font-medium">
+                {getApiKeyDisplayName(revokeTarget.name)}
+              </span>{" "}
+              <span className="font-mono text-muted-foreground">
+                ({revokeTarget.key_prefix}…)
+              </span>
+              ?
+            </p>
           ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRevokeTarget(null)}
+              disabled={revokeMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={revokeMutation.isPending || !revokeTarget}
+              onClick={() => {
+                if (revokeTarget) {
+                  revokeMutation.mutate(revokeTarget.id);
+                }
+              }}
+            >
+              {revokeMutation.isPending ? "Revoking…" : "Revoke key"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

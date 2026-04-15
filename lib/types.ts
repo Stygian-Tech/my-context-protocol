@@ -13,6 +13,8 @@ export interface Project {
   active_release_id?: string | null;
   /** Full MCP endpoint URL from the API (scheme + host + path). */
   mcp_url?: string | null;
+  /** True when the API has MCP OAuth enabled (`MCP_OAUTH_ENABLED`); MCP host serves discovery and token endpoints. */
+  mcp_oauth_enabled?: boolean;
 }
 
 export interface RepoConnection {
@@ -85,6 +87,8 @@ export interface ProjectCatalog {
   release_id?: string | null;
   release_status?: string | null;
   mcp_url?: string | null;
+  /** Same flag as `Project.mcp_oauth_enabled` for dashboard MCP instructions. */
+  mcp_oauth_enabled?: boolean;
   /** Same markdown returned by MCP `tools/call` for `mycontext:catalog`. */
   catalog_markdown: string;
   /** Auto-generated catalog from the active release (ignores custom override). Omitted on older API responses. */

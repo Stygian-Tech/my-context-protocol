@@ -197,9 +197,14 @@ export async function updateCompiledSkill(
   );
 }
 
-export async function fetchApiKeys(projectId: string): Promise<ApiKey[]> {
+export async function fetchApiKeys(
+  projectId: string,
+  options?: { includeRevoked?: boolean }
+): Promise<ApiKey[]> {
+  const q =
+    options?.includeRevoked === true ? "?include_revoked=true" : "";
   const response = await api.get<ApiKey[] | { api_keys: ApiKey[] }>(
-    `/projects/${projectId}/api-keys`
+    `/projects/${projectId}/api-keys${q}`
   );
   if (Array.isArray(response)) return response;
   return response.api_keys ?? [];
@@ -208,8 +213,8 @@ export async function fetchApiKeys(projectId: string): Promise<ApiKey[]> {
 export async function createApiKey(
   projectId: string,
   data?: { name?: string | null }
-): Promise<{ key: string; prefix: string; name?: string | null }> {
-  return api.post<{ key: string; prefix: string; name?: string | null }>(
+): Promise<{ id: string; key: string; prefix: string; name?: string | null }> {
+  return api.post<{ id: string; key: string; prefix: string; name?: string | null }>(
     `/projects/${projectId}/api-keys`,
     data ?? {}
   );
@@ -221,6 +226,11 @@ export async function updateApiKey(
   body: { name: string }
 ): Promise<ApiKey> {
   return api.patch<ApiKey>(`/projects/${projectId}/api-keys/${keyId}`, body);
+}
+
+/** Permanently revokes the key (soft-delete on the server). */
+export async function revokeApiKey(projectId: string, keyId: string): Promise<void> {
+  await api.delete(`/projects/${projectId}/api-keys/${keyId}`);
 }
 
 export async function fetchRequestLogs(

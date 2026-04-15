@@ -227,8 +227,10 @@ POST /projects/:id/releases/:releaseId/activate
 **Request**
 
 ```
-GET /projects/:id/api-keys
+GET /projects/:id/api-keys?include_revoked=<bool>
 ```
+
+- `include_revoked` (optional): When `true`, the response includes keys whose `status` is not `active` (e.g. `revoked`). When omitted or `false`, only **active** keys are returned (default dashboard behavior).
 
 **Response:** Either:
 
@@ -243,21 +245,65 @@ GET /projects/:id/api-keys
 
 ```
 POST /projects/:id/api-keys
+Content-Type: application/json
+
+{
+  "name": "string | optional"
+}
 ```
 
-No request body.
+- `name`: Optional dashboard label (may be omitted or empty).
 
 **Response:** JSON body:
 
 ```json
 {
+  "id": "string",
   "key": "string",
-  "prefix": "string"
+  "prefix": "string",
+  "name": "string | null | undefined"
 }
 ```
 
+- `id`: API key row id (rename/revoke paths).
 - `key`: Full API key (shown once to the user).
 - `prefix`: Key prefix for display (e.g. `mcp_abc123...`).
+- `name`: Normalized name if one was provided.
+
+---
+
+### Rename API key
+
+**Request**
+
+```
+PATCH /projects/:id/api-keys/:keyId
+Content-Type: application/json
+
+{
+  "name": "string"
+}
+```
+
+- Renaming is only allowed while the key is **active**. **`409 Conflict`** if the key is revoked.
+
+**Response:** `ApiKey` object (same shape as list items).
+
+---
+
+### Revoke API key
+
+**Request**
+
+```
+DELETE /projects/:id/api-keys/:keyId
+```
+
+- Soft-revokes the key: it remains stored with `status: "revoked"` but **must not** authenticate MCP requests.
+- Idempotent: repeating `DELETE` on an already-revoked key still succeeds (`204`).
+- **Browser clients** must send a valid `Origin` or `Referer` for this mutating request (same as other `POST`/`PATCH`/`DELETE` dashboard calls).
+
+**Response:** `204 No Content`
 
 ---
 
@@ -303,9 +349,20 @@ Use these shapes for request/response bodies.
   "name": "string",
   "slug": "string",
   "subdomain": "string",
-  "created_at": "string"
+  "created_at": "string",
+  "custom_domain": "string | null | undefined",
+  "custom_domain_verified_at": "string | null | undefined",
+  "active_release_id": "string | null | undefined",
+  "mcp_url": "string | null | undefined",
+  "mcp_oauth_enabled": "boolean"
 }
 ```
+
+- `mcp_oauth_enabled`: `true` when the API has `MCP_OAUTH_ENABLED` set; the tenant MCP host then exposes OAuth discovery and token endpoints alongside API-key auth.
+
+### Project catalog (`GET /projects/:id/catalog`)
+
+Dashboard-only aggregate of the active release MCP surface plus catalog markdown. Response includes the same `mcp_url` and `mcp_oauth_enabled` as `GET /projects/:id`, plus `catalog_markdown`, `tools`, `resources`, and `prompts`.
 
 ### RepoConnection
 
@@ -340,12 +397,15 @@ Use these shapes for request/response bodies.
 {
   "id": "string",
   "project_id": "string",
+  "name": "string | null | undefined",
   "key_prefix": "string",
   "status": "string",
   "created_at": "string",
   "last_used_at": "string | null | undefined"
 }
 ```
+
+- `status`: Typically `active` or `revoked` (only `active` keys authenticate MCP).
 
 ### RequestLog
 
@@ -384,12 +444,16 @@ Use these shapes for request/response bodies.
 | POST | `/auth/logout` | Yes | Logout |
 | GET | `/projects` | Yes | List projects |
 | GET | `/projects/:id` | Yes | Get project |
+| GET | `/projects/:id/catalog` | Yes | MCP catalog + markdown for dashboard |
+| PATCH | `/projects/:id/catalog-markdown` | Yes | Custom `mycontext:catalog` body |
 | POST | `/projects` | Yes | Create project |
 | GET | `/projects/:id/repo-connection` | Yes | Get repo connection |
 | POST | `/projects/:id/connect-repo` | Yes | Connect repo |
 | POST | `/projects/:id/sync` | Yes | Trigger sync |
 | GET | `/projects/:id/releases` | Yes | List releases |
 | POST | `/projects/:id/releases/:releaseId/activate` | Yes | Activate release |
-| GET | `/projects/:id/api-keys` | Yes | List API keys |
+| GET | `/projects/:id/api-keys` | Yes | List API keys (`include_revoked` optional) |
 | POST | `/projects/:id/api-keys` | Yes | Create API key |
+| PATCH | `/projects/:id/api-keys/:keyId` | Yes | Rename API key (active only) |
+| DELETE | `/projects/:id/api-keys/:keyId` | Yes | Revoke API key (soft) |
 | GET | `/projects/:id/request-logs` | Yes | List request logs |

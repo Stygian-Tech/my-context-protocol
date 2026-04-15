@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { get, post, patch } = vi.hoisted(() => ({
+const { get, post, patch, deleteFn } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
+  deleteFn: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
-  api: { get, post, patch, put: vi.fn(), delete: vi.fn() },
+  api: { get, post, patch, put: vi.fn(), delete: deleteFn },
   ApiError: class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) {
@@ -42,6 +43,7 @@ import {
   setProjectCustomDomain,
   triggerSync,
   updateApiKey,
+  revokeApiKey,
   updateCompiledSkill,
   updateProjectCatalogMarkdown,
   verifyProjectCustomDomain,
@@ -51,6 +53,7 @@ afterEach(() => {
   get.mockReset();
   post.mockReset();
   patch.mockReset();
+  deleteFn.mockReset();
 });
 
 describe("projects-api", () => {
@@ -209,6 +212,14 @@ describe("projects-api", () => {
     expect(patch).toHaveBeenCalledWith("/projects/pid/api-keys/kid", {
       name: "Renamed",
     });
+
+    get.mockResolvedValueOnce([{ id: "k3" }]);
+    await fetchApiKeys("pid", { includeRevoked: true });
+    expect(get).toHaveBeenCalledWith("/projects/pid/api-keys?include_revoked=true");
+
+    deleteFn.mockResolvedValueOnce(undefined);
+    await revokeApiKey("pid", "kid");
+    expect(deleteFn).toHaveBeenCalledWith("/projects/pid/api-keys/kid");
 
     get.mockResolvedValueOnce({});
     expect(await fetchApiKeys("pid")).toEqual([]);

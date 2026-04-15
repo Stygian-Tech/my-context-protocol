@@ -31,9 +31,14 @@ export function ProjectCard({ project, onRequestRename }: ProjectCardProps) {
         <Card className="@container/project-card h-full cursor-context-menu transition-colors hover:bg-muted/50">
           <CardHeader className="shrink-0 flex flex-col items-start gap-2 pb-2 @sm/project-card:flex-row @sm/project-card:items-center @sm/project-card:justify-between @sm/project-card:gap-3">
             <h3 className="min-w-0 font-semibold">{project.name}</h3>
-            <Badge variant="secondary" className="shrink-0">
-              {project.slug}
-            </Badge>
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              <Badge variant="secondary">{project.slug}</Badge>
+              {project.mcp_oauth_enabled ? (
+                <Badge variant="outline" className="text-xs font-normal">
+                  MCP OAuth
+                </Badge>
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col">
             <p className="text-muted-foreground mt-auto font-mono text-xs break-all">
