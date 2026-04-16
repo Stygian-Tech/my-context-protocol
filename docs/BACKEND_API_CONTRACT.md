@@ -445,7 +445,7 @@ Dashboard-only aggregate of the active release MCP surface plus catalog markdown
 | GET | `/projects` | Yes | List projects |
 | GET | `/projects/:id` | Yes | Get project |
 | GET | `/projects/:id/catalog` | Yes | MCP catalog + markdown for dashboard |
-| PATCH | `/projects/:id/catalog-markdown` | Yes | Custom `mycontext:catalog` body |
+| PATCH | `/projects/:id/catalog-markdown` | Yes | Custom `mycontext_catalog` body |
 | POST | `/projects` | Yes | Create project |
 | GET | `/projects/:id/repo-connection` | Yes | Get repo connection |
 | POST | `/projects/:id/connect-repo` | Yes | Connect repo |

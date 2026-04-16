@@ -24,6 +24,7 @@ import { copyTextToClipboard, mcpEventsUrl } from "@/lib/clipboard";
 import { pluralEn } from "@/lib/pluralize";
 import { MarkdownPreview } from "@/components/dashboard/markdown-preview";
 import { glassSurfaceClasses } from "@/lib/glass";
+import { MYCONTEXT_CATALOG_TOOL_NAME } from "@/lib/mcp-tool-names";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -33,9 +34,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
-/** MCP synthetic discovery tool; matches backend `MCPConstants.catalogToolName`. */
-const MYCONTEXT_CATALOG_TOOL = "mycontext:catalog";
 
 function mcpHostOrigin(mcpUrl: string): string | null {
   try {
@@ -200,7 +198,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
           websiteUrl: "https://your-app.example.com/projects/<project-id>",
         },
         instructions:
-          "You are connected to MyContextProtocol…\nDiscovery: call tool `mycontext:catalog` first…",
+          "You are connected to MyContextProtocol…\nDiscovery: call tool `mycontext_catalog` first…",
       },
     },
     null,
@@ -225,7 +223,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
       id: 2,
       method: "tools/call",
       params: {
-        name: MYCONTEXT_CATALOG_TOOL,
+        name: MYCONTEXT_CATALOG_TOOL_NAME,
         arguments: {},
       },
     },
@@ -234,10 +232,10 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
   );
 
   const skillTools = data.tools.filter(
-    (t) => t.name !== MYCONTEXT_CATALOG_TOOL,
+    (t) => t.name !== MYCONTEXT_CATALOG_TOOL_NAME,
   );
   const catalogToolRow = data.tools.find(
-    (t) => t.name === MYCONTEXT_CATALOG_TOOL,
+    (t) => t.name === MYCONTEXT_CATALOG_TOOL_NAME,
   );
   const totalCapabilities =
     skillTools.length + data.resources.length + data.prompts.length;
@@ -273,7 +271,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
           </h2>
           <p className="text-sm text-muted-foreground">
             Markdown returned by{" "}
-            <code className="font-mono text-xs">{MYCONTEXT_CATALOG_TOOL}</code>{" "}
+            <code className="font-mono text-xs">{MYCONTEXT_CATALOG_TOOL_NAME}</code>{" "}
             for this project&apos;s{" "}
             <span className="font-medium text-foreground">active release</span>.
             It is built from the release unless you save a custom override in
@@ -292,7 +290,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             {data.release_status ? ` · status: ${data.release_status}` : ""}
             {totalCapabilities === 0
               ? " · no skill capabilities in this release (check skill exposure types in compiled skills)."
-              : ` · ${totalCapabilities} ${pluralEn(totalCapabilities, "skill capability", "skill capabilities")} (plus discovery tool ${MYCONTEXT_CATALOG_TOOL}).`}
+              : ` · ${totalCapabilities} ${pluralEn(totalCapabilities, "skill capability", "skill capabilities")} (plus discovery tool ${MYCONTEXT_CATALOG_TOOL_NAME}).`}
           </p>
         )}
 
@@ -312,7 +310,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             </div>
             <p className="text-muted-foreground text-xs leading-relaxed">
               This is the markdown returned by{" "}
-              <code className="font-mono">{MYCONTEXT_CATALOG_TOOL}</code>. By
+              <code className="font-mono">{MYCONTEXT_CATALOG_TOOL_NAME}</code>. By
               default it is built from the active release; you can replace it
               with your own text (for example a shorter onboarding blurb).
               Saving text identical to the auto-generated catalog clears the
@@ -373,7 +371,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
               <DialogDescription>
                 Markdown returned by{" "}
                 <code className="font-mono text-xs">
-                  {MYCONTEXT_CATALOG_TOOL}
+                  {MYCONTEXT_CATALOG_TOOL_NAME}
                 </code>
                 . Saving text identical to the auto-generated catalog clears the
                 custom override.
@@ -531,7 +529,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
           <li>
             Call <code className="font-mono text-xs">initialize</code>, then{" "}
             <code className="font-mono text-xs">tools/list</code> (includes{" "}
-            <code className="font-mono text-xs">{MYCONTEXT_CATALOG_TOOL}</code>
+            <code className="font-mono text-xs">{MYCONTEXT_CATALOG_TOOL_NAME}</code>
             ), <code className="font-mono text-xs">resources/list</code>, or{" "}
             <code className="font-mono text-xs">prompts/list</code>. Use{" "}
             <strong className="font-medium text-foreground">
@@ -692,15 +690,15 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
               <code className="font-mono text-xs">tools/call</code> with tool
               name{" "}
               <code className="font-mono text-xs">
-                {MYCONTEXT_CATALOG_TOOL}
+                {MYCONTEXT_CATALOG_TOOL_NAME}
               </code>{" "}
               to get a markdown map of skill tools, resources, and prompts
               (routing hints, URIs, and when to use each). That steers how the
               agent accesses the rest of this project without guessing from{" "}
               <code className="font-mono text-xs">tools/list</code> alone. Any{" "}
               <code className="font-mono text-xs">detail</code> argument is
-              ignored for this tool (it is only used for{" "}
-              <code className="font-mono text-xs">skill:</code> tools).
+              ignored for this tool (it is only used for other compiled skill
+              tools).
             </p>
             {catalogToolRow?.description ? (
               <p className="text-muted-foreground text-xs leading-relaxed">
@@ -714,7 +712,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
               variant="outline"
               size="sm"
               onClick={() =>
-                void copyTextToClipboard(MYCONTEXT_CATALOG_TOOL, {
+                void copyTextToClipboard(MYCONTEXT_CATALOG_TOOL_NAME, {
                   success: "Tool name copied",
                   error: "Could not copy",
                 })
@@ -801,7 +799,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             <p className="text-muted-foreground text-sm">
               None from the active release yet. The discovery tool{" "}
               <code className="font-mono text-xs">
-                {MYCONTEXT_CATALOG_TOOL}
+                {MYCONTEXT_CATALOG_TOOL_NAME}
               </code>{" "}
               is still listed above once you connect over MCP.
             </p>

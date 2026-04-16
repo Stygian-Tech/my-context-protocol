@@ -89,7 +89,7 @@ export interface ProjectCatalog {
   mcp_url?: string | null;
   /** Same flag as `Project.mcp_oauth_enabled` for dashboard MCP instructions. */
   mcp_oauth_enabled?: boolean;
-  /** Same markdown returned by MCP `tools/call` for `mycontext:catalog`. */
+  /** Same markdown returned by MCP `tools/call` for `mycontext_catalog`. */
   catalog_markdown: string;
   /** Auto-generated catalog from the active release (ignores custom override). Omitted on older API responses. */
   catalog_markdown_generated?: string;

@@ -34,6 +34,7 @@ import { BanIcon, CopyIcon, KeyIcon, PencilIcon } from "lucide-react";
 import { formatLocalDateTime } from "@/lib/format-local-time";
 import { buildMcpJsonConfig, copyTextToClipboard } from "@/lib/clipboard";
 import { getApiKeyDisplayName } from "@/lib/api-key-utils";
+import { MYCONTEXT_CATALOG_TOOL_NAME } from "@/lib/mcp-tool-names";
 import type { ApiKey } from "@/lib/types";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { toastError, toastSuccess } from "@/lib/toast";
@@ -208,7 +209,8 @@ export function ApiKeyManager({
             see the full key again.
           </p>
           <p>
-            For agents: call MCP tool <code className="font-mono text-xs">mycontext:catalog</code>{" "}
+            For agents: call MCP tool{" "}
+            <code className="font-mono text-xs">{MYCONTEXT_CATALOG_TOOL_NAME}</code>{" "}
             first for a markdown overview of this project&apos;s tools, resources, and prompts.
           </p>
           {mcpOAuthEnabled ? (
