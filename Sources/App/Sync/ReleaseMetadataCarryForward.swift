@@ -69,7 +69,7 @@ enum ReleaseMetadataCarryForward {
 
             let capType = newCS.exposureType == "guidance" ? "prompt" : newCS.exposureType
             if let oldCap = oldCS.capabilityDefs.first, let newCap = newCS.capabilityDefs.first {
-                newCap.capabilityName = "skill:\(newCS.name)"
+                newCap.capabilityName = MCPConstants.compiledCapabilityWireName(skillSlug: newCS.name)
                 newCap.type = capType
                 var mergedSchema = oldCap.schemaJson
                 if capType == "resource", let raw = mergedSchema,

@@ -211,7 +211,7 @@ struct ProjectCatalogResponse: Content {
     let mcp_url: String?
     /// Mirrors `ProjectResponse.mcp_oauth_enabled` for dashboard copy that references OAuth discovery on the MCP host.
     let mcp_oauth_enabled: Bool
-    /// Same markdown returned by MCP tool `mycontext:catalog` for this project (dashboard preview).
+    /// Same markdown returned by MCP tool `mycontext_catalog` for this project (dashboard preview).
     let catalog_markdown: String
     /// Auto-generated catalog for the active release (no custom override applied).
     let catalog_markdown_generated: String
@@ -233,7 +233,7 @@ struct ProjectCatalogResponse: Content {
     }
 }
 
-/// PATCH `/projects/:id/catalog-markdown` — set custom `mycontext:catalog` body; whitespace-only clears the override.
+/// PATCH `/projects/:id/catalog-markdown` — set custom `mycontext_catalog` body; whitespace-only clears the override.
 struct ProjectCatalogMarkdownPatch: Content {
     var markdown: String
 }

@@ -457,6 +457,9 @@ struct MCPController {
         guard let name = params?.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
             return try await serveRpcError(id: id, code: -32602, message: "Invalid params: missing name", req: req)
         }
+        if name.contains(":") {
+            return try await serveRpcError(id: id, code: -32602, message: "Prompt not found", req: req)
+        }
         req.logger.mcpTrace("mcp prompts/get name=\(name)")
         guard let releaseId = project.activeReleaseId else {
             return try await serveRpcError(id: id, code: -32602, message: "No active release", req: req)

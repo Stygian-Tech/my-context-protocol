@@ -24,7 +24,7 @@ struct Compiler {
                 hasDescription: parsed.description != nil && !parsed.description!.isEmpty
             )
 
-            let capabilityName = "skill:\(package.name)"
+            let capabilityName = MCPConstants.compiledCapabilityWireName(skillSlug: package.name)
             let capabilityType = exposureType == "guidance" ? "prompt" : exposureType
             let schemaJson: String?
             switch capabilityType {

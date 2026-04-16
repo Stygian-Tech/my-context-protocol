@@ -2,7 +2,7 @@ import Fluent
 import Foundation
 import Vapor
 
-/// Markdown snapshot of the MCP catalog for `mycontext:catalog` and related tooling.
+/// Markdown snapshot of the MCP catalog for the synthetic discovery tool and related tooling.
 enum McpCatalogMarkdown {
     private static let overrideMaxBytes = 512 * 1024
 
@@ -61,7 +61,7 @@ enum McpCatalogMarkdown {
         var lines: [String] = [
             "# MCP catalog",
             "",
-            "Synthetic tool `\(MCPConstants.catalogToolName)` lists this overview; compiled skills use the `skill:<name>` prefix.",
+            "Synthetic tool `\(MCPConstants.catalogToolName)` lists this overview; compiled tools and prompts use each skill’s package slug as its MCP name.",
             "",
         ]
 

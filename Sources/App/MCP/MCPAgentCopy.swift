@@ -35,7 +35,7 @@ enum MCPAgentCopy {
         var lines: [String] = [
             "You are connected to MyContextProtocol project \"\(projectName)\".",
             "Discovery: call tool `\(MCPConstants.catalogToolName)` first for a markdown overview of tools, resources, and prompts.",
-            "Capabilities use the `skill:<name>` prefix for tools compiled from SKILL.md packages.",
+            "Compiled tools and prompts use the SKILL.md package slug as the MCP name (no `skill:` prefix).",
             "Prefer tools for callable procedures; use resources for long markdown context (`resources/read` with `ctx://skill/...` URIs); prompts expose reusable guidance templates.",
         ]
         if let dash = projectDashboardURL, !dash.isEmpty {

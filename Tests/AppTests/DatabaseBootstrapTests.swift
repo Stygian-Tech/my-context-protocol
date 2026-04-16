@@ -7,6 +7,7 @@ import Testing
 struct DatabaseBootstrapTests {
     @Test("dev and prod require host, username, password, and database (port is optional)")
     func remoteRequiresAllDiscrete() throws {
+        try TestProcessEnvGate.runSync {
         let requiredKeys = ["DATABASE_HOST", "DATABASE_USERNAME", "DATABASE_PASSWORD", "DATABASE_NAME"]
         for missingKey in requiredKeys {
             var overrides: [String: String?] = [:]
@@ -25,10 +26,12 @@ struct DatabaseBootstrapTests {
                 }
             }
         }
+        }
     }
 
     @Test("dev and prod accept fully specified discrete fields")
     func remoteHappyPath() throws {
+        try TestProcessEnvGate.runSync {
         let (apply, restore) = temporaryEnv([
             "DATABASE_HOST": "db.example.test",
             "DATABASE_USERNAME": "appuser",
@@ -50,10 +53,12 @@ struct DatabaseBootstrapTests {
             let p = try DatabaseBootstrap.postgresDiscreteParameters(for: kind)
             #expect(p == expected)
         }
+        }
     }
 
     @Test("dev and prod default DATABASE_PORT to 5432 when unset")
     func remoteDefaultPort() throws {
+        try TestProcessEnvGate.runSync {
         let (apply, restore) = temporaryEnv([
             "DATABASE_HOST": "h",
             "DATABASE_USERNAME": "u",
@@ -66,10 +71,12 @@ struct DatabaseBootstrapTests {
 
         let p = try DatabaseBootstrap.postgresDiscreteParameters(for: .prod)
         #expect(p.port == 5432)
+        }
     }
 
     @Test("local uses localhost and vapor_* defaults when discrete vars are unset")
     func localDefaults() throws {
+        try TestProcessEnvGate.runSync {
         let (apply, restore) = temporaryEnv([
             "DATABASE_HOST": nil,
             "DATABASE_USERNAME": nil,
@@ -86,10 +93,12 @@ struct DatabaseBootstrapTests {
         #expect(p.password == "vapor_password")
         #expect(p.database == "vapor_database")
         #expect(p.port == 5432)
+        }
     }
 
     @Test("whitespace-only discrete values count as missing in dev/prod")
     func trimmedWhitespaceFails() throws {
+        try TestProcessEnvGate.runSync {
         let (apply, restore) = temporaryEnv([
             "DATABASE_HOST": " \t",
             "DATABASE_USERNAME": "u",
@@ -101,10 +110,12 @@ struct DatabaseBootstrapTests {
         #expect(throws: DatabaseBootstrapError.missingRemotePostgresConfiguration) {
             try DatabaseBootstrap.postgresDiscreteParameters(for: .prod)
         }
+        }
     }
 
     @Test("discrete helper does not read DATABASE_URL (configure must prefer URL first)")
     func discreteHelperIgnoresDatabaseUrl() throws {
+        try TestProcessEnvGate.runSync {
         let (apply, restore) = temporaryEnv([
             "DATABASE_URL": "postgres://x:y@example.com:5432/db",
             "DATABASE_HOST": "explicit.host",
@@ -116,6 +127,7 @@ struct DatabaseBootstrapTests {
         defer { restore() }
         let p = try DatabaseBootstrap.postgresDiscreteParameters(for: .prod)
         #expect(p.hostname == "explicit.host")
+        }
     }
 }
 

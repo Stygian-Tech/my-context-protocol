@@ -11,4 +11,5 @@ db.sqlite
 *.sqlite
 *.log
 .cursor/
+.worktrees/
 logs.txt

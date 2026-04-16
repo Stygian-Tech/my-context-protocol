@@ -290,7 +290,7 @@ struct ProjectController {
         )
     }
 
-    /// Set or clear custom markdown for MCP tool `mycontext:catalog` (empty / whitespace clears).
+    /// Set or clear custom markdown for MCP tool `mycontext_catalog` (empty / whitespace clears).
     static func updateCatalogMarkdown(req: Request) async throws -> ProjectCatalogMarkdownUpdateResponse {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
@@ -317,7 +317,7 @@ struct ProjectController {
         )
     }
 
-    /// Mirrors MCP `tools/list` synthetic row for `mycontext:catalog`.
+    /// Mirrors MCP `tools/list` synthetic row for `mycontext_catalog`.
     private static func dashboardSyntheticCatalogTool() -> ProjectCatalogTool {
         let schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
             description: "Returns a markdown overview of tools, resources, and prompts for this project.",

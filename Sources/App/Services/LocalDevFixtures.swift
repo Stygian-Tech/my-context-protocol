@@ -156,7 +156,7 @@ enum LocalDevFixtures {
             let capType = spec.exposure == "guidance" ? "prompt" : spec.exposure
             let cap = CapabilityDef(
                 compiledSkillId: csId,
-                capabilityName: "skill:\(spec.name)",
+                capabilityName: MCPConstants.compiledCapabilityWireName(skillSlug: spec.name),
                 type: capType,
                 schemaJson: "{}",
                 sideEffectLevel: "read"

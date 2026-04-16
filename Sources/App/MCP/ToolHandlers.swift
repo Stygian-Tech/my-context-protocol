@@ -6,13 +6,14 @@ struct ToolHandlers {
         if name == MCPConstants.catalogToolName {
             return try await McpCatalogMarkdown.build(db: db, projectId: projectId)
         }
-        if name.hasPrefix("skill:") {
-            return try await handleSkillTool(name: name, arguments: arguments, db: db, projectId: projectId)
+        // Legacy colon-prefixed names are no longer accepted on the wire.
+        if name.contains(":") {
+            throw ToolHandlerError.unknownTool(name: name)
         }
-        throw ToolHandlerError.unknownTool(name: name)
+        return try await handleCompiledTool(name: name, arguments: arguments, db: db, projectId: projectId)
     }
 
-    private static func handleSkillTool(name: String, arguments: [String: String], db: Database, projectId: UUID) async throws -> String {
+    private static func handleCompiledTool(name: String, arguments: [String: String], db: Database, projectId: UUID) async throws -> String {
         let project = try await Project.find(projectId, on: db)
         guard let releaseId = project?.activeReleaseId else {
             return "No active release"
@@ -31,6 +32,7 @@ struct ToolHandlers {
         guard let cap = try await CapabilityDef.query(on: db)
             .filter(\.$compiledSkill.$id ~~ compiledIds)
             .filter(\.$capabilityName == name)
+            .filter(\.$type == "tool")
             .with(\.$compiledSkill)
             .first() else {
             return "Skill not found: \(name)"

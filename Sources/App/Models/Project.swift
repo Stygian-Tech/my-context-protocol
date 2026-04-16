@@ -31,7 +31,7 @@ final class Project: Model, Content {
     @OptionalField(key: "active_release_id")
     var activeReleaseId: UUID?
 
-    /// When set (non-empty after trim), `mycontext:catalog` returns this markdown instead of the auto-generated catalog.
+    /// When set (non-empty after trim), the `mycontext_catalog` MCP tool returns this markdown instead of the auto-generated catalog.
     @OptionalField(key: "mcp_catalog_markdown_override")
     var mcpCatalogMarkdownOverride: String?
 

@@ -128,7 +128,7 @@ struct SyncPipeline {
                         : nil
                     let toolIndex = ToolIndex(
                         skillPackageId: skillPackage.id!,
-                        toolName: "skill:\(skill.name)",
+                        toolName: MCPConstants.compiledCapabilityWireName(skillSlug: skill.name),
                         schemaJson: indexSchema,
                         handlerType: "platform"
                     )

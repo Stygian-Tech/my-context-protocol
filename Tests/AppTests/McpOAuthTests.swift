@@ -154,7 +154,7 @@ private func withMcpOAuthApp(
     env: [String: String?],
     _ run: @Sendable @escaping (Application) async throws -> Void
 ) async throws {
-    try await TestProcessEnvGate.shared.run {
+    try await TestProcessEnvGate.run {
         let prev = AppEnvironment._testOverrideAppEnv
         AppEnvironment._testOverrideAppEnv = "local"
         let (apply, restore) = mcpOAuthTemporaryEnv(env)

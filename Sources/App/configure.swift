@@ -188,6 +188,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateMcpOauthPendingAuthorizations())
     app.migrations.add(CreateMcpOauthAuthorizationCodes())
     app.migrations.add(CreateMcpOauthAccessTokens())
+    app.migrations.add(StripLegacySkillPrefixFromMcpWireNames())
 
     try await app.autoMigrate()
 

@@ -1,16 +1,27 @@
 import Foundation
 
-/// Serializes tests that mutate `ProcessInfo.processInfo.environment` so parallel Swift Testing
-/// workers do not clobber each other (e.g. `MCP_OAUTH_ENABLED`).
+/// Serializes test bodies that mutate the libc / `ProcessInfo` environment (`setenv` / `unsetenv`)
+/// so parallel Swift Testing workers do not clobber each other's `Environment.get` reads.
 ///
-/// `NSLock` is unavailable from asynchronous contexts; an actor provides mutual exclusion for
-/// `async` test bodies without blocking an executor.
-actor TestProcessEnvGate {
-    static let shared = TestProcessEnvGate()
+/// **Why not an actor?** An `actor` serializes method entry, but `await` inside `run` suspends the
+/// actor, so another task can start a second `run` while the first test is mid-flight.
+enum TestProcessEnvGate {
+    private static let lock = NSLock()
 
-    func run<R: Sendable>(
+    /// Holds the lock for the entire async region, including awaits.
+    static func run<R: Sendable>(
         _ body: @Sendable () async throws -> R
     ) async rethrows -> R {
-        try await body()
+        lock.lock()
+        defer { lock.unlock() }
+        return try await body()
+    }
+
+    static func runSync<R: Sendable>(
+        _ body: @Sendable () throws -> R
+    ) rethrows -> R {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
     }
 }
