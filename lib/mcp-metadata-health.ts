@@ -38,6 +38,34 @@ export function metadataHealthTier(skill: CompiledSkill): McpMetadataHealthTier 
 }
 
 /**
+ * For {@link McpMetadataHealthTier} `yellow` skills, which editor fields drive the warning so we can outline them in the MCP metadata UI.
+ */
+export function mcpReviewHighlightFields(skill: CompiledSkill): McpMetadataFieldId[] {
+  if (metadataHealthTier(skill) !== "yellow") return [];
+
+  const fields: McpMetadataFieldId[] = [];
+  const add = (f: McpMetadataFieldId) => {
+    if (!fields.includes(f)) fields.push(f);
+  };
+
+  if (skill.status === "needs_review") add("status");
+  if (skill.yaml_frontmatter_present === false) add("skill_body");
+  if (!skill.skill_body?.trim()) add("skill_body");
+  if (skill.exposure_type === "resource") {
+    const hasRouting =
+      (skill.use_when?.length ?? 0) > 0 ||
+      (skill.avoid_when?.length ?? 0) > 0 ||
+      (skill.failure_modes?.length ?? 0) > 0;
+    if (!hasRouting) {
+      add("use_when");
+      add("avoid_when");
+      add("failure_modes");
+    }
+  }
+  return fields;
+}
+
+/**
  * Best field to scroll to for a skill in the blocking (red) tier.
  * Order matches {@link metadataHealthTier} red checks.
  */

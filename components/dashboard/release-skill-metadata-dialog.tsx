@@ -40,6 +40,7 @@ import {
 } from "@/lib/mcp-metadata-editor-validation";
 import {
   metadataHealthTier,
+  mcpReviewHighlightFields,
   type McpMetadataHealthTier,
 } from "@/lib/mcp-metadata-health";
 
@@ -47,8 +48,15 @@ import {
 const FIELD_ERROR_SURFACE =
   "rounded-md border border-destructive/50 bg-destructive/10 p-3";
 
+/** MCP review (yellow tier) — outlines fields that explain dashboard “needs review” warnings. */
+const FIELD_REVIEW_WARNING_SURFACE =
+  "rounded-md border border-amber-500/45 bg-amber-500/[0.12] p-3 dark:border-amber-500/35 dark:bg-amber-950/30";
+
 const INNER_CONTROL_ERROR =
   "!border-destructive/50 bg-destructive/5 dark:bg-destructive/10";
+
+const INNER_CONTROL_REVIEW_WARNING =
+  "!border-amber-500/55 bg-amber-500/[0.06] dark:!border-amber-500/40 dark:bg-amber-950/25";
 
 const EXPOSURE_TYPES = ["tool", "resource", "prompt"] as const;
 const RISK_LEVELS = ["low", "medium", "high"] as const;
@@ -277,6 +285,26 @@ function SkillEditorRow({
     return displayIssues.some((i) => i.field === field);
   }
 
+  const reviewFieldSet = useMemo(() => new Set(mcpReviewHighlightFields(skill)), [skill]);
+
+  function highlightReviewField(field: McpMetadataFieldId): boolean {
+    return reviewFieldSet.has(field) && !fieldInvalid(field);
+  }
+
+  function fieldShellClass(field: McpMetadataFieldId, base = "space-y-1.5"): string {
+    return cn(
+      base,
+      fieldInvalid(field) && FIELD_ERROR_SURFACE,
+      highlightReviewField(field) && FIELD_REVIEW_WARNING_SURFACE
+    );
+  }
+
+  function fieldControlClass(field: McpMetadataFieldId): string | undefined {
+    if (fieldInvalid(field)) return INNER_CONTROL_ERROR;
+    if (highlightReviewField(field)) return INNER_CONTROL_REVIEW_WARNING;
+    return undefined;
+  }
+
   const showSkillBodyPreview =
     skillBody.trim().length > 0 &&
     !fieldInvalid("skill_body") &&
@@ -389,6 +417,15 @@ function SkillEditorRow({
   return (
     <div className="space-y-3 rounded-lg border p-4">
       {headerBar}
+      {reviewFieldSet.size > 0 ? (
+        <p
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-snug text-amber-950 dark:text-amber-100"
+          role="note"
+        >
+          <span className="font-medium">MCP review suggested.</span> Amber outlines mark fields that triggered the
+          warning for this skill (for example missing body, YAML notice, or resource routing lists).
+        </p>
+      ) : null}
       {displayIssues.length > 0 ? (
         <div
           role="alert"
@@ -414,14 +451,12 @@ function SkillEditorRow({
         </div>
       ) : null}
       <div className="grid gap-3 lg:grid-cols-3">
-        <div
-          id={mcpMetadataFieldAnchorId(skill.id, "exposure_type")}
-          className={cn("space-y-1.5", fieldInvalid("exposure_type") && FIELD_ERROR_SURFACE)}
-        >
+        <div id={mcpMetadataFieldAnchorId(skill.id, "exposure_type")} className={fieldShellClass("exposure_type")}>
           <Label
             className={cn(
               "text-xs",
-              fieldInvalid("exposure_type") && "font-semibold text-destructive"
+              fieldInvalid("exposure_type") && "font-semibold text-destructive",
+              highlightReviewField("exposure_type") && "font-medium text-amber-900 dark:text-amber-200"
             )}
           >
             MCP exposure
@@ -439,7 +474,10 @@ function SkillEditorRow({
             }}
           >
             <SelectTrigger
-              className="h-9 w-full min-w-0 max-w-full sm:max-w-none"
+              className={cn(
+                "h-9 w-full min-w-0 max-w-full sm:max-w-none",
+                fieldControlClass("exposure_type")
+              )}
               aria-invalid={fieldInvalid("exposure_type")}
               aria-describedby={
                 firstIssueForField(displayIssues, "exposure_type")
@@ -458,12 +496,13 @@ function SkillEditorRow({
             </SelectContent>
           </Select>
         </div>
-        <div
-          id={mcpMetadataFieldAnchorId(skill.id, "risk_level")}
-          className={cn("space-y-1.5", fieldInvalid("risk_level") && FIELD_ERROR_SURFACE)}
-        >
+        <div id={mcpMetadataFieldAnchorId(skill.id, "risk_level")} className={fieldShellClass("risk_level")}>
           <Label
-            className={cn("text-xs", fieldInvalid("risk_level") && "font-semibold text-destructive")}
+            className={cn(
+              "text-xs",
+              fieldInvalid("risk_level") && "font-semibold text-destructive",
+              highlightReviewField("risk_level") && "font-medium text-amber-900 dark:text-amber-200"
+            )}
           >
             Risk
           </Label>
@@ -479,7 +518,10 @@ function SkillEditorRow({
             }}
           >
             <SelectTrigger
-              className="h-9 w-full min-w-0 max-w-full sm:max-w-none"
+              className={cn(
+                "h-9 w-full min-w-0 max-w-full sm:max-w-none",
+                fieldControlClass("risk_level")
+              )}
               aria-invalid={fieldInvalid("risk_level")}
               aria-describedby={
                 firstIssueForField(displayIssues, "risk_level") ? `${skill.id}-err-risk` : undefined
@@ -496,12 +538,13 @@ function SkillEditorRow({
             </SelectContent>
           </Select>
         </div>
-        <div
-          id={mcpMetadataFieldAnchorId(skill.id, "status")}
-          className={cn("space-y-1.5", fieldInvalid("status") && FIELD_ERROR_SURFACE)}
-        >
+        <div id={mcpMetadataFieldAnchorId(skill.id, "status")} className={fieldShellClass("status")}>
           <Label
-            className={cn("text-xs", fieldInvalid("status") && "font-semibold text-destructive")}
+            className={cn(
+              "text-xs",
+              fieldInvalid("status") && "font-semibold text-destructive",
+              highlightReviewField("status") && "font-medium text-amber-900 dark:text-amber-200"
+            )}
           >
             Publish status
           </Label>
@@ -517,7 +560,10 @@ function SkillEditorRow({
             }}
           >
             <SelectTrigger
-              className="h-9 w-full min-w-0 max-w-full sm:max-w-none"
+              className={cn(
+                "h-9 w-full min-w-0 max-w-full sm:max-w-none",
+                fieldControlClass("status")
+              )}
               aria-invalid={fieldInvalid("status")}
               aria-describedby={
                 firstIssueForField(displayIssues, "status") ? `${skill.id}-err-status` : undefined
@@ -543,7 +589,12 @@ function SkillEditorRow({
             fieldInvalid("failure_modes") ||
             fieldInvalid("invoke_first")
             ? "border-2 border-destructive bg-destructive/[0.1] ring-1 ring-destructive/30 dark:bg-destructive/[0.14]"
-            : "border border-dashed border-border"
+            : highlightReviewField("use_when") ||
+                highlightReviewField("avoid_when") ||
+                highlightReviewField("failure_modes") ||
+                highlightReviewField("invoke_first")
+              ? "border-2 border-amber-500/35 bg-amber-500/[0.06] ring-1 ring-amber-500/25 dark:border-amber-500/30 dark:bg-amber-950/15"
+              : "border border-dashed border-border"
         )}
       >
         <div>
@@ -557,12 +608,13 @@ function SkillEditorRow({
           </p>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          <div
-            id={mcpMetadataFieldAnchorId(skill.id, "use_when")}
-            className={cn("space-y-1.5", fieldInvalid("use_when") && FIELD_ERROR_SURFACE)}
-          >
+          <div id={mcpMetadataFieldAnchorId(skill.id, "use_when")} className={fieldShellClass("use_when")}>
             <Label
-              className={cn("text-xs", fieldInvalid("use_when") && "font-semibold text-destructive")}
+              className={cn(
+                "text-xs",
+                fieldInvalid("use_when") && "font-semibold text-destructive",
+                highlightReviewField("use_when") && "font-medium text-amber-900 dark:text-amber-200"
+              )}
             >
               use_when — Read When
             </Label>
@@ -586,18 +638,16 @@ function SkillEditorRow({
                 "w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
                 "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
                 "outline-none dark:bg-input/30",
-                fieldInvalid("use_when") && INNER_CONTROL_ERROR
+                fieldControlClass("use_when")
               )}
             />
           </div>
-          <div
-            id={mcpMetadataFieldAnchorId(skill.id, "avoid_when")}
-            className={cn("space-y-1.5", fieldInvalid("avoid_when") && FIELD_ERROR_SURFACE)}
-          >
+          <div id={mcpMetadataFieldAnchorId(skill.id, "avoid_when")} className={fieldShellClass("avoid_when")}>
             <Label
               className={cn(
                 "text-xs",
-                fieldInvalid("avoid_when") && "font-semibold text-destructive"
+                fieldInvalid("avoid_when") && "font-semibold text-destructive",
+                highlightReviewField("avoid_when") && "font-medium text-amber-900 dark:text-amber-200"
               )}
             >
               avoid_when — Skip When
@@ -624,19 +674,17 @@ function SkillEditorRow({
                 "w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
                 "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
                 "outline-none dark:bg-input/30",
-                fieldInvalid("avoid_when") && INNER_CONTROL_ERROR
+                fieldControlClass("avoid_when")
               )}
             />
           </div>
         </div>
-        <div
-          id={mcpMetadataFieldAnchorId(skill.id, "failure_modes")}
-          className={cn("space-y-1.5", fieldInvalid("failure_modes") && FIELD_ERROR_SURFACE)}
-        >
+        <div id={mcpMetadataFieldAnchorId(skill.id, "failure_modes")} className={fieldShellClass("failure_modes")}>
           <Label
             className={cn(
               "text-xs",
-              fieldInvalid("failure_modes") && "font-semibold text-destructive"
+              fieldInvalid("failure_modes") && "font-semibold text-destructive",
+              highlightReviewField("failure_modes") && "font-medium text-amber-900 dark:text-amber-200"
             )}
           >
             failure_modes — Fallbacks
@@ -663,16 +711,13 @@ function SkillEditorRow({
               "w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
               "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               "outline-none dark:bg-input/30",
-              fieldInvalid("failure_modes") && INNER_CONTROL_ERROR
+              fieldControlClass("failure_modes")
             )}
           />
         </div>
         <div
           id={mcpMetadataFieldAnchorId(skill.id, "invoke_first")}
-          className={cn(
-            "flex items-start gap-2 rounded-md",
-            fieldInvalid("invoke_first") && FIELD_ERROR_SURFACE
-          )}
+          className={fieldShellClass("invoke_first", "flex items-start gap-2 rounded-md")}
         >
           <input
             type="checkbox"
@@ -682,7 +727,11 @@ function SkillEditorRow({
               clearFieldIssue("invoke_first");
               setInvokeFirst(e.target.checked);
             }}
-            className="border-input text-primary focus-visible:ring-ring mt-0.5 h-4 w-4 rounded border shadow-xs focus-visible:ring-2 focus-visible:outline-none"
+            className={cn(
+              "border-input text-primary focus-visible:ring-ring mt-0.5 h-4 w-4 rounded border shadow-xs focus-visible:ring-2 focus-visible:outline-none",
+              highlightReviewField("invoke_first") &&
+                "border-amber-500/70 ring-1 ring-amber-500/40 dark:border-amber-500/50"
+            )}
           />
           <div className="min-w-0 flex-1">
             <FieldErrorHint
@@ -693,7 +742,8 @@ function SkillEditorRow({
               htmlFor={`invoke-first-${skill.id}`}
               className={cn(
                 "block w-full min-w-0 cursor-pointer text-left text-xs leading-relaxed font-normal",
-                fieldInvalid("invoke_first") && "text-destructive"
+                fieldInvalid("invoke_first") && "text-destructive",
+                highlightReviewField("invoke_first") && "font-medium text-amber-900 dark:text-amber-200"
               )}
             >
               <span className="font-mono font-semibold text-foreground">invoke_first</span>
@@ -714,14 +764,12 @@ function SkillEditorRow({
           </div>
         </div>
       </div>
-      <div
-        id={mcpMetadataFieldAnchorId(skill.id, "skill_body")}
-        className={cn("space-y-1.5", fieldInvalid("skill_body") && FIELD_ERROR_SURFACE)}
-      >
+      <div id={mcpMetadataFieldAnchorId(skill.id, "skill_body")} className={fieldShellClass("skill_body")}>
         <Label
           className={cn(
             "text-xs",
-            fieldInvalid("skill_body") && "font-semibold text-destructive"
+            fieldInvalid("skill_body") && "font-semibold text-destructive",
+            highlightReviewField("skill_body") && "font-medium text-amber-900 dark:text-amber-200"
           )}
         >
           Skill Body (Markdown From SKILL.md — MCP Tool/Resource/Prompt Content)
@@ -770,6 +818,7 @@ function SkillEditorRow({
               "max-h-[min(50vh,28rem)] w-full min-h-[140px] cursor-text overflow-y-auto rounded-lg border border-input bg-transparent px-2.5 py-2",
               "outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               "dark:bg-input/30",
+              fieldControlClass("skill_body")
             )}
           >
             <MarkdownPreview markdown={skillBody} />
@@ -796,17 +845,18 @@ function SkillEditorRow({
               "max-h-[min(50vh,28rem)] w-full min-h-[140px] resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs leading-relaxed",
               "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               "outline-none dark:bg-input/30",
-              fieldInvalid("skill_body") && INNER_CONTROL_ERROR
+              fieldControlClass("skill_body")
             )}
           />
         )}
       </div>
-      <div
-        id={mcpMetadataFieldAnchorId(skill.id, "summary")}
-        className={cn("space-y-1.5", fieldInvalid("summary") && FIELD_ERROR_SURFACE)}
-      >
+      <div id={mcpMetadataFieldAnchorId(skill.id, "summary")} className={fieldShellClass("summary")}>
         <Label
-          className={cn("text-xs", fieldInvalid("summary") && "font-semibold text-destructive")}
+          className={cn(
+            "text-xs",
+            fieldInvalid("summary") && "font-semibold text-destructive",
+            highlightReviewField("summary") && "font-medium text-amber-900 dark:text-amber-200"
+          )}
         >
           Summary (MCP metadata blurb)
         </Label>
@@ -829,19 +879,17 @@ function SkillEditorRow({
             "w-full min-h-[72px] rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm",
             "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             "outline-none dark:bg-input/30",
-            fieldInvalid("summary") && INNER_CONTROL_ERROR
+            fieldControlClass("summary")
           )}
         />
       </div>
-      <div
-        id={mcpMetadataFieldAnchorId(skill.id, "schema_json")}
-        className={cn("space-y-1.5", fieldInvalid("schema_json") && FIELD_ERROR_SURFACE)}
-      >
+      <div id={mcpMetadataFieldAnchorId(skill.id, "schema_json")} className={fieldShellClass("schema_json")}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Label
             className={cn(
               "text-xs font-normal",
-              fieldInvalid("schema_json") && "text-destructive"
+              fieldInvalid("schema_json") && "text-destructive",
+              highlightReviewField("schema_json") && "font-medium text-amber-900 dark:text-amber-200"
             )}
           >
             MCP capability JSON (input schema / metadata)
@@ -881,7 +929,7 @@ function SkillEditorRow({
             "max-h-[min(40vh,22rem)] w-full min-h-[120px] resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs",
             "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             "outline-none dark:bg-input/30",
-            fieldInvalid("schema_json") && INNER_CONTROL_ERROR
+            fieldControlClass("schema_json")
           )}
         />
         {schemaDirty ? (
