@@ -263,7 +263,8 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
             const mcBlock = release.mcp_metadata_blocking_skills ?? 0;
             const mcWarn = release.mcp_metadata_warning_skills ?? 0;
             const hasMcpMetadataIssues = mcBlock > 0 || mcWarn > 0;
-            const useTopErrorCell = Boolean(errSummary) || hasMcpMetadataIssues;
+            // Top-align only when content is tall or multi-part; warn-only MCP uses align-middle so the card centers in the row.
+            const useTopErrorCell = Boolean(errSummary) || mcBlock > 0;
             const bodyChanges = release.skill_body_changes_count ?? 0;
 
             return (
