@@ -181,6 +181,10 @@ func routes(_ app: Application) throws {
         try await McpOAuthController.token(req: req)
     }
 
+    McpRoutePath.registerPing(on: mcpIngress) { req in
+        try await McpPingController.handle(req: req)
+    }
+
     let mcpRoutes = mcpIngress.grouped(McpCredentialMiddleware())
     McpRoutePath.registerPost(on: mcpRoutes) { req in
         try await MCPController.handle(req: req)

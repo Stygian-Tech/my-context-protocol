@@ -38,6 +38,7 @@ struct BrowserOriginValidationMiddleware: AsyncMiddleware {
         if path.hasPrefix("/webhooks/") { return true }
         let mcpPath = "/" + McpRoutePath.pathComponents().joined(separator: "/")
         if path == mcpPath { return true }
+        if path == mcpPath + "/ping" { return true }
         if path.hasPrefix("/auth/github") { return true }
         if path == "/auth/github/callback" || path == "/auth/github/app/callback" { return true }
         if path == "/auth/confirm" { return true }

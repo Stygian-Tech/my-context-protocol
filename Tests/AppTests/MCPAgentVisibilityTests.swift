@@ -47,4 +47,9 @@ struct MCPAgentVisibilityTests {
         #expect(!(base + ["events"]).isEmpty)
         #expect((base + ["events"]).last == "events")
     }
+
+    @Test func pingPathSegments() {
+        let base = McpRoutePath.pathComponents()
+        #expect((base + ["ping"]).last == "ping")
+    }
 }

@@ -48,4 +48,25 @@ enum McpRoutePath {
         }
         group.on(.GET, "events", use: handler)
     }
+
+    /// Registers `GET`, `HEAD`, and `POST …/ping` under the same base path (unauthenticated liveness).
+    static func registerPing(
+        on builder: RoutesBuilder,
+        handler: @escaping @Sendable (Request) async throws -> Response
+    ) {
+        let segments = pathComponents()
+        guard !segments.isEmpty else {
+            builder.on(.GET, "mcp", "ping", use: handler)
+            builder.on(.HEAD, "mcp", "ping", use: handler)
+            builder.on(.POST, "mcp", "ping", body: .collect(maxSize: ByteCount(value: 16 * 1024)), use: handler)
+            return
+        }
+        var group: RoutesBuilder = builder
+        for seg in segments {
+            group = group.grouped(PathComponent(stringLiteral: seg))
+        }
+        group.on(.GET, "ping", use: handler)
+        group.on(.HEAD, "ping", use: handler)
+        group.on(.POST, "ping", body: .collect(maxSize: ByteCount(value: 16 * 1024)), use: handler)
+    }
 }
