@@ -317,12 +317,12 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                     useTopErrorCell ? "align-top" : "align-middle",
                   )}
                 >
-                  <div className="flex flex-col items-stretch gap-2 text-left">
+                  <div className="flex flex-col items-start gap-2 text-left">
                     {errSummary ? (
                       <button
                         type="button"
                         onClick={() => openValidationDialog(release)}
-                        className="group w-full rounded-md text-left transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+                        className="group w-full max-w-full rounded-md text-left transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <p className="text-muted-foreground line-clamp-2 text-sm leading-snug whitespace-pre-wrap break-words">
                           {errSummary}
@@ -335,7 +335,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                       <button
                         type="button"
                         onClick={() => openValidationDialog(release)}
-                        className="w-full text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
+                        className="text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
                       >
                         View Details
                       </button>
@@ -349,7 +349,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                               openMcpToFirstBlockingSkill(release.id)
                             }
                             className={cn(
-                              "w-full max-w-full rounded-md border px-2.5 py-2 text-left text-xs leading-snug transition-colors",
+                              "w-fit max-w-full rounded-md border px-2.5 py-2 text-left text-xs leading-snug transition-colors",
                               "border-destructive/50 bg-destructive/10 text-destructive",
                               "hover:bg-destructive/15 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                             )}
@@ -366,7 +366,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                           </button>
                         ) : null}
                         {mcBlock === 0 && mcWarn > 0 ? (
-                          <div className="w-full max-w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-left text-xs leading-snug text-amber-950 dark:text-amber-50">
+                          <div className="w-fit max-w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-left text-xs leading-snug text-amber-950 dark:text-amber-50">
                             <p className="font-medium text-amber-900 dark:text-amber-100">
                               {mcWarn} {pluralEn(mcWarn, "skill", "skills")}{" "}
                               need MCP review
@@ -395,45 +395,29 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                         Activate
                       </Button>
                     ) : null}
-                    <div className="flex w-full min-w-0 flex-col gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => {
-                          setMcpInitialFocus(null);
-                          setMetaReleaseId(release.id);
-                          setMetaOpen(true);
-                        }}
-                        aria-label={
-                          hasMcpMetadataIssues
-                            ? [
-                                "MCP Metadata",
-                                mcBlock > 0 ? `${mcBlock} blocking` : null,
-                                mcWarn > 0 ? `${mcWarn} warnings` : null,
-                              ]
-                                .filter(Boolean)
-                                .join(", ")
-                            : "MCP Metadata"
-                        }
-                      >
-                        MCP Metadata
-                      </Button>
-                      {mcWarn > 0 ? (
-                        <div className="flex w-full justify-end">
-                          <span
-                            className={cn(
-                              "inline-flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-md border px-1.5 text-xs font-medium leading-snug tabular-nums",
-                              "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-50",
-                            )}
-                            aria-hidden
-                            title={`${mcWarn} with warnings only`}
-                          >
-                            {mcWarn}
-                          </span>
-                        </div>
-                      ) : null}
-                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        setMcpInitialFocus(null);
+                        setMetaReleaseId(release.id);
+                        setMetaOpen(true);
+                      }}
+                      aria-label={
+                        hasMcpMetadataIssues
+                          ? [
+                              "MCP Metadata",
+                              mcBlock > 0 ? `${mcBlock} blocking` : null,
+                              mcWarn > 0 ? `${mcWarn} warnings` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(", ")
+                          : "MCP Metadata"
+                      }
+                    >
+                      MCP Metadata
+                    </Button>
                     {release.status === "failed" &&
                     !release.error_summary?.trim() ? (
                       <Button
