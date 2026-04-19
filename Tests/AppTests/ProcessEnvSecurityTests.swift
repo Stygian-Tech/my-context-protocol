@@ -4,12 +4,28 @@ import Vapor
 import VaporTesting
 @testable import App
 
-private func withIsolatedProcessEnv<R>(_ body: () async throws -> R) async rethrows -> R {
+private func withIsolatedProcessEnv<R: Sendable>(
+    _ body: @Sendable () async throws -> R
+) async rethrows -> R {
     try await TestProcessEnvGate.run { try await body() }
 }
 
-private func withIsolatedProcessEnv<R>(_ body: () throws -> R) rethrows -> R {
+private func withIsolatedProcessEnv<R: Sendable>(
+    _ body: @Sendable () async -> R
+) async -> R {
+    await TestProcessEnvGate.run { await body() }
+}
+
+private func withIsolatedProcessEnv<R: Sendable>(
+    _ body: @Sendable () throws -> R
+) rethrows -> R {
     try TestProcessEnvGate.runSync { try body() }
+}
+
+private func withIsolatedProcessEnv<R: Sendable>(
+    _ body: @Sendable () -> R
+) -> R {
+    TestProcessEnvGate.runSync { body() }
 }
 
 /// Serialized: mutates process environment and `AppEnvironment` test overrides (unsafe global state).
@@ -17,7 +33,7 @@ private func withIsolatedProcessEnv<R>(_ body: () throws -> R) rethrows -> R {
 struct ProcessEnvSecurityTests {
     @Test("AppEnvironment deploy kind and bypass flags")
     func deployAndBypass() async throws {
-        try await withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
         let prevEnv = AppEnvironment._testOverrideAppEnv
         let prevStrict = AppEnvironment._testOverrideStrict
         defer {
@@ -85,7 +101,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("normalizedBase prefers FRONTEND_URL and strips slashes")
     func normalizedBase() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "FRONTEND_URL": "https://app.test/",
                 "CORS_ORIGIN": "https://other.test",
@@ -98,7 +114,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("allowedOriginBases deduplicates trimmed bases")
     func allowedBasesDedup() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "FRONTEND_URL": "https://same/",
                 "CORS_ORIGIN": "https://same",
@@ -263,7 +279,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("loginErrorURL encodes query parameter")
     func loginErrorURL() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "FRONTEND_URL": "https://app.example.com/",
             ])
@@ -276,7 +292,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("McpRoutePath respects SAAS_MCP_PATH")
     func mcpRoutePathFromEnv() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "SAAS_MCP_PATH": "/v1/tools/mcp/",
             ])
@@ -381,7 +397,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("InternalProBypass matches login case-insensitively")
     func internalProLogins() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "INTERNAL_PRO_GITHUB_LOGINS": " Admin , user ",
             ])
@@ -395,7 +411,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("InternalProBypass matches github id list")
     func internalProIds() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "INTERNAL_PRO_GITHUB_IDS": "10, 20 ,bogus,30",
             ])
@@ -408,7 +424,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("Account hasProEntitlements via internal allowlist in production")
     func accountProInternalAllowlist() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "INTERNAL_PRO_GITHUB_LOGINS": "pro-user",
             ])
@@ -446,7 +462,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("TokenEncryption errors when key missing or ciphertext invalid")
     func tokenEncryptionErrors() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "ENCRYPTION_KEY": nil,
             ])
@@ -507,7 +523,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("SignedOAuthState rejects key when ENCRYPTION_KEY missing")
     func signedOAuthNoKey() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "ENCRYPTION_KEY": nil,
             ])
@@ -558,7 +574,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("McpUrlBuilder uses subdomain and env domain")
     func mcpUrlSubdomain() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "SAAS_MCP_BASE_DOMAIN": "https://EXAMPLE.dev/",
                 "SAAS_MCP_PATH": "/v1/mcp",
@@ -574,7 +590,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("McpUrlBuilder prefers verified custom domain")
     func mcpUrlCustomDomain() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "SAAS_MCP_PATH": "/mcp",
                 "SAAS_MCP_URL_SCHEME": "https",
@@ -596,7 +612,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("McpUrlBuilder returns nil without subdomain or domain config")
     func mcpUrlNil() throws {
-        try withIsolatedProcessEnv {
+        withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "SAAS_MCP_BASE_DOMAIN": "",
                 "SAAS_MCP_PATH": "/mcp",

@@ -7,7 +7,7 @@ import Testing
 struct DatabaseBootstrapTests {
     @Test("dev and prod require host, username, password, and database (port is optional)")
     func remoteRequiresAllDiscrete() throws {
-        try TestProcessEnvGate.runSync {
+        TestProcessEnvGate.runSync {
         let requiredKeys = ["DATABASE_HOST", "DATABASE_USERNAME", "DATABASE_PASSWORD", "DATABASE_NAME"]
         for missingKey in requiredKeys {
             var overrides: [String: String?] = [:]
@@ -98,7 +98,7 @@ struct DatabaseBootstrapTests {
 
     @Test("whitespace-only discrete values count as missing in dev/prod")
     func trimmedWhitespaceFails() throws {
-        try TestProcessEnvGate.runSync {
+        TestProcessEnvGate.runSync {
         let (apply, restore) = temporaryEnv([
             "DATABASE_HOST": " \t",
             "DATABASE_USERNAME": "u",
