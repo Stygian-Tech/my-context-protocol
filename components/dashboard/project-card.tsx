@@ -20,7 +20,7 @@ export function ProjectCard({ project, onRequestRename }: ProjectCardProps) {
   return (
     <ContextMenu>
       <ContextMenuTrigger
-        title="Right-click for actions"
+        title="Right-Click for Actions"
         render={
           <Link
             href={`/projects/${project.id}`}
@@ -53,7 +53,7 @@ export function ProjectCard({ project, onRequestRename }: ProjectCardProps) {
             onRequestRename?.();
           }}
         >
-          Edit name
+          Edit Name
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

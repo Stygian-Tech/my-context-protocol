@@ -198,7 +198,7 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-dashed p-3 text-sm">
-        <span className="text-muted-foreground">Active release </span>
+        <span className="text-muted-foreground">Active Release </span>
         {data.active_release_id ? (
           <>
             <span className="font-mono font-medium">{shortSha(data.active_commit_sha)}</span>
@@ -210,7 +210,7 @@ export function ProjectOverviewMetrics({ projectId }: { projectId: string }) {
             ) : null}
           </>
         ) : (
-          <span className="text-muted-foreground">— none activated</span>
+          <span className="text-muted-foreground">— None Activated</span>
         )}
         <span className="text-muted-foreground">
           {" "}

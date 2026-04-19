@@ -45,7 +45,7 @@ export function RenameProjectDialog({
       queryClient.setQueryData(["project", updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       onOpenChange(false);
-      toastSuccess("Project name updated");
+      toastSuccess("Project Name Updated");
     },
     onError: (err: unknown) => {
       const detail =
@@ -79,7 +79,7 @@ export function RenameProjectDialog({
     <Dialog open={open && project != null} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rename project</DialogTitle>
+          <DialogTitle>Rename Project</DialogTitle>
           <DialogDescription>
             Update the display name. The project slug and URLs stay the same.
           </DialogDescription>

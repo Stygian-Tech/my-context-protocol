@@ -1033,7 +1033,7 @@ export function ReleaseSkillMetadataDialog({
           </div>
         ) : null}
         {!releaseId ? (
-          <p className="text-muted-foreground text-sm">No release selected.</p>
+          <p className="text-muted-foreground text-sm">No Release Selected</p>
         ) : isLoading ? (
           <Skeleton className="h-40" />
         ) : error ? (
@@ -1094,7 +1094,7 @@ export function ReleaseSkillMetadataDialog({
             </ul>
           )
         ) : (
-          <p className="text-muted-foreground text-sm">No compiled skills for this release.</p>
+          <p className="text-muted-foreground text-sm">No Compiled Skills for This Release</p>
         )}
       </DialogContent>
     </Dialog>

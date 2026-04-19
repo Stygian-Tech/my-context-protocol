@@ -21,14 +21,14 @@ export default function Error({
       role="alert"
     >
       <h2 id="app-error-heading" className="text-xl font-semibold">
-        Something went wrong
+        Something Went Wrong
       </h2>
       <p className="text-muted-foreground text-center">
         An unexpected error occurred. You can try again or return to the
         dashboard.
       </p>
       <div className="flex gap-2">
-        <Button onClick={() => reset()}>Try again</Button>
+        <Button onClick={() => reset()}>Try Again</Button>
         <Button variant="outline" onClick={() => (window.location.href = "/")}>
           Go to Dashboard
         </Button>

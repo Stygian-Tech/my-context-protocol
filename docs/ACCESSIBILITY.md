@@ -25,7 +25,7 @@ This document tracks the screen-reader-focused baseline for the dashboard app an
 
 ## Manual screen reader smoke checklist
 
-1. From cold load on `/login`, press Tab once — hear “Skip to main content”; activate and confirm focus moves to main content.
+1. From cold load on `/login`, press Tab once — hear “Skip to Main Content”; activate and confirm focus moves to main content.
 2. Sign in (or use existing session); confirm sidebar is announced as navigation and primary items are reachable.
 3. Open the header avatar menu — trigger has an accessible name including who is signed in.
 4. Trigger a toast (e.g. copy URL) — message is announced.

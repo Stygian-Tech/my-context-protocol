@@ -64,7 +64,7 @@ export default function AccountPage() {
             <div className="min-w-0 flex-1 space-y-1">
               <CardTitle className="flex flex-wrap items-center gap-2 text-xl">
                 <UserIcon className="text-muted-foreground size-5 shrink-0" />
-                <span className="truncate">{user.login ?? "GitHub user"}</span>
+                <span className="truncate">{user.login ?? "GitHub User"}</span>
                 {internalBypass && (
                   <Badge variant="secondary" className="gap-1 font-normal">
                     <ShieldCheckIcon className="size-3" />
@@ -82,7 +82,7 @@ export default function AccountPage() {
                   rel="noopener noreferrer"
                   className="text-primary inline-flex items-center gap-1 text-sm font-medium hover:underline"
                 >
-                  View GitHub profile
+                  View GitHub Profile
                   <ExternalLinkIcon className="size-3.5" />
                 </a>
               )}
@@ -138,7 +138,7 @@ export default function AccountPage() {
                 href="/billing"
                 className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
               >
-                Manage billing
+                Manage Billing
               </Link>
             ) : null}
           </div>
@@ -155,7 +155,7 @@ export default function AccountPage() {
         <CardContent>
           <Button variant="outline" onClick={() => logout()} className="gap-2">
             <LogOutIcon className="size-4" />
-            Sign out
+            Sign Out
           </Button>
         </CardContent>
       </Card>

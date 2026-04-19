@@ -41,7 +41,7 @@ export function ReleaseBodyChangesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[min(90vh,720px)] w-[min(100vw-2rem,56rem)] max-w-[min(100vw-2rem,56rem)] gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b px-6 py-4">
-          <DialogTitle>SKILL body changes</DialogTitle>
+          <DialogTitle>SKILL Body Changes</DialogTitle>
           <DialogDescription className="text-pretty">
             Unified diff vs. the prior release for each skill whose SKILL.md body changed in release{" "}
             <span className="font-mono font-medium text-foreground">{releaseLabel}</span>. Lines

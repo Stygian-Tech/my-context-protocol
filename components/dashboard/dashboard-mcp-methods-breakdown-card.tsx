@@ -26,7 +26,7 @@ export function DashboardMcpMethodsBreakdownCard({
         )}
       >
         {methods.length === 0 ? (
-          <li className="text-muted-foreground">No traffic in sample window.</li>
+          <li className="text-muted-foreground">No Traffic in Sample Window</li>
         ) : (
           methods.map((row) => (
             <li

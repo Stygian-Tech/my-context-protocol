@@ -118,8 +118,8 @@ export function CustomDomainSection({ projectId }: CustomDomainSectionProps) {
             {setMutation.isPending
               ? "Saving…"
               : data.hostname
-                ? "Update hostname"
-                : "Save hostname"}
+                ? "Update Hostname"
+                : "Save Hostname"}
           </Button>
           {!data.verified && data.hostname && (
             <Button

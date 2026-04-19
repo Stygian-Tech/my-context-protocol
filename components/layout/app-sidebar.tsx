@@ -205,8 +205,8 @@ function ProjectsNavAccordion({
             aria-controls={projectsListOpen ? projectsSubListId : undefined}
             aria-label={
               subOpen || subExiting
-                ? "Collapse projects list"
-                : "Expand projects list"
+                ? "Collapse Projects List"
+                : "Expand Projects List"
             }
           >
             <ChevronRightIcon
@@ -233,7 +233,7 @@ function ProjectsNavAccordion({
           ) : isError ? (
             <SidebarMenuSubItem>
               <span className="text-muted-foreground px-2 text-xs">
-                Could not load projects
+                Could Not Load Projects
               </span>
             </SidebarMenuSubItem>
           ) : projects && projects.length > 0 ? (
@@ -272,7 +272,7 @@ function ProjectsNavAccordion({
           ) : (
             <SidebarMenuSubItem>
               <span className="text-muted-foreground px-2 text-xs">
-                No projects yet
+                No Projects Yet
               </span>
             </SidebarMenuSubItem>
           )}
@@ -412,11 +412,11 @@ export function AppSidebar() {
                   }}
                 >
                   <SidebarMenuButton
-                    tooltip="Sign out"
+                    tooltip="Sign Out"
                     render={
                       <button type="button" onClick={() => void logout()}>
                         <LogOutIcon aria-hidden />
-                        <span>Sign out</span>
+                        <span>Sign Out</span>
                       </button>
                     }
                   />

@@ -6,7 +6,7 @@ import { MAIN_CONTENT_ID } from "@/lib/a11y";
 export function SkipToMainContent() {
   return (
     <a href={`#${MAIN_CONTENT_ID}`} className="skip-to-main">
-      Skip to main content
+      Skip to Main Content
     </a>
   );
 }

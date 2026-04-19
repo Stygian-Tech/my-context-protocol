@@ -198,7 +198,7 @@ export function MetricsTimeseriesCharts({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 id="traffic-over-time-heading" className="font-medium">
-          Traffic over time
+          Traffic Over Time
         </h3>
         <Select
           value={range}
@@ -207,7 +207,7 @@ export function MetricsTimeseriesCharts({
           <SelectTrigger
             className="h-9 w-[200px]"
             size="sm"
-            aria-label="Time range for traffic charts"
+            aria-label="Time Range for Traffic Charts"
           >
             <SelectValue />
           </SelectTrigger>
@@ -259,12 +259,12 @@ export function MetricsTimeseriesCharts({
           </caption>
           <thead>
             <tr>
-              <th scope="col">Bucket label</th>
+              <th scope="col">Bucket Label</th>
               <th scope="col">Requests</th>
               <th scope="col">Successful</th>
               <th scope="col">Other</th>
               <th scope="col">Success %</th>
-              <th scope="col">Avg latency ms</th>
+              <th scope="col">Avg Latency (ms)</th>
             </tr>
           </thead>
           <tbody>
@@ -294,7 +294,7 @@ export function MetricsTimeseriesCharts({
             id="chart-request-volume-title"
             className="text-muted-foreground mb-2 text-xs font-medium tracking-wide"
           >
-            Request volume
+            Request Volume
           </p>
           <div className="h-[240px] w-full min-w-0" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
@@ -343,7 +343,7 @@ export function MetricsTimeseriesCharts({
             id="chart-success-errors-title"
             className="text-muted-foreground mb-2 text-xs font-medium tracking-wide"
           >
-            Success vs. errors (per bucket)
+            Success vs. Errors (Per Bucket)
           </p>
           <div className="h-[240px] w-full min-w-0" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
@@ -383,7 +383,7 @@ export function MetricsTimeseriesCharts({
           id="chart-success-latency-title"
           className="text-muted-foreground mb-2 text-xs font-medium tracking-wide"
         >
-          Success rate and average latency
+          Success Rate and Average Latency
         </p>
         <div className="h-[260px] w-full min-w-0" aria-hidden="true">
           <ResponsiveContainer width="100%" height="100%">

@@ -123,7 +123,7 @@ export function ApiKeyManager({
         prev ? { ...prev, name: updated.name ?? null } : prev,
       );
       setPostCreateName(next);
-      toastSuccess("Display name saved");
+      toastSuccess("Display Name Saved");
     },
     onError: (err: unknown) => {
       const detail =
@@ -140,7 +140,7 @@ export function ApiKeyManager({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["api-keys", projectId] });
       setRenameTarget(null);
-      toastSuccess("API key name updated");
+      toastSuccess("API Key Name Updated");
     },
     onError: (err: unknown) => {
       const detail =
@@ -156,7 +156,7 @@ export function ApiKeyManager({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["api-keys", projectId] });
       setRevokeTarget(null);
-      toastSuccess("API key revoked");
+      toastSuccess("API Key Revoked");
     },
     onError: (err: unknown) => {
       const detail =
@@ -223,7 +223,7 @@ export function ApiKeyManager({
         </div>
         <Button type="button" onClick={openCreateDialog} className="shrink-0 self-start sm:self-end">
           <KeyIcon className="h-4 w-4" aria-hidden />
-          Create API key
+          Create API Key
         </Button>
       </div>
       <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
@@ -233,7 +233,7 @@ export function ApiKeyManager({
           checked={showRevoked}
           onChange={(e) => setShowRevoked(e.target.checked)}
         />
-        Show revoked keys
+        Show Revoked Keys
       </label>
       {keys && keys.length > 0 ? (
         <Table>
@@ -312,7 +312,7 @@ export function ApiKeyManager({
               : "No API keys to show here. Create one to use the MCP endpoint."}
           </p>
           <p className="mt-2 text-sm">
-            If you revoked all keys, enable &quot;Show revoked keys&quot; above to
+            If you revoked all keys, enable &quot;Show Revoked Keys&quot; above to
             see them.
           </p>
         </div>
@@ -328,7 +328,7 @@ export function ApiKeyManager({
         <DialogContent className="max-h-[min(90vh,calc(100vh-2rem))] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {createdKey ? "API key created" : "Create API key"}
+              {createdKey ? "API Key Created" : "Create API Key"}
             </DialogTitle>
             <DialogDescription>
               {createdKey
@@ -339,7 +339,7 @@ export function ApiKeyManager({
           {!createdKey ? (
             <form onSubmit={handleCreateSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="api-key-create-name">Name (optional)</Label>
+                <Label htmlFor="api-key-create-name">Name (Optional)</Label>
                 <Input
                   id="api-key-create-name"
                   value={createDraftName}
@@ -371,14 +371,14 @@ export function ApiKeyManager({
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? "Generating…" : "Generate key"}
+                  {createMutation.isPending ? "Generating…" : "Generate Key"}
                 </Button>
               </DialogFooter>
             </form>
           ) : (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="api-key-post-create-name">Display name</Label>
+                <Label htmlFor="api-key-post-create-name">Display Name</Label>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Input
                     id="api-key-post-create-name"
@@ -408,7 +408,7 @@ export function ApiKeyManager({
                       postCreateNameMutation.mutate(postCreateName);
                     }}
                   >
-                    {postCreateNameMutation.isPending ? "Saving…" : "Save name"}
+                    {postCreateNameMutation.isPending ? "Saving…" : "Save Name"}
                   </Button>
                 </div>
               </div>
@@ -426,7 +426,7 @@ export function ApiKeyManager({
                     }
                   >
                     <CopyIcon className="h-4 w-4" />
-                    Copy key
+                    Copy Key
                   </Button>
                 </div>
                 <div className="flex items-center gap-2 rounded-lg bg-muted p-4">
@@ -455,7 +455,7 @@ export function ApiKeyManager({
                       }
                     >
                       <CopyIcon className="h-4 w-4" />
-                      Copy mcp.json object
+                      Copy mcp.json Object
                     </Button>
                   </div>
                   <pre className="bg-muted max-h-48 overflow-auto rounded-lg p-4 text-xs leading-relaxed">
@@ -484,7 +484,7 @@ export function ApiKeyManager({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Revoke API key</DialogTitle>
+            <DialogTitle>Revoke API Key</DialogTitle>
             <DialogDescription>
               This cannot be undone. MCP clients using this key will stop working
               immediately.
@@ -521,7 +521,7 @@ export function ApiKeyManager({
                 }
               }}
             >
-              {revokeMutation.isPending ? "Revoking…" : "Revoke key"}
+              {revokeMutation.isPending ? "Revoking…" : "Revoke Key"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -533,7 +533,7 @@ export function ApiKeyManager({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename API key</DialogTitle>
+            <DialogTitle>Rename API Key</DialogTitle>
             <DialogDescription>
               This label is only for your reference in the dashboard. Leave the
               field empty to show &quot;Unnamed key&quot;.

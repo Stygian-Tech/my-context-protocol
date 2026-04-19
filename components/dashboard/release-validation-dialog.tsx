@@ -110,16 +110,16 @@ function StructuredValidationEntryCell({
               field,
             })
           }
-          aria-label={
+            aria-label={
             skill
-              ? `Open MCP metadata editor — ${fieldLabel}`
+              ? `Open MCP Metadata Editor — ${fieldLabel}`
               : `Open MCP metadata for this release (no matching synced skill for this path) — ${fieldLabel}`
           }
         >
           {skill ? (
-            <>Open in MCP metadata editor — {fieldLabel}</>
+            <>Open in MCP Metadata Editor — {fieldLabel}</>
           ) : (
-            <>Open MCP metadata — {fieldLabel}</>
+            <>Open MCP Metadata — {fieldLabel}</>
           )}
         </Button>
       ) : null}

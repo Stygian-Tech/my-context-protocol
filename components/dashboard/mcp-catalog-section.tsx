@@ -273,7 +273,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             Markdown returned by{" "}
             <code className="font-mono text-xs">{MYCONTEXT_CATALOG_TOOL_NAME}</code>{" "}
             for this project&apos;s{" "}
-            <span className="font-medium text-foreground">active release</span>.
+            <span className="font-medium text-foreground">Active Release</span>.
             It is built from the release unless you save a custom override in
             the editor.
           </p>
@@ -481,7 +481,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
               "text-muted-foreground space-y-2 text-sm",
             )}
           >
-            <p className="font-medium text-foreground">OAuth on this MCP host</p>
+            <p className="font-medium text-foreground">OAuth on This MCP Host</p>
             <p>
               Discovery (same origin as your MCP URL):{" "}
               <code className="font-mono text-xs break-all">
@@ -513,7 +513,7 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                 flow (GitHub sign-in when the consent step redirects you).
               </>
             ) : (
-              <>Create an API key (API Keys tab).</>
+              <>Create an API Key (API Keys Tab).</>
             )}
           </li>
           <li>

@@ -63,7 +63,7 @@ export function ProjectNameHeader({
       queryClient.setQueryData(["project", projectId], updated);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       setEditing(false);
-      toastSuccess("Project name updated");
+      toastSuccess("Project Name Updated");
     },
     onError: (err: unknown) => {
       const detail =
@@ -118,11 +118,11 @@ export function ProjectNameHeader({
       <form
         className="flex min-w-0 flex-wrap items-center gap-2"
         onSubmit={onFormSubmit}
-        aria-label="Edit project name"
+        aria-label="Edit Project Name"
       >
         <div className="min-w-0 flex-1 space-y-1">
           <Label htmlFor="project-name-input" className="sr-only">
-            Project name
+            Project Name
           </Label>
           <Input
             id="project-name-input"
@@ -166,7 +166,7 @@ export function ProjectNameHeader({
         size="sm"
         className="shrink-0 gap-1 text-muted-foreground hover:text-foreground"
         onClick={startEdit}
-        aria-label="Edit project name"
+        aria-label="Edit Project Name"
       >
         <PencilIcon className="size-4" aria-hidden />
         <span className="hidden sm:inline">Edit</span>

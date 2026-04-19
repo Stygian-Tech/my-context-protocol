@@ -128,7 +128,7 @@ export default function BillingPage() {
               disabled={portal.isPending}
               className="w-fit"
             >
-              {portal.isPending ? "Opening…" : "Manage subscription"}
+              {portal.isPending ? "Opening…" : "Manage Subscription"}
             </Button>
           ) : internalProOnly ? null : (
             <p className="text-muted-foreground text-sm">

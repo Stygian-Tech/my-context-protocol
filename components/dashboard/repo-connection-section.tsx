@@ -266,7 +266,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
             <RefreshCwIcon
               className={`h-4 w-4 ${syncMutation.isPending ? "animate-spin" : ""}`}
             />
-            {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+            {syncMutation.isPending ? "Syncing…" : "Sync Now"}
           </Button>
         </CardContent>
       </Card>
@@ -358,7 +358,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
                 )}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="branch">Default branch</Label>
+                <Label htmlFor="branch">Default Branch</Label>
                 <Input
                   id="branch"
                   {...register("branch")}
@@ -388,7 +388,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
                   Cancel
                 </Button>
                 <Button type="submit" disabled={connectMutation.isPending}>
-                  {connectMutation.isPending ? "Connecting..." : "Connect"}
+                  {connectMutation.isPending ? "Connecting…" : "Connect"}
                 </Button>
               </div>
             </form>
