@@ -493,7 +493,10 @@ struct MCPController {
 
     private static func mcpClientLabel(req: Request) -> String? {
         if let apiKeyRecord = req.storage[McpApiKeyRecordKey.self] {
-            return apiKeyRecord.name ?? apiKeyRecord.keyPrefix
+            if let kid = apiKeyRecord.id {
+                return RequestLogClientResolver.storedApiKeyReference(apiKeyId: kid)
+            }
+            return apiKeyRecord.keyPrefix
         }
         if let tok = req.storage[McpOAuthAccessTokenRecordKey.self] {
             let pub = tok.client.publicClientId

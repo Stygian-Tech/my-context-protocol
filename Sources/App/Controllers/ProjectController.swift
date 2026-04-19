@@ -993,6 +993,21 @@ struct ProjectController {
             .offset(offset)
             .all()
 
+        let apiKeyIds = RequestLogClientResolver.apiKeyIds(from: logs)
+        let keys: [ApiKey]
+        if apiKeyIds.isEmpty {
+            keys = []
+        } else {
+            keys = try await ApiKey.query(on: req.db)
+                .filter(\.$project.$id == project.id!)
+                .filter(\.$id ~~ apiKeyIds)
+                .all()
+        }
+        let keysById = Dictionary(uniqueKeysWithValues: keys.compactMap { k -> (UUID, ApiKey)? in
+            guard let id = k.id else { return nil }
+            return (id, k)
+        })
+
         return logs.map { log in
             let statusInt = Int(log.status) ?? 0
             return RequestLogResponse(
@@ -1000,7 +1015,7 @@ struct ProjectController {
                 project_id: project.id!.uuidString,
                 release_id: log.$release.id.map { $0.uuidString },
                 timestamp: formatDate(log.timestamp),
-                client_id: log.clientId,
+                client_id: RequestLogClientResolver.displayLabel(stored: log.clientId, keysById: keysById),
                 method: log.method,
                 latency_ms: log.latencyMs,
                 status: statusInt,

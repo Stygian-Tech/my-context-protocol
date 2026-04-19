@@ -16,6 +16,7 @@ final class RequestLog: Model, Content {
     @Timestamp(key: "timestamp", on: .create)
     var timestamp: Date?
 
+    /// Opaque client reference. API key auth stores `apikey:<uuid>` (not the display name); list endpoints resolve to the current name. OAuth uses `oauth:…` labels. Older rows may still hold legacy string labels.
     @OptionalField(key: "client_id")
     var clientId: String?
 
