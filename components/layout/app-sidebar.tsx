@@ -311,7 +311,19 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="gap-2 pb-2 pt-2.5 pl-4 pr-2.5">
-        <span className="font-semibold">MyContextProtocol</span>
+        <div className="flex min-w-0 items-center gap-2.5 group-data-[collapsible=icon]:justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element -- favicon.ico; avoids Image ICO quirks */}
+          <img
+            src="/favicon.ico"
+            alt=""
+            width={28}
+            height={28}
+            className="size-7 shrink-0 rounded-sm"
+          />
+          <span className="min-w-0 truncate font-semibold group-data-[collapsible=icon]:sr-only">
+            MyContextProtocol
+          </span>
+        </div>
       </SidebarHeader>
       <nav
         className="flex min-h-0 min-w-0 flex-1 flex-col"
