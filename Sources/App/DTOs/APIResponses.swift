@@ -507,6 +507,26 @@ struct AdminDashboardTimeseriesResponse: Content {
 }
 
 struct ValidationErrorEntry: Content {
+    var code: String?
     let path: String
+    var line: Int?
+    var summary: String?
+    var fix_hint: String?
     let message: String
+
+    init(
+        code: String? = nil,
+        path: String,
+        line: Int? = nil,
+        summary: String? = nil,
+        fix_hint: String? = nil,
+        message: String
+    ) {
+        self.code = code
+        self.path = path
+        self.line = line
+        self.summary = summary
+        self.fix_hint = fix_hint
+        self.message = message
+    }
 }

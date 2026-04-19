@@ -9,6 +9,8 @@ import Vapor
 enum LocalDevFixtures {
     static let showcaseSlug = "local-dev-showcase"
     static let draftSlug = "local-dev-draft"
+    /// Second fixture release: failed ingest with a rich validation report (for dashboard / dialog QA).
+    static let mockErrorsCommitSha = "deadbeefcafebabe"
 
     private static func seedFlagSet() -> Bool {
         guard let raw = Environment.get("SEED_LOCAL_FIXTURES") else { return false }
@@ -53,32 +55,69 @@ enum LocalDevFixtures {
         }
         guard let accountId = account.id else { return }
 
-        if try await Project.query(on: db)
-            .filter(\.$account.$id == accountId)
-            .filter(\.$slug == showcaseSlug)
-            .count() > 0 {
-            logger.info(
-                "SEED_LOCAL_FIXTURES: skip — project slug `\(showcaseSlug)` already exists (delete it or wipe db.sqlite to re-seed)."
-            )
-            return
-        }
-
-        let showcase = Project(
+        let showcase = try await findOrCreateProject(
             accountId: accountId,
             name: "Demo MCP (local preview)",
             slug: showcaseSlug,
-            subdomain: "demo-local-preview"
+            subdomain: "demo-local-preview",
+            on: db
         )
-        try await showcase.save(on: db)
         guard let projectId = showcase.id else { return }
 
-        let draft = Project(
+        _ = try await findOrCreateProject(
             accountId: accountId,
             name: "Draft project (no release)",
             slug: draftSlug,
-            subdomain: "demo-local-draft"
+            subdomain: "demo-local-draft",
+            on: db
         )
-        try await draft.save(on: db)
+
+        let bootstrapped = try await bootstrapShowcaseFixtureIfNeeded(showcase: showcase, on: db)
+        try await ensureMockFailedValidationRelease(projectId: projectId, on: db)
+
+        if bootstrapped {
+            logger.info(
+                "SEED_LOCAL_FIXTURES: seeded `\(showcaseSlug)` + `\(draftSlug)` + mock failed release for account `\(account.login)` (\(accountId))."
+            )
+        } else {
+            logger.info(
+                "SEED_LOCAL_FIXTURES: verified `\(showcaseSlug)` fixtures for account `\(account.login)` (\(accountId)); mock error release ensured."
+            )
+        }
+    }
+
+    private static func findOrCreateProject(
+        accountId: UUID,
+        name: String,
+        slug: String,
+        subdomain: String,
+        on db: Database
+    ) async throws -> Project {
+        if let existing = try await Project.query(on: db)
+            .filter(\.$account.$id == accountId)
+            .filter(\.$slug == slug)
+            .first() {
+            return existing
+        }
+        let project = Project(
+            accountId: accountId,
+            name: name,
+            slug: slug,
+            subdomain: subdomain
+        )
+        try await project.save(on: db)
+        return project
+    }
+
+    /// Returns `true` when this run created the demo connection / ready release / catalog / logs.
+    private static func bootstrapShowcaseFixtureIfNeeded(showcase: Project, on db: Database) async throws -> Bool {
+        guard let projectId = showcase.id else { return false }
+        let hasConnection = try await RepoConnection.query(on: db)
+            .filter(\.$project.$id == projectId)
+            .count() > 0
+        if hasConnection {
+            return false
+        }
 
         let connection = RepoConnection(
             projectId: projectId,
@@ -97,17 +136,120 @@ enum LocalDevFixtures {
             skillBodyChangesCount: 1
         )
         try await release.save(on: db)
-        guard let releaseId = release.id else { return }
+        guard let releaseId = release.id else { return true }
 
         showcase.activeReleaseId = releaseId
         try await showcase.save(on: db)
 
         try await seedCatalog(releaseId: releaseId, on: db)
         try await seedRequestLogs(projectId: projectId, releaseId: releaseId, on: db)
+        return true
+    }
 
-        logger.info(
-            "SEED_LOCAL_FIXTURES: seeded `\(showcaseSlug)` + `\(draftSlug)` for account `\(account.login)` (\(accountId))."
+    private static func ensureMockFailedValidationRelease(projectId: UUID, on db: Database) async throws {
+        if try await Release.query(on: db)
+            .filter(\.$project.$id == projectId)
+            .filter(\.$commitSha == mockErrorsCommitSha)
+            .count() > 0 {
+            return
+        }
+
+        let summaryLines = [
+            "skills/broken-tool/SKILL.md: schema validation failed — `inputSchema` is not valid JSON",
+            "skills/legacy-resource/SKILL.md: exposure `resource` requires `use_when` in front matter (missing)",
+            "ingest: duplicate capability name `echo` from skills/extra/echo/SKILL.md (conflicts with skills/echo)",
+            "skills/leaky-prompt/SKILL.md: risk_level `high` is not allowed for prompts on the starter plan",
+        ].joined(separator: "\n")
+
+        let release = Release(
+            projectId: projectId,
+            commitSha: mockErrorsCommitSha,
+            status: "failed",
+            errorSummary: summaryLines,
+            skillBodyChangesCount: 0
         )
+        try await release.save(on: db)
+        guard let releaseId = release.id else { return }
+
+        let errors: [[String: Any]] = [
+            [
+                "path": "skills/broken-tool/SKILL.md",
+                "code": "invalid_json_schema",
+                "line": 14,
+                "summary": "Tool inputSchema is invalid JSON",
+                "fix_hint":
+                    "Close the trailing brace on the `properties` object or paste the block into `jq` to find the first syntax error.",
+                "message":
+                    "Tool inputSchema is invalid JSON — parser stopped near the `required` array (unclosed string).",
+            ],
+            [
+                "path": "skills/legacy-resource/SKILL.md",
+                "code": "resource_use_when_required",
+                "line": 3,
+                "summary": "Resource exposure requires `use_when`",
+                "fix_hint":
+                    "Add a `use_when` list in YAML front matter (e.g. `[\"When the user asks for legacy docs\"]`).",
+                "message": "Resource exposure requires `use_when` in front matter (missing).",
+            ],
+            [
+                "path": "skills/extra/echo/SKILL.md",
+                "code": "duplicate_capability",
+                "line": 1,
+                "summary": "Duplicate MCP tool name `echo`",
+                "fix_hint":
+                    "Rename this package folder or change `name` in front matter so it does not collide with `skills/echo`.",
+                "message":
+                    "Duplicate capability name `echo` from skills/extra/echo/SKILL.md (conflicts with skills/echo).",
+            ],
+            [
+                "path": "skills/leaky-prompt/SKILL.md",
+                "code": "risk_tier_blocked",
+                "line": 22,
+                "summary": "High-risk prompt blocked for workspace tier",
+                "fix_hint": "Lower `risk_level` to `medium` or upgrade the project; see workspace policy docs.",
+                "message":
+                    "risk_level `high` is not allowed for prompts on the starter plan — downgrade or request an upgrade.",
+            ],
+            [
+                "path": "ingest/bundle",
+                "code": "bundle_checksum_mismatch",
+                "summary": "Downloaded tarball did not match advertised digest",
+                "fix_hint": "Re-run sync; if it persists, revoke the GitHub App cache key and reconnect the repository.",
+                "message":
+                    "Bundle checksum mismatch (expected sha256:aa…ff, got sha256:bb…11). Sync aborted before compile.",
+            ],
+        ]
+
+        let warnings: [[String: Any]] = [
+            [
+                "path": "skills/quiet-helper/SKILL.md",
+                "code": "no_yaml_frontmatter",
+                "line": 1,
+                "summary": "No YAML front matter block",
+                "fix_hint":
+                    "Add a `---` … `---` block with at least `name` and `description`, or move the file under a folder named after the skill.",
+                "message":
+                    "Skill ingested from path only; YAML front matter was missing — MCP name was inferred from the directory.",
+            ],
+            [
+                "path": "skills/guide/SKILL.md",
+                "code": "description_truncated",
+                "line": 6,
+                "summary": "Description exceeded 280 characters",
+                "fix_hint": "Shorten the `description` field; long prose belongs in the markdown body.",
+                "message": "Description was truncated to 280 characters for the MCP catalog listing.",
+            ],
+        ]
+
+        let payload: [String: Any] = [
+            "is_valid": false,
+            "errors": errors,
+            "warnings": warnings,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let reportJson = String(data: data, encoding: .utf8) ?? "{}"
+        let record = ValidationReportRecord(releaseId: releaseId, reportJson: reportJson)
+        try await record.save(on: db)
     }
 
     private static func seedCatalog(releaseId: UUID, on db: Database) async throws {

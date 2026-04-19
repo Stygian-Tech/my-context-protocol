@@ -1010,6 +1010,27 @@ struct ProjectController {
         }
     }
 
+    private static func validationErrorEntry(from e: [String: Any]) -> ValidationErrorEntry? {
+        guard let path = e["path"] as? String else { return nil }
+        let message = (e["message"] as? String) ?? ""
+        let code = e["code"] as? String
+        let summary = e["summary"] as? String
+        let fixHint = e["fix_hint"] as? String
+        let line: Int? = {
+            if let n = e["line"] as? Int { return n }
+            if let n = e["line"] as? NSNumber { return n.intValue }
+            return nil
+        }()
+        return ValidationErrorEntry(
+            code: code,
+            path: path,
+            line: line,
+            summary: summary,
+            fix_hint: fixHint,
+            message: message
+        )
+    }
+
     /// Structured validation errors for a release (`skill_packages` / pipeline report).
     static func releaseValidation(req: Request) async throws -> ReleaseValidationResponse {
         let account = try requireAccount(req)
@@ -1046,17 +1067,9 @@ struct ProjectController {
         }
         let isValid = (obj["is_valid"] as? Bool) ?? false
         let rawErrors = (obj["errors"] as? [[String: Any]]) ?? []
-        let errors: [ValidationErrorEntry] = rawErrors.compactMap { e in
-            guard let path = e["path"] as? String else { return nil }
-            let message = (e["message"] as? String) ?? ""
-            return ValidationErrorEntry(path: path, message: message)
-        }
+        let errors: [ValidationErrorEntry] = rawErrors.compactMap { Self.validationErrorEntry(from: $0) }
         let rawWarnings = (obj["warnings"] as? [[String: Any]]) ?? []
-        let warnings: [ValidationErrorEntry] = rawWarnings.compactMap { e in
-            guard let path = e["path"] as? String else { return nil }
-            let message = (e["message"] as? String) ?? ""
-            return ValidationErrorEntry(path: path, message: message)
-        }
+        let warnings: [ValidationErrorEntry] = rawWarnings.compactMap { Self.validationErrorEntry(from: $0) }
         return ReleaseValidationResponse(is_valid: isValid, errors: errors, warnings: warnings)
     }
 
