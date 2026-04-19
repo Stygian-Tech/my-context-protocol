@@ -37,6 +37,18 @@ import { shortCommitLabel } from "@/lib/commit-display";
 import { pluralEn } from "@/lib/pluralize";
 import { formatLocalDateTime } from "@/lib/format-local-time";
 
+function mcpBlockingPublishLabel(count: number): string {
+  return `${count} ${pluralEn(count, "skill blocks MCP publish", "skills block MCP publish")}`;
+}
+
+function mcpNeedsReviewLabel(count: number): string {
+  return `${count} ${pluralEn(count, "skill needs MCP review", "skills need MCP review")}`;
+}
+
+function mcpWarningOnlyMoreLabel(count: number): string {
+  return `+ ${count} ${pluralEn(count, "more skill with warnings only", "more skills with warnings only")}`;
+}
+
 /** Skip one-shot URL→dialog hydration when we just synced the URL from an in-app navigation. */
 const MCP_DEEP_LINK_UI_SKIP_KEY = "mcp-deep-link-from-ui";
 
@@ -356,12 +368,11 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                             )}
                           >
                             <p className="font-medium">
-                              {mcBlock} {pluralEn(mcBlock, "skill", "skills")}{" "}
-                              blocking MCP publish
+                              {mcpBlockingPublishLabel(mcBlock)}
                             </p>
                             {mcWarn > 0 ? (
                               <p className="mt-1 text-[0.7rem] font-medium text-amber-900/95 dark:text-amber-100/95">
-                                + {mcWarn} more with warnings only
+                                {mcpWarningOnlyMoreLabel(mcWarn)}
                               </p>
                             ) : null}
                           </button>
@@ -369,8 +380,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                         {mcBlock === 0 && mcWarn > 0 ? (
                           <div className="w-fit max-w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-left text-xs leading-snug text-amber-950 dark:text-amber-50">
                             <p className="font-medium text-amber-900 dark:text-amber-100">
-                              {mcWarn} {pluralEn(mcWarn, "skill", "skills")}{" "}
-                              need MCP review
+                              {mcpNeedsReviewLabel(mcWarn)}
                             </p>
                           </div>
                         ) : null}
@@ -409,8 +419,8 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                         hasMcpMetadataIssues
                           ? [
                               "MCP Metadata",
-                              mcBlock > 0 ? `${mcBlock} blocking` : null,
-                              mcWarn > 0 ? `${mcWarn} warnings` : null,
+                              mcBlock > 0 ? mcpBlockingPublishLabel(mcBlock) : null,
+                              mcWarn > 0 ? mcpNeedsReviewLabel(mcWarn) : null,
                             ]
                               .filter(Boolean)
                               .join(", ")
