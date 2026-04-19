@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchReleases,
   fetchCompiledSkills,
   activateRelease,
 } from "@/lib/projects-api";
-import type { McpMetadataFieldId } from "@/lib/mcp-metadata-editor-validation";
+import {
+  type McpMetadataFieldId,
+  isDeepLinkableMcpFieldId,
+} from "@/lib/mcp-metadata-editor-validation";
 import {
   metadataHealthTier,
   mcpFocusFieldForBlockingSkill,
@@ -33,6 +37,36 @@ import { shortCommitLabel } from "@/lib/commit-display";
 import { pluralEn } from "@/lib/pluralize";
 import { formatLocalDateTime } from "@/lib/format-local-time";
 
+/** Skip one-shot URL→dialog hydration when we just synced the URL from an in-app navigation. */
+const MCP_DEEP_LINK_UI_SKIP_KEY = "mcp-deep-link-from-ui";
+
+function applyMcpDeepLinkToUrl(
+  pathname: string,
+  router: ReturnType<typeof useRouter>,
+  current: Pick<URLSearchParams, "toString">,
+  input: { releaseId: string; skillId: string; field: McpMetadataFieldId }
+) {
+  const p = new URLSearchParams(current.toString());
+  p.set("tab", "releases");
+  p.set("mcp_release", input.releaseId);
+  p.set("mcp_skill", input.skillId);
+  p.set("mcp_field", input.field);
+  router.replace(`${pathname}?${p}`, { scroll: false });
+}
+
+function clearMcpDeepLinkFromUrl(
+  pathname: string,
+  router: ReturnType<typeof useRouter>,
+  current: Pick<URLSearchParams, "toString">
+) {
+  const p = new URLSearchParams(current.toString());
+  p.delete("mcp_release");
+  p.delete("mcp_skill");
+  p.delete("mcp_field");
+  const qs = p.toString();
+  router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+}
+
 interface ReleaseTableProps {
   projectId: string;
 }
@@ -52,6 +86,9 @@ function statusVariant(status: ReleaseStatus) {
 
 export function ReleaseTable({ projectId }: ReleaseTableProps) {
   const queryClient = useQueryClient();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [metaOpen, setMetaOpen] = useState(false);
   const [metaReleaseId, setMetaReleaseId] = useState<string | null>(null);
   const [validationOpen, setValidationOpen] = useState(false);
@@ -86,11 +123,23 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
               }
             : null,
         );
+        setMetaReleaseId(releaseId);
+        setMetaOpen(true);
+        if (firstRed) {
+          if (typeof sessionStorage !== "undefined") {
+            sessionStorage.setItem(MCP_DEEP_LINK_UI_SKIP_KEY, "1");
+          }
+          applyMcpDeepLinkToUrl(pathname, router, searchParams, {
+            releaseId,
+            skillId: firstRed.id,
+            field: mcpFocusFieldForBlockingSkill(firstRed),
+          });
+        }
       } catch {
         setMcpInitialFocus(null);
+        setMetaReleaseId(releaseId);
+        setMetaOpen(true);
       }
-      setMetaReleaseId(releaseId);
-      setMetaOpen(true);
     })();
   }
 
@@ -106,6 +155,51 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
     });
     setValidationOpen(true);
   }
+
+  function navigateFromValidationToMcp(target: {
+    skillId: string | null;
+    field: McpMetadataFieldId;
+  }) {
+    const rid = validationCtx?.id;
+    if (!rid) return;
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(MCP_DEEP_LINK_UI_SKIP_KEY, "1");
+    }
+    if (target.skillId) {
+      setMcpInitialFocus({ skillId: target.skillId, field: target.field });
+    } else {
+      setMcpInitialFocus(null);
+    }
+    setMetaReleaseId(rid);
+    setMetaOpen(true);
+    setValidationOpen(false);
+    if (target.skillId) {
+      applyMcpDeepLinkToUrl(pathname, router, searchParams, {
+        releaseId: rid,
+        skillId: target.skillId,
+        field: target.field,
+      });
+    } else {
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", "releases");
+      router.replace(`${pathname}?${p}`, { scroll: false });
+    }
+  }
+
+  useEffect(() => {
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(MCP_DEEP_LINK_UI_SKIP_KEY)) {
+      sessionStorage.removeItem(MCP_DEEP_LINK_UI_SKIP_KEY);
+      return;
+    }
+    const rid = searchParams.get("mcp_release");
+    const sid = searchParams.get("mcp_skill");
+    const fieldRaw = searchParams.get("mcp_field");
+    if (!rid || !sid || !fieldRaw || !isDeepLinkableMcpFieldId(fieldRaw)) return;
+    if (metaOpen) return;
+    setMetaReleaseId(rid);
+    setMcpInitialFocus({ skillId: sid, field: fieldRaw });
+    setMetaOpen(true);
+  }, [searchParams, metaOpen]);
 
   const { data: releases, isLoading } = useQuery({
     queryKey: ["releases", projectId],
@@ -223,12 +317,12 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                     useTopErrorCell ? "align-top" : "align-middle",
                   )}
                 >
-                  <div className="flex flex-col items-center gap-2">
+                  <div className="flex flex-col items-stretch gap-2 text-left">
                     {errSummary ? (
                       <button
                         type="button"
                         onClick={() => openValidationDialog(release)}
-                        className="group w-full self-stretch rounded-md text-left transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+                        className="group w-full rounded-md text-left transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <p className="text-muted-foreground line-clamp-2 text-sm leading-snug whitespace-pre-wrap break-words">
                           {errSummary}
@@ -241,7 +335,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                       <button
                         type="button"
                         onClick={() => openValidationDialog(release)}
-                        className="w-fit self-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+                        className="w-full text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
                       >
                         View Details
                       </button>
@@ -255,7 +349,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                               openMcpToFirstBlockingSkill(release.id)
                             }
                             className={cn(
-                              "w-fit max-w-full rounded-md border px-2.5 py-2 text-center text-xs leading-snug transition-colors",
+                              "w-full max-w-full rounded-md border px-2.5 py-2 text-left text-xs leading-snug transition-colors",
                               "border-destructive/50 bg-destructive/10 text-destructive",
                               "hover:bg-destructive/15 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                             )}
@@ -272,7 +366,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                           </button>
                         ) : null}
                         {mcBlock === 0 && mcWarn > 0 ? (
-                          <div className="w-fit max-w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-center text-xs leading-snug text-amber-950 dark:text-amber-50">
+                          <div className="w-full max-w-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-left text-xs leading-snug text-amber-950 dark:text-amber-50">
                             <p className="font-medium text-amber-900 dark:text-amber-100">
                               {mcWarn} {pluralEn(mcWarn, "skill", "skills")}{" "}
                               need MCP review
@@ -284,26 +378,28 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                     {!errSummary &&
                     release.status !== "failed" &&
                     !hasMcpMetadataIssues ? (
-                      <span className="text-muted-foreground self-center text-sm">—</span>
+                      <span className="text-muted-foreground text-sm">—</span>
                     ) : null}
                   </div>
                 </TableCell>
                 <TableCell className="align-middle">
-                  <div className="flex flex-col gap-1">
+                  <div className="flex w-full min-w-0 flex-col gap-1">
                     {release.status === "ready" && !release.is_active ? (
                       <Button
                         size="sm"
                         variant="outline"
+                        className="w-full"
                         onClick={() => activateMutation.mutate(release.id)}
                         disabled={activateMutation.isPending}
                       >
                         Activate
                       </Button>
                     ) : null}
-                    <div className="flex flex-wrap items-start justify-start gap-1.5">
+                    <div className="flex w-full min-w-0 flex-col gap-1">
                       <Button
                         size="sm"
                         variant="outline"
+                        className="w-full"
                         onClick={() => {
                           setMcpInitialFocus(null);
                           setMetaReleaseId(release.id);
@@ -324,16 +420,18 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                         MCP Metadata
                       </Button>
                       {mcWarn > 0 ? (
-                        <span
-                          className={cn(
-                            "inline-flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-md border px-1.5 text-xs font-medium leading-snug tabular-nums",
-                            "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-50",
-                          )}
-                          aria-hidden
-                          title={`${mcWarn} with warnings only`}
-                        >
-                          {mcWarn}
-                        </span>
+                        <div className="flex w-full justify-end">
+                          <span
+                            className={cn(
+                              "inline-flex min-h-7 min-w-7 shrink-0 items-center justify-center rounded-md border px-1.5 text-xs font-medium leading-snug tabular-nums",
+                              "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-50",
+                            )}
+                            aria-hidden
+                            title={`${mcWarn} with warnings only`}
+                          >
+                            {mcWarn}
+                          </span>
+                        </div>
                       ) : null}
                     </div>
                     {release.status === "failed" &&
@@ -374,6 +472,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
           if (!open) {
             setMetaReleaseId(null);
             setMcpInitialFocus(null);
+            clearMcpDeepLinkFromUrl(pathname, router, searchParams);
           }
         }}
       />
@@ -387,6 +486,7 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
           setValidationOpen(open);
           if (!open) setValidationCtx(null);
         }}
+        onNavigateToMcpEditor={navigateFromValidationToMcp}
       />
       <ReleaseBodyChangesDialog
         projectId={projectId}

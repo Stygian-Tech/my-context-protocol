@@ -9,6 +9,7 @@ import type {
   ProjectCatalog,
   ProjectCatalogMarkdownUpdate,
   ReleaseValidationReport,
+  ValidationErrorEntry,
   CompiledSkill,
   AccountDashboardSummary,
   ProjectDashboardSummary,
@@ -153,10 +154,19 @@ export async function fetchReleaseValidation(
   const r = await api.get<ReleaseValidationReport>(
     `/projects/${projectId}/releases/${releaseId}/validation`
   );
+  const normalizeEntry = (e: ValidationErrorEntry): ValidationErrorEntry => {
+    const summary = e.summary?.trim();
+    const fix = e.fix_hint?.trim();
+    const message =
+      e.message?.trim() ||
+      [summary, fix].filter(Boolean).join(" — ") ||
+      "Validation issue";
+    return { ...e, message };
+  };
   return {
     ...r,
-    errors: r.errors ?? [],
-    warnings: r.warnings ?? [],
+    errors: (r.errors ?? []).map(normalizeEntry),
+    warnings: (r.warnings ?? []).map(normalizeEntry),
   };
 }
 

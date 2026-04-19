@@ -132,7 +132,16 @@ export interface RequestLog {
 }
 
 export interface ValidationErrorEntry {
+  /** Stable machine-readable code from the API (e.g. `skill_name_format`). */
+  code?: string;
   path: string;
+  /** 1-based line in SKILL.md when known. */
+  line?: number | null;
+  /** Short title for the problem. */
+  summary?: string;
+  /** What to change in the repo. */
+  fix_hint?: string;
+  /** Combined summary + fix for display and backward compatibility. */
   message: string;
 }
 

@@ -32,6 +32,7 @@ import { ChevronRightIcon } from "lucide-react";
 import type { McpMetadataFieldId, McpMetadataIssue } from "@/lib/mcp-metadata-editor-validation";
 import {
   firstIssueForField,
+  focusMcpMetadataFieldControl,
   mapApiDetailToMcpField,
   mcpMetadataFieldAnchorId,
   uniqueIssueMessages,
@@ -218,11 +219,6 @@ function SkillEditorRow({
   }, [skill]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  useEffect(() => {
-    if (scrollToFieldOnOpen !== "skill_body") return;
-    setSkillBodyEditing(true);
-  }, [scrollToFieldOnOpen]);
-
   useLayoutEffect(() => {
     if (!skillBodyEditing) return;
     skillBodyTextareaRef.current?.focus();
@@ -335,13 +331,29 @@ function SkillEditorRow({
     if (pendingScrollTokenRef.current === token) return;
     pendingScrollTokenRef.current = token;
     const field = scrollToFieldOnOpen;
-    requestAnimationFrame(() => {
+
+    if (field === "skill_body") {
+      setSkillBodyEditing(true);
+    }
+
+    const run = () => {
+      const el = document.getElementById(mcpMetadataFieldAnchorId(skill.id, field));
+      el?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      if (field === "skill_body") {
+        skillBodyTextareaRef.current?.focus({ preventScroll: true });
+      } else {
+        focusMcpMetadataFieldControl(skill.id, field);
+      }
+      onConsumedScrollToField?.();
+    };
+
+    if (field === "skill_body") {
+      setTimeout(run, 0);
+    } else {
       requestAnimationFrame(() => {
-        const el = document.getElementById(mcpMetadataFieldAnchorId(skill.id, field));
-        el?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-        onConsumedScrollToField?.();
+        requestAnimationFrame(run);
       });
-    });
+    }
   }, [skill.id, scrollToFieldOnOpen, onConsumedScrollToField]);
 
   const headerBar = (

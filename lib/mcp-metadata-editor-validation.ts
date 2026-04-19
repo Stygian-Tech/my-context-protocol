@@ -95,3 +95,46 @@ export function mapApiDetailToMcpField(detail: string): McpMetadataFieldId {
   }
   return "_form";
 }
+
+/** Fields that can be targeted by scroll/focus and URL `mcp_field` (excludes `_form`). */
+export const MCP_DEEP_LINK_FIELD_IDS: readonly McpMetadataFieldId[] = [
+  "exposure_type",
+  "risk_level",
+  "status",
+  "use_when",
+  "avoid_when",
+  "failure_modes",
+  "invoke_first",
+  "skill_body",
+  "summary",
+  "schema_json",
+];
+
+export function isDeepLinkableMcpFieldId(
+  value: string | null | undefined
+): value is Exclude<McpMetadataFieldId, "_form"> {
+  if (value == null || value === "" || value === "_form") return false;
+  return (MCP_DEEP_LINK_FIELD_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Scroll target already ran; focus the primary control inside the field section (textarea, select trigger, checkbox).
+ */
+export function focusMcpMetadataFieldControl(
+  skillId: string,
+  field: McpMetadataFieldId
+): void {
+  if (field === "_form") return;
+  const root = document.getElementById(mcpMetadataFieldAnchorId(skillId, field));
+  if (!root) return;
+  const focusable = root.querySelector<HTMLElement>(
+    [
+      "textarea",
+      'input[type="checkbox"]',
+      "button[data-slot='select-trigger']",
+      "button[role='combobox']",
+      "button[data-state]",
+    ].join(", ")
+  );
+  focusable?.focus({ preventScroll: true });
+}

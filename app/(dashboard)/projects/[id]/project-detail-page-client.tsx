@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { fetchProject } from "@/lib/projects-api";
 import { ProjectNameHeader } from "@/components/dashboard/project-name-header";
@@ -20,6 +22,27 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 
 export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
   const { user } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const tab = searchParams.get("tab") ?? "overview";
+  const tabList = useMemo(
+    () => ["overview", "repo", "releases", "api-keys", "logs"] as const,
+    []
+  );
+
+  function setTab(next: string) {
+    const p = new URLSearchParams(searchParams.toString());
+    if (next === "overview") {
+      p.delete("tab");
+    } else {
+      p.set("tab", next);
+    }
+    const qs = p.toString();
+    router.replace(qs ? `/projects/${projectId}?${qs}` : `/projects/${projectId}`, {
+      scroll: false,
+    });
+  }
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: ["project", projectId],
@@ -27,7 +50,16 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
     enabled: !!projectId,
   });
 
-  if (isLoading || !project) {
+  const isNotFound =
+    error instanceof ApiError && error.status === 404;
+
+  useEffect(() => {
+    if (isNotFound) {
+      router.replace("/projects");
+    }
+  }, [isNotFound, router]);
+
+  if (isLoading) {
     return (
       <div
         className="space-y-6"
@@ -42,6 +74,13 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
   }
 
   if (error) {
+    if (isNotFound) {
+      return (
+        <p className="text-muted-foreground text-sm" role="status">
+          This project no longer exists — opening your project list…
+        </p>
+      );
+    }
     return (
       <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
         <p className="font-medium text-destructive">Failed to load project.</p>
@@ -54,6 +93,10 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
         )}
       </div>
     );
+  }
+
+  if (!project) {
+    return null;
   }
 
   return (
@@ -84,7 +127,7 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
           ) : null}
         </div>
       </div>
-      <Tabs defaultValue="overview">
+      <Tabs value={tabList.includes(tab as (typeof tabList)[number]) ? tab : "overview"} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="repo">Repo</TabsTrigger>
