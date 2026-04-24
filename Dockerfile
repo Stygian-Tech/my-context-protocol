@@ -27,6 +27,7 @@ RUN --mount=type=cache,target=/root/.cache \
 
 # Run (Swift runtime + libc compatible with the build)
 FROM swift:6.2-jammy
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /build/App /app/App
 EXPOSE 8080

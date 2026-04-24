@@ -180,6 +180,9 @@ func routes(_ app: Application) throws {
     mcpIngress.on(.POST, "token", body: .collect(maxSize: ByteCount(value: 64 * 1024))) { req async throws in
         try await McpOAuthController.token(req: req)
     }
+    mcpIngress.on(.POST, "register", body: .collect(maxSize: ByteCount(value: 64 * 1024))) { req async throws in
+        try await McpOAuthController.registerClient(req: req)
+    }
 
     McpRoutePath.registerPing(on: mcpIngress) { req in
         try await McpPingController.handle(req: req)

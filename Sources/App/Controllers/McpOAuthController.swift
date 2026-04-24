@@ -15,6 +15,7 @@ struct OAuthAuthorizationServerMetadata: Content {
     var issuer: String
     var authorization_endpoint: String
     var token_endpoint: String
+    var registration_endpoint: String
     var response_types_supported: [String]
     var grant_types_supported: [String]
     var code_challenge_methods_supported: [String]
@@ -70,12 +71,85 @@ enum McpOAuthController {
             issuer: origin,
             authorization_endpoint: "\(origin)/authorize",
             token_endpoint: "\(origin)/token",
+            registration_endpoint: "\(origin)/register",
             response_types_supported: ["code"],
             grant_types_supported: ["authorization_code", "client_credentials"],
             code_challenge_methods_supported: ["S256"],
             token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
             scopes_supported: [McpOAuthConstants.defaultScope]
         )
+    }
+
+    // MARK: Dynamic Client Registration (RFC 7591)
+
+    private struct RegistrationRequest: Content {
+        var redirect_uris: [String]
+        var client_name: String?
+        var grant_types: [String]?
+        var token_endpoint_auth_method: String?
+        var response_types: [String]?
+    }
+
+    static func registerClient(req: Request) async throws -> Response {
+        try requireOAuthEnabled()
+        let project = try requireResolvedProject(req)
+        let body = try req.content.decode(RegistrationRequest.self)
+
+        guard !body.redirect_uris.isEmpty else {
+            throw Abort(.badRequest, reason: "redirect_uris must be non-empty")
+        }
+        for uriString in body.redirect_uris {
+            guard URL(string: uriString) != nil else {
+                throw Abort(.badRequest, reason: "Invalid redirect_uri: \(uriString)")
+            }
+        }
+
+        let authMethod = body.token_endpoint_auth_method ?? "none"
+        let isConfidential = (authMethod == "client_secret_post")
+        guard authMethod == "none" || authMethod == "client_secret_post" else {
+            throw Abort(.badRequest, reason: "Unsupported token_endpoint_auth_method: \(authMethod)")
+        }
+
+        let requestedGrants = body.grant_types ?? ["authorization_code"]
+        let allowedGrantSet = Set(["authorization_code", "client_credentials"])
+        for g in requestedGrants where !allowedGrantSet.contains(g) {
+            throw Abort(.badRequest, reason: "Unsupported grant_type: \(g)")
+        }
+
+        let clientId = UUID().uuidString
+        var rawSecret: String? = nil
+        var secretHash: String? = nil
+        if isConfidential {
+            let s = McpOAuthCrypto.randomToken(prefix: "mcs_")
+            rawSecret = s
+            secretHash = McpOAuthCrypto.sha256Hex(s)
+        }
+
+        let urisJson = String(data: try JSONEncoder().encode(body.redirect_uris), encoding: .utf8)!
+        let client = McpOAuthClient(
+            publicClientId: clientId,
+            clientSecretHash: secretHash,
+            isConfidential: isConfidential,
+            redirectUrisJson: urisJson,
+            allowedGrants: requestedGrants.joined(separator: ","),
+            status: "active",
+            projectId: project.id!
+        )
+        try await client.save(on: req.db)
+
+        var responseDict: [String: Any] = [
+            "client_id": clientId,
+            "redirect_uris": body.redirect_uris,
+            "grant_types": requestedGrants,
+            "response_types": body.response_types ?? ["code"],
+            "token_endpoint_auth_method": authMethod,
+        ]
+        if let secret = rawSecret { responseDict["client_secret"] = secret }
+
+        let json = try JSONSerialization.data(withJSONObject: responseDict)
+        var headers = HTTPHeaders()
+        headers.contentType = .json
+        return Response(status: .created, headers: headers, body: .init(data: json))
     }
 
     // MARK: Authorization (user code + PKCE)
@@ -139,6 +213,9 @@ enum McpOAuthController {
             .filter(\.$publicClientId == clientId)
             .first(),
             clientRow.isActive else {
+            throw Abort(.badRequest, reason: "Unknown client_id")
+        }
+        if let clientProjectId = clientRow.$project.id, clientProjectId != project.id! {
             throw Abort(.badRequest, reason: "Unknown client_id")
         }
         guard clientRow.allowsGrant("authorization_code") else {
@@ -273,7 +350,8 @@ enum McpOAuthController {
         guard let tenantBase = try await tenantOrigin(forProjectId: pending.$project.id, db: req.db) else {
             throw Abort(.internalServerError, reason: "Could not build tenant MCP URL")
         }
-        let loc = "\(tenantBase)/oauth/consent?pending=\(pid.uuidString)"
+        let handoffToken = try await OAuthHandoffService.issue(accountId: accountId, on: req.db)
+        let loc = "\(tenantBase)/oauth/consent?pending=\(pid.uuidString)&auth_token=\(handoffToken)"
         return req.redirect(to: loc, redirectType: .normal)
     }
 
@@ -292,6 +370,14 @@ enum McpOAuthController {
             pending.expiresAt > Date(),
             pending.$project.id == project.id! else {
             throw Abort(.badRequest, reason: "Invalid pending authorization")
+        }
+
+        if let authToken = req.query[String.self, at: "auth_token"], !authToken.isEmpty {
+            guard let accountUUID = try await OAuthHandoffService.consume(authToken, on: req.db) else {
+                throw Abort(.unauthorized, reason: "Invalid or expired auth_token")
+            }
+            req.session.data["accountId"] = accountUUID.uuidString
+            return req.redirect(to: "/oauth/consent?pending=\(pid.uuidString)", redirectType: .normal)
         }
 
         guard let accountIdString = req.session.data["accountId"],

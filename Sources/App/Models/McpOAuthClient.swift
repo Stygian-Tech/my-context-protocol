@@ -28,6 +28,9 @@ final class McpOAuthClient: Model, Content {
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
+    @OptionalParent(key: "project_id")
+    var project: Project?
+
     init() {}
 
     init(
@@ -37,7 +40,8 @@ final class McpOAuthClient: Model, Content {
         isConfidential: Bool,
         redirectUrisJson: String,
         allowedGrants: String,
-        status: String = "active"
+        status: String = "active",
+        projectId: UUID? = nil
     ) {
         self.id = id
         self.publicClientId = publicClientId
@@ -46,6 +50,7 @@ final class McpOAuthClient: Model, Content {
         self.redirectUrisJson = redirectUrisJson
         self.allowedGrants = allowedGrants
         self.status = status
+        self.$project.id = projectId
     }
 }
 
