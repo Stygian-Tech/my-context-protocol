@@ -1,0 +1,14 @@
+# Monorepo-level ignores. Service-specific patterns live in
+# services/backend/.gitignore and services/frontend/.gitignore.
+
+.DS_Store
+*.swp
+*.swo
+
+# Editor / agent configs
+.idea/
+.vscode/
+.claude/
+.codex/
+.cursor/
+.worktrees/
