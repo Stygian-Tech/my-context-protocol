@@ -1,15 +1,28 @@
-name: CI
+name: Frontend CI
 
 on:
   push:
     branches: [main, dev]
+    paths:
+      - 'services/frontend/**'
+      - '.github/workflows/frontend-ci.yml'
   pull_request:
     branches: [main, dev]
+    paths:
+      - 'services/frontend/**'
+      - '.github/workflows/frontend-ci.yml'
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+# Frontend lives at services/frontend/ in the monorepo. `run:` steps execute
+# from there. hashFiles() is workspace-relative so the lockfile path is
+# spelled out explicitly below.
+defaults:
+  run:
+    working-directory: services/frontend
 
 jobs:
   frontend:
@@ -27,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb') }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('services/frontend/bun.lockb') }}
           restore-keys: |
             ${{ runner.os }}-bun-
       - name: Install
