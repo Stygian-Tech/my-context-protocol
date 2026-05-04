@@ -361,6 +361,11 @@ function SkillEditorRow({
     const field = scrollToFieldOnOpen;
 
     if (field === "skill_body") {
+      // Editing mode is opened in response to a deep-link request that the
+      // pendingScrollTokenRef ensures fires exactly once per token. Updating
+      // local state here is the correct response — there is no external
+      // system to sync with.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link response, guarded by pendingScrollTokenRef
       setSkillBodyEditing(true);
     }
 
@@ -981,8 +986,13 @@ export function ReleaseSkillMetadataDialog({
     const s = skills.find((x) => x.id === initialMcpFocus.skillId);
     appliedInitialFocusKey.current = key;
     if (s) {
+      // Apply the initial deep-link focus once per (release, skill, field)
+      // tuple, guarded by appliedInitialFocusKey. There is no external state
+      // to mirror; setting local state here is the correct response.
+      /* eslint-disable react-hooks/set-state-in-effect -- one-shot deep-link focus, guarded by appliedInitialFocusKey */
       setSelectedSkillId(s.id);
       setPendingScrollField(initialMcpFocus.field);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [open, releaseId, initialMcpFocus, skills]);
 

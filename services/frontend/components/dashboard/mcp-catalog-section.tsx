@@ -71,15 +71,28 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [catalogEditorOpen, setCatalogEditorOpen] = useState(false);
 
-  useEffect(() => {
-    if (!data) return;
-    setDraft(data.catalog_markdown ?? "");
-  }, [
-    projectId,
-    data?.catalog_markdown,
-    data?.catalog_markdown_generated,
-    data?.catalog_markdown_override ?? "",
-  ]);
+  // Static-checkable dep for the effect below; complex `?? ""` falls afoul of
+  // react-hooks/exhaustive-deps if used inline.
+  const catalogOverrideKey = data?.catalog_markdown_override ?? "";
+
+  useEffect(
+    () => {
+      if (!data) return;
+      // Reset the editable draft whenever the server-side catalog values shift
+      // (project change, release activation, save/restore). `data` itself is
+      // intentionally omitted from the dep array because query refetches on
+      // focus/interval can produce a new object reference with identical
+      // values — re-running here would clobber unsaved edits.
+      setDraft(data.catalog_markdown ?? "");
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above; `data` is intentionally omitted
+    [
+      projectId,
+      data?.catalog_markdown,
+      data?.catalog_markdown_generated,
+      catalogOverrideKey,
+    ],
+  );
 
   const saveMutation = useMutation({
     mutationFn: async () => {

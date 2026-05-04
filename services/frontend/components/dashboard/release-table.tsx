@@ -208,9 +208,14 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
     const fieldRaw = searchParams.get("mcp_field");
     if (!rid || !sid || !fieldRaw || !isDeepLinkableMcpFieldId(fieldRaw)) return;
     if (metaOpen) return;
+    // Translate URL deep-link params into open-dialog state once per change in
+    // search params; the `metaOpen` guard above prevents re-entering after
+    // the user closes the dialog. There is no external system to sync with.
+    /* eslint-disable react-hooks/set-state-in-effect -- one-shot URL deep-link translation, guarded by metaOpen */
     setMetaReleaseId(rid);
     setMcpInitialFocus({ skillId: sid, field: fieldRaw });
     setMetaOpen(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [searchParams, metaOpen]);
 
   const { data: releases, isLoading } = useQuery({

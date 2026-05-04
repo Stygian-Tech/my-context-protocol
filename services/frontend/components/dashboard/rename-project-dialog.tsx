@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -31,20 +31,48 @@ export function RenameProjectDialog({
   open,
   onOpenChange,
 }: RenameProjectDialogProps) {
-  const queryClient = useQueryClient();
-  const [name, setName] = useState("");
+  return (
+    <Dialog open={open && project != null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rename Project</DialogTitle>
+          <DialogDescription>
+            Update the display name. The project slug and URLs stay the same.
+          </DialogDescription>
+        </DialogHeader>
+        {project ? (
+          // key={project.id} forces a fresh form (with project.name as initial
+          // value) whenever the user opens the dialog for a different project,
+          // and Radix unmounts DialogContent when `open` is false so reopening
+          // for the same project also resets state — replaces the previous
+          // useEffect-based prop->state sync.
+          <RenameProjectForm
+            key={project.id}
+            project={project}
+            onClose={() => onOpenChange(false)}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-  useEffect(() => {
-    if (open && project) setName(project.name);
-  }, [open, project?.id, project?.name]);
+interface RenameProjectFormProps {
+  project: Project;
+  onClose: () => void;
+}
+
+function RenameProjectForm({ project, onClose }: RenameProjectFormProps) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(project.name);
 
   const mutation = useMutation({
     mutationFn: (nextName: string) =>
-      updateProject(project!.id, { name: nextName }),
+      updateProject(project.id, { name: nextName }),
     onSuccess: (updated) => {
       queryClient.setQueryData(["project", updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
-      onOpenChange(false);
+      onClose();
       toastSuccess("Project Name Updated");
     },
     onError: (err: unknown) => {
@@ -58,7 +86,6 @@ export function RenameProjectDialog({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!project) return;
     const trimmed = name.trim();
     if (!trimmed) {
       toastError("Name is required");
@@ -69,48 +96,38 @@ export function RenameProjectDialog({
       return;
     }
     if (trimmed === project.name) {
-      onOpenChange(false);
+      onClose();
       return;
     }
     mutation.mutate(trimmed);
   };
 
   return (
-    <Dialog open={open && project != null} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Rename Project</DialogTitle>
-          <DialogDescription>
-            Update the display name. The project slug and URLs stay the same.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="rename-project-name">Name</Label>
-            <Input
-              id="rename-project-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={MAX_LEN}
-              disabled={mutation.isPending}
-              placeholder={project?.name ?? ""}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={mutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              Save
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="rename-project-name">Name</Label>
+        <Input
+          id="rename-project-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={MAX_LEN}
+          disabled={mutation.isPending}
+          placeholder={project.name}
+        />
+      </div>
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+          disabled={mutation.isPending}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={mutation.isPending}>
+          Save
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

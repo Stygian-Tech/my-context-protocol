@@ -56,13 +56,6 @@ const PEEK_POINTER_SPEED_FAST_PX_PER_MS = 1.35
 const PEEK_POINTER_HISTORY_MS = 72
 const PEEK_POINTER_SAMPLES_MAX = 14
 
-/**
- * Edge-hover sidebar glass only (differs from env-banner chrome): heavy frosted blur,
- * dark translucent fill, no hard rail stroke — matches the floating overlay reference.
- */
-const PEEK_SIDEBAR_GLASS_BACKDROP =
-  "supports-backdrop-filter:backdrop-blur-[5.5rem] supports-backdrop-filter:backdrop-saturate-[1.2]" as const
-
 type PeekPointerSample = { x: number; y: number; t: number }
 
 function computePeekAutoCloseDelayMs(samples: PeekPointerSample[]): number {
