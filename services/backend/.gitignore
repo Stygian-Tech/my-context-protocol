@@ -1,0 +1,15 @@
+.build/
+.ci-cache/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+.DS_Store
+.env
+.env.test
+# Local SQLite when USE_SQLITE=1 (default db.sqlite)
+db.sqlite
+*.sqlite
+*.log
+.cursor/
+.worktrees/
+logs.txt

@@ -3,13 +3,26 @@ name: CI
 on:
   push:
     branches: [main, dev]
+    paths:
+      - 'services/backend/**'
+      - '.depot/workflows/ci.yml'
   pull_request:
     branches: [main, dev]
+    paths:
+      - 'services/backend/**'
+      - '.depot/workflows/ci.yml'
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+# Backend lives at services/backend/ in the monorepo. `run:` steps execute from
+# there. Note: action `path:` inputs (cache, upload-artifact) are workspace-
+# relative and ignore working-directory — those are prefixed explicitly below.
+defaults:
+  run:
+    working-directory: services/backend
 
 jobs:
   test:
@@ -27,10 +40,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            .build/checkouts
-            .build/repositories
-            .build/artifacts
-          key: ${{ runner.os }}-spm-deps-${{ hashFiles('**/Package.resolved') }}
+            services/backend/.build/checkouts
+            services/backend/.build/repositories
+            services/backend/.build/artifacts
+          key: ${{ runner.os }}-spm-deps-${{ hashFiles('services/backend/Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-spm-deps-
       - name: Swift Toolchain Cache Key
@@ -42,7 +55,7 @@ jobs:
       - name: Cache Swift Toolchain Tarball
         uses: actions/cache@v4
         with:
-          path: .ci-cache/swift-toolchain.tgz
+          path: services/backend/.ci-cache/swift-toolchain.tgz
           key: swift-tarball-6.2.4-${{ steps.swiftkey.outputs.ubuntu }}-${{ steps.swiftkey.outputs.arch }}
       # Install Swift from swift.org (same generation as Dockerfile swift:6.2-jammy). On Depot CI,
       # setup-swift can leave an older host Swift on PATH; that compiler does not understand visionOS
@@ -319,7 +332,7 @@ jobs:
           name: swift-test-diagnostics
           if-no-files-found: warn
           path: |
-            .build/ci-logs/
+            services/backend/.build/ci-logs/
 
   docker:
     name: Docker Build and Push
@@ -353,7 +366,7 @@ jobs:
           fi
       - uses: depot/build-push-action@v1
         with:
-          context: .
+          context: ./services/backend
           push: true
           project: mp735xms8r
           tags: |

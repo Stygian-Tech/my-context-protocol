@@ -1,15 +1,14 @@
-.build/
-.ci-cache/
-.swiftpm/
-*.xcodeproj
-xcuserdata/
+# Monorepo-level ignores. Service-specific patterns live in
+# services/backend/.gitignore and services/frontend/.gitignore.
+
 .DS_Store
-.env
-.env.test
-# Local SQLite when USE_SQLITE=1 (default db.sqlite)
-db.sqlite
-*.sqlite
-*.log
+*.swp
+*.swo
+
+# Editor / agent configs
+.idea/
+.vscode/
+.claude/
+.codex/
 .cursor/
 .worktrees/
-logs.txt
