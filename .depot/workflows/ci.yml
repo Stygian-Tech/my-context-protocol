@@ -3,13 +3,26 @@ name: CI
 on:
   push:
     branches: [main, dev]
+    paths:
+      - 'services/backend/**'
+      - '.depot/workflows/ci.yml'
   pull_request:
     branches: [main, dev]
+    paths:
+      - 'services/backend/**'
+      - '.depot/workflows/ci.yml'
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+# Backend lives at services/backend/ in the monorepo. `run:` steps execute from
+# there. Note: action `path:` inputs (cache, upload-artifact) are workspace-
+# relative and ignore working-directory — those are prefixed explicitly below.
+defaults:
+  run:
+    working-directory: services/backend
 
 jobs:
   test:
@@ -18,6 +31,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       # Cache dependency sources only — NOT the full `.build` tree. Restoring debug/index-build/
       # manifest JSON / llbuild records from Actions cache often yields truncated files ("Corrupted
       # JSON", "unexpected end of file") after interrupted jobs or cross-run races.
@@ -25,10 +40,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            .build/checkouts
-            .build/repositories
-            .build/artifacts
-          key: ${{ runner.os }}-spm-deps-${{ hashFiles('**/Package.resolved') }}
+            services/backend/.build/checkouts
+            services/backend/.build/repositories
+            services/backend/.build/artifacts
+          key: ${{ runner.os }}-spm-deps-${{ hashFiles('services/backend/Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-spm-deps-
       - name: Swift Toolchain Cache Key
@@ -40,7 +55,7 @@ jobs:
       - name: Cache Swift Toolchain Tarball
         uses: actions/cache@v4
         with:
-          path: .ci-cache/swift-toolchain.tgz
+          path: services/backend/.ci-cache/swift-toolchain.tgz
           key: swift-tarball-6.2.4-${{ steps.swiftkey.outputs.ubuntu }}-${{ steps.swiftkey.outputs.arch }}
       # Install Swift from swift.org (same generation as Dockerfile swift:6.2-jammy). On Depot CI,
       # setup-swift can leave an older host Swift on PATH; that compiler does not understand visionOS
@@ -130,6 +145,8 @@ jobs:
           # Prevent inherited runner/org secrets from forcing Postgres during `swift test` (hang risk on autoMigrate).
           DATABASE_URL: ""
           SUPABASE_DB_URL: ""
+          # avoid background rollup + hourly sleep during unit tests (scheduler runs on real --env testing deploys)
+          DISABLE_ADMIN_ANALYTICS_ROLLUP_SCHEDULER: "1"
         run: |
           set -euxo pipefail
           mkdir -p .build/ci-logs
@@ -209,6 +226,7 @@ jobs:
           # race with exiting subshell) can override swift test's exit code. Capture PIPESTATUS and
           # stop the heartbeat explicitly instead.
           set +e
+          set +o pipefail
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=info \
@@ -227,6 +245,7 @@ jobs:
         env:
           DATABASE_URL: ""
           SUPABASE_DB_URL: ""
+          DISABLE_ADMIN_ANALYTICS_ROLLUP_SCHEDULER: "1"
         run: |
           set -euxo pipefail
           mkdir -p .build/ci-logs
@@ -294,6 +313,7 @@ jobs:
           ) &
           _HEARTBEAT_PID=$!
           set +e
+          set +o pipefail
           stdbuf -oL -eL env \
             SWIFT_BACKTRACE=enable \
             LOG_LEVEL=debug \
@@ -312,7 +332,7 @@ jobs:
           name: swift-test-diagnostics
           if-no-files-found: warn
           path: |
-            .build/ci-logs/
+            services/backend/.build/ci-logs/
 
   docker:
     name: Docker Build and Push
@@ -327,24 +347,28 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: depot/setup-action@v1
-      - name: Set Tag
+      # Image tags match AppEnvironment APP_ENV values used in docker-compose.yml (`image: …:${APP_ENV}`).
+      # refs/heads/main → prod; refs/heads/dev → dev. (No CI push for `local`; build locally if needed.)
+      - name: Set APP_ENV image tag
         id: vars
         run: |
           if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-            echo "TAG=prod" >> $GITHUB_OUTPUT
+            echo "APP_ENV=prod" >> $GITHUB_OUTPUT
           else
-            echo "TAG=dev" >> $GITHUB_OUTPUT
+            echo "APP_ENV=dev" >> $GITHUB_OUTPUT
           fi
       - uses: depot/build-push-action@v1
         with:
-          context: .
+          context: ./services/backend
           push: true
           project: mp735xms8r
           tags: |
-            stygiantech/my-context-protocol:${{ steps.vars.outputs.TAG }}
+            stygiantech/my-context-protocol:${{ steps.vars.outputs.APP_ENV }}
             stygiantech/my-context-protocol:sha-${{ github.sha }}

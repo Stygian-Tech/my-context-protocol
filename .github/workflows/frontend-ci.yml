@@ -1,0 +1,53 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'services/frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'services/frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Frontend lives at services/frontend/ in the monorepo. `run:` steps execute
+# from there. hashFiles() is workspace-relative so the lockfile path is
+# spelled out explicitly below.
+defaults:
+  run:
+    working-directory: services/frontend
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.30
+      - name: Cache Bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('services/frontend/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Lint
+        run: bun run lint
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Unit tests (Vitest, CI mode)
+        run: bun run test:ci

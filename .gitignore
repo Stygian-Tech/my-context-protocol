@@ -1,10 +1,14 @@
-.build/
-.ci-cache/
-.swiftpm/
-*.xcodeproj
-xcuserdata/
+# Monorepo-level ignores. Service-specific patterns live in
+# services/backend/.gitignore and services/frontend/.gitignore.
+
 .DS_Store
-.env
-.env.test
-*.log
+*.swp
+*.swo
+
+# Editor / agent configs
+.idea/
+.vscode/
+.claude/
+.codex/
 .cursor/
+.worktrees/

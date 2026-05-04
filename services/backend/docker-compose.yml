@@ -1,0 +1,84 @@
+# Runs the API only. No bundled Postgres — use Supabase or set DATABASE_URL / SUPABASE_DB_URL (or all DATABASE_* for dev/prod; see DatabaseBootstrap.swift).
+#
+# Portainer / stack env: variables you set in the Portainer UI are NOT automatically visible inside
+# the container. Each name must appear under `environment:` below (value omitted = pass from Compose’s
+# environment, which includes Portainer stack env and a project `.env` file if present). Also set
+# `APP_ENV` in the stack so `${APP_ENV}` resolves for the image tag (must match CI: dev or prod).
+#
+# Remote builders: `swift package resolve` needs HTTPS to github.com if you use `build:`.
+# Prefer the CI-pushed image and omit `build:` when possible.
+services:
+  app:
+    image: stygiantech/my-context-protocol:${APP_ENV:?Set APP_ENV in stack env to dev or prod}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      # /health returns 200 "ok" — defined in routes.swift. curl is available in swift:6.2-jammy.
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    environment:
+      - APP_ENV
+      - CORS_ORIGIN
+      - DATABASE_HOST
+      - DATABASE_INSECURE_TLS
+      - DATABASE_NAME
+      - DATABASE_PASSWORD
+      - DATABASE_PORT
+      - DATABASE_URL
+      - DATABASE_USERNAME
+      - DEV_LOG_HTTP
+      - DEV_LOG_MCP
+      - DEV_LOG_SQL
+      - DISABLE_ADMIN_ANALYTICS_ROLLUP_SCHEDULER
+      - ENCRYPTION_KEY
+      - FRONTEND_URL
+      - GITHUB_APP_CLIENT_ID
+      - GITHUB_APP_CLIENT_SECRET
+      - GITHUB_APP_PRIVATE_KEY
+      - GITHUB_APP_PRIVATE_KEY_BASE64
+      - GITHUB_APP_SETUP_CALLBACK_URL
+      - GITHUB_APP_SLUG
+      - GITHUB_APP_WEBHOOK_SECRET
+      - GITHUB_CLIENT_ID
+      - GITHUB_CLIENT_SECRET
+      - GITHUB_OAUTH_REDIRECT_URI
+      - GITHUB_TOKEN
+      - HTTP_ACCESS_LOG
+      - INTERNAL_ADMIN_GITHUB_IDS
+      - INTERNAL_ADMIN_GITHUB_LOGINS
+      - INTERNAL_PRO_GITHUB_IDS
+      - INTERNAL_PRO_GITHUB_LOGINS
+      - LOG_LEVEL
+      - MCP_OAUTH_ENABLED
+      - MCP_RATE_LIMIT_PER_MINUTE
+      - MCP_TRUST_X_FORWARDED_HOST
+      - RATE_LIMIT_MCP_ENABLED
+      - REQUIRE_MCP_TENANT_HOST
+      - REPO_MAX_SKILL_FILES
+      - REPO_TARBALL_MAX_MB
+      - SAAS_MCP_BASE_DOMAIN
+      - SAAS_MCP_PATH
+      - SAAS_MCP_URL_SCHEME
+      - SEED_LOCAL_FIXTURES
+      - SESSION_COOKIE_DOMAIN
+      - SQLITE_PATH
+      - STRICT_PRO_GATING
+      - STRIPE_PRICE_PRO
+      - STRIPE_PRICE_PRO_MONTHLY
+      - STRIPE_PRICE_PRO_YEARLY
+      - STRIPE_SECRET_KEY
+      - STRIPE_WEBHOOK_SECRET
+      - SUPABASE_DB_URL
+      - SYNC_RATE_LIMIT_FREE_MAX
+      - SYNC_RATE_LIMIT_FREE_WINDOW_SECONDS
+      - SYNC_RATE_LIMIT_PRO_MAX
+      - SYNC_RATE_LIMIT_PRO_WINDOW_SECONDS
+      - TEST_USE_POSTGRES
+      - TRUST_X_FORWARDED_FOR
+      - USE_MEMORY_SESSIONS
+      - USE_SQLITE
+      - WEBHOOK_BASE_URL
