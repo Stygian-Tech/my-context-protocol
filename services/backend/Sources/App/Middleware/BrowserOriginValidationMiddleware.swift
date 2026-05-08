@@ -44,6 +44,10 @@ struct BrowserOriginValidationMiddleware: AsyncMiddleware {
         if path == "/auth/confirm" { return true }
         // OAuth 2.0 token endpoint (tenant host): non-browser clients often omit Origin.
         if path == "/token" { return true }
+        // RFC 7591 dynamic client registration: machine-to-machine call from MCP clients, no browser Origin.
+        if path == "/register" { return true }
+        // OAuth 2.0 consent form: served from the tenant MCP subdomain, not the app frontend origin.
+        if path == "/oauth/consent" { return true }
         return false
     }
 
