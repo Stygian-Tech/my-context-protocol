@@ -10,10 +10,18 @@ export async function GET(request: NextRequest) {
   const backendUrl = `${BACKEND_URL.replace(/\/$/, "")}/auth/me`;
   const cookie = request.headers.get("cookie") || "";
 
-  const res = await fetch(backendUrl, {
-    method: "GET",
-    headers: { Cookie: cookie },
-  });
+  let res: Response;
+  try {
+    res = await fetch(backendUrl, {
+      method: "GET",
+      headers: { Cookie: cookie },
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Auth service unreachable" },
+      { status: 503 }
+    );
+  }
 
   if (!res.ok) {
     return NextResponse.json(

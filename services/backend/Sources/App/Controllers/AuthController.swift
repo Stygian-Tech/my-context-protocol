@@ -232,17 +232,24 @@ struct AuthController {
     }
 
     static func me(req: Request) async throws -> UserResponse {
-        guard let accountIdString = req.session.data["accountId"],
-              let accountId = UUID(uuidString: accountIdString) else {
-            throw Abort(.unauthorized, reason: "Not authenticated")
+        do {
+            guard let accountIdString = req.session.data["accountId"],
+                  let accountId = UUID(uuidString: accountIdString) else {
+                throw Abort(.unauthorized, reason: "Not authenticated")
+            }
+            guard let account = try await Account.find(accountId, on: req.db) else {
+                req.session.destroy()
+                throw Abort(.unauthorized, reason: "Invalid session")
+            }
+            try await syncEnvAdminBootstrap(account: account, db: req.db)
+            let suggest = try await Self.suggestedGithubAppMe(account: account, db: req.db)
+            return userResponse(for: account, suggestedGithubAppInstall: suggest)
+        } catch let abort as AbortError {
+            throw abort
+        } catch {
+            req.logger.error("auth/me infrastructure error: \(error)")
+            throw Abort(.serviceUnavailable, reason: "Auth service temporarily unavailable")
         }
-        guard let account = try await Account.find(accountId, on: req.db) else {
-            req.session.destroy()
-            throw Abort(.unauthorized, reason: "Invalid session")
-        }
-        try await syncEnvAdminBootstrap(account: account, db: req.db)
-        let suggest = try await Self.suggestedGithubAppMe(account: account, db: req.db)
-        return userResponse(for: account, suggestedGithubAppInstall: suggest)
     }
 
     /// Repositories the session user can access on GitHub (uses stored OAuth token).
