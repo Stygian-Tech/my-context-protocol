@@ -1,9 +1,20 @@
 # Runs the API only. No bundled Postgres — use Supabase or set DATABASE_URL / SUPABASE_DB_URL (or all DATABASE_* for dev/prod; see DatabaseBootstrap.swift).
 #
-# Portainer / stack env: variables you set in the Portainer UI are NOT automatically visible inside
-# the container. Each name must appear under `environment:` below (value omitted = pass from Compose’s
-# environment, which includes Portainer stack env and a project `.env` file if present). Also set
-# `APP_ENV` in the stack so `${APP_ENV}` resolves for the image tag (must match CI: dev or prod).
+# Portainer / stack env injection
+# --------------------------------
+# Docker does NOT automatically pass host environment variables into containers.
+# Every variable you want inside the container must appear in the `environment:` block below.
+# The name-only form (no `= value`) tells Compose to pull the value from its own environment,
+# which includes:
+#   • Variables set in the Portainer stack editor ("Environment variables" section)
+#   • A `.env` file placed next to this file on the host (Compose reads it automatically)
+#
+# Simpler alternative — env_file:
+#   Instead of this long list you can add `env_file: [stack.env]` to the service and paste
+#   your KEY=VALUE pairs into a file named `stack.env` in the same directory on the server.
+#   Both approaches work; the explicit list below makes every accepted variable self-documenting.
+#
+# Also set `APP_ENV` in the stack so `${APP_ENV}` resolves for the image tag (must match CI: dev or prod).
 #
 # Remote builders: `swift package resolve` needs HTTPS to github.com if you use `build:`.
 # Prefer the CI-pushed image and omit `build:` when possible.
@@ -23,6 +34,7 @@ services:
     environment:
       - APP_ENV
       - CORS_ORIGIN
+      - DATABASE_ALLOW_LOOPBACK
       - DATABASE_HOST
       - DATABASE_INSECURE_TLS
       - DATABASE_NAME
@@ -53,7 +65,12 @@ services:
       - INTERNAL_PRO_GITHUB_IDS
       - INTERNAL_PRO_GITHUB_LOGINS
       - LOG_LEVEL
+      - MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS
+      - MCP_OAUTH_API_ORIGIN
+      - MCP_OAUTH_CODE_TTL_SECONDS
       - MCP_OAUTH_ENABLED
+      - MCP_OAUTH_PENDING_TTL_SECONDS
+      - MCP_OAUTH_RESUME_BASE_URLS
       - MCP_RATE_LIMIT_PER_MINUTE
       - MCP_TRUST_X_FORWARDED_HOST
       - RATE_LIMIT_MCP_ENABLED
