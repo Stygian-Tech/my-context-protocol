@@ -29,7 +29,7 @@ struct InternalController {
 
         // Allow verified custom domains.
         let project = try await Project.query(on: req.db)
-            .filter(\.$customDomain == host)
+            .filter(\.$customDomain == Optional(host))
             .first()
         if let project, project.customDomainVerifiedAt != nil {
             return Response(status: .ok)
