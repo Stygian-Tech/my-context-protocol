@@ -26,4 +26,29 @@ enum DnsTxtVerifier {
         }
         return false
     }
+
+    /// Uses Cloudflare DNS-over-HTTPS to check that `hostname` has an A record pointing to `expectedIp`.
+    static func aRecordMatchesIp(hostname: String, expectedIp: String, client: Client) async throws -> Bool {
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+=?"))
+        let enc = hostname.addingPercentEncoding(withAllowedCharacters: allowed) ?? hostname
+        let uri = URI(string: "https://cloudflare-dns.com/dns-query?name=\(enc)&type=A")
+        let response = try await client.get(uri) { out in
+            out.headers.add(name: "Accept", value: "application/dns-json")
+            out.headers.add(name: "User-Agent", value: "MyContextProtocol/1.0")
+        }.get()
+        guard response.status == .ok, var body = response.body else { return false }
+        let data = body.readData(length: body.readableBytes) ?? Data()
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let answers = obj["Answer"] as? [[String: Any]] else {
+            return false
+        }
+        let expected = expectedIp.trimmingCharacters(in: .whitespacesAndNewlines)
+        for a in answers {
+            guard let d = a["data"] as? String else { continue }
+            if d.trimmingCharacters(in: .whitespacesAndNewlines) == expected {
+                return true
+            }
+        }
+        return false
+    }
 }

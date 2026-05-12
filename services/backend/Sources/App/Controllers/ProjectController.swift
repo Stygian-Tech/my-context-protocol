@@ -560,7 +560,12 @@ struct ProjectController {
         let token = verified ? nil : project.customDomainVerificationToken
         let instructions: String?
         if let host = project.customDomain, !host.isEmpty, let t = token, !t.isEmpty {
-            instructions = "Add a TXT record on \(host) with value: \(t)"
+            var parts = ["Add a TXT record on \(host) with value: \(t)"]
+            if let ip = Environment.get("CUSTOM_DOMAIN_SERVER_IP")?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !ip.isEmpty {
+                parts.append("Add an A record on \(host) pointing to: \(ip)")
+            }
+            instructions = parts.joined(separator: "\n")
         } else {
             instructions = nil
         }
@@ -610,9 +615,17 @@ struct ProjectController {
               let token = project.customDomainVerificationToken, !token.isEmpty else {
             throw Abort(.badRequest, reason: "Set a custom domain first")
         }
-        let ok = try await DnsTxtVerifier.txtRecordsIncludeToken(hostname: host, token: token, client: req.client)
-        guard ok else {
+        let txtOk = try await DnsTxtVerifier.txtRecordsIncludeToken(hostname: host, token: token, client: req.client)
+        guard txtOk else {
             throw Abort(.badRequest, reason: "TXT record not found or token mismatch")
+        }
+        // If CUSTOM_DOMAIN_SERVER_IP is set, also confirm the A record points to this server.
+        if let serverIp = Environment.get("CUSTOM_DOMAIN_SERVER_IP")?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !serverIp.isEmpty {
+            let aOk = try await DnsTxtVerifier.aRecordMatchesIp(hostname: host, expectedIp: serverIp, client: req.client)
+            guard aOk else {
+                throw Abort(.badRequest, reason: "A record not found or does not point to this server (\(serverIp)). Add an A record on \(host) pointing to \(serverIp) and try again.")
+            }
         }
         project.customDomainVerifiedAt = Date()
         project.customDomainVerificationToken = nil

@@ -53,6 +53,7 @@ services:
     environment:
       - APP_ENV
       - CORS_ORIGIN
+      - CUSTOM_DOMAIN_SERVER_IP
       - DATABASE_ALLOW_LOOPBACK
       - DATABASE_HOST
       - DATABASE_INSECURE_TLS
