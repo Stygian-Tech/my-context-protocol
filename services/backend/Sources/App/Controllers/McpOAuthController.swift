@@ -372,29 +372,39 @@ enum McpOAuthController {
             throw Abort(.badRequest, reason: "Invalid pending authorization")
         }
 
+        // Resolve the authenticated account. Two paths:
+        //
+        // 1. auth_token query param — consumed here and rendered into the form in one
+        //    response, with no redirect. This avoids a session-cookie round-trip, which
+        //    is critical for custom-domain MCP hosts: the platform SESSION_COOKIE_DOMAIN
+        //    (e.g. .mycontextprotocol.dev) is silently rejected by browsers for unrelated
+        //    domains like mcp.example.com, so any approach that relies on setting a cookie
+        //    and then reading it on the next request creates an infinite redirect loop.
+        //
+        // 2. Session cookie — used when the platform session IS available (subdomain
+        //    tenants that share the registrable domain with the platform).
+        let accountId: UUID
         if let authToken = req.query[String.self, at: "auth_token"], !authToken.isEmpty {
-            guard let accountUUID = try await OAuthHandoffService.consume(authToken, on: req.db) else {
+            guard let uuid = try await OAuthHandoffService.consume(authToken, on: req.db) else {
                 throw Abort(.unauthorized, reason: "Invalid or expired auth_token")
             }
-            req.session.data["accountId"] = accountUUID.uuidString
-            return req.redirect(to: "/oauth/consent?pending=\(pid.uuidString)", redirectType: .normal)
-        }
-
-        guard let accountIdString = req.session.data["accountId"],
-              let accountId = UUID(uuidString: accountIdString) else {
+            accountId = uuid
+        } else if let str = req.session.data["accountId"], let uuid = UUID(uuidString: str) {
+            accountId = uuid
+        } else {
             let start = McpOAuthResumeURL.githubMcpOauthStartLink(pending: pid)
             return req.redirect(to: start, redirectType: .normal)
         }
+
         guard try await accountOwnsProject(accountId: accountId, projectId: project.id!, db: req.db) else {
             throw Abort(.forbidden, reason: "You do not have access to this project")
         }
 
-        // Generate a synchronizer CSRF token bound to this session.
-        // consentSubmit validates and clears it before acting, preventing
-        // cross-subdomain CSRF (all tenant subdomains share the same
-        // registrable domain, so SameSite=Lax does not block same-site POSTs).
-        let csrfToken = McpOAuthCrypto.randomToken(prefix: "csrf_")
-        req.session.data["consentCsrfToken"] = csrfToken
+        // Issue a single-use DB-backed consent token. Embedded as a hidden form field, it
+        // simultaneously authenticates the submitter and prevents CSRF/replay without
+        // relying on the session cookie — so it works for both custom domains (where the
+        // platform cookie domain is rejected by the browser) and platform subdomains.
+        let consentToken = try await OAuthHandoffService.issue(accountId: accountId, on: req.db)
 
         let client = pending.client
         let title = "Authorize \(htmlEscape(client.publicClientId))"
@@ -407,7 +417,7 @@ enum McpOAuthController {
         <p>Permissions: <code>\(htmlEscape(pending.scope))</code></p>
         <form method="post" action="/oauth/consent">
           <input type="hidden" name="pending" value="\(pending.id!.uuidString)"/>
-          <input type="hidden" name="csrf_token" value="\(csrfToken)"/>
+          <input type="hidden" name="consent_token" value="\(consentToken)"/>
           <button type="submit" name="decision" value="approve">Approve</button>
           <button type="submit" name="decision" value="deny">Deny</button>
         </form>
@@ -421,7 +431,7 @@ enum McpOAuthController {
     struct ConsentForm: Content {
         var pending: UUID
         var decision: String
-        var csrf_token: String
+        var consent_token: String
     }
 
     static func consentSubmit(req: Request) async throws -> Response {
@@ -429,22 +439,15 @@ enum McpOAuthController {
         let project = try requireResolvedProject(req)
         let form = try req.content.decode(ConsentForm.self)
 
-        // Validate the synchronizer CSRF token before any state-changing work.
-        // The token is generated in consentPage, stored in the session, and
-        // embedded as a hidden form field. An attacker on another subdomain
-        // (same registrable domain, so SameSite=Lax allows the POST) cannot
-        // know this value because they never received the consent page HTML.
-        guard let storedCsrf = req.session.data["consentCsrfToken"],
-              !storedCsrf.isEmpty,
-              form.csrf_token == storedCsrf else {
-            throw Abort(.forbidden, reason: "Invalid CSRF token")
-        }
-        // One-time use: clear immediately so the token cannot be replayed.
-        req.session.data["consentCsrfToken"] = nil
-
-        guard let accountIdString = req.session.data["accountId"],
-              let accountId = UUID(uuidString: accountIdString) else {
-            throw Abort(.unauthorized, reason: "Not authenticated")
+        // Validate and consume the single-use consent token. This simultaneously:
+        //  • Authenticates the submitter (returns the accountId that received the form)
+        //  • Prevents CSRF and replay (one-time-use, cryptographically random, DB-backed)
+        //
+        // Using a DB-backed token rather than the session cookie makes this work for custom
+        // MCP domains, where the browser rejects the platform SESSION_COOKIE_DOMAIN
+        // (.mycontextprotocol.dev) for an unrelated host like mcp.example.com.
+        guard let accountId = try await OAuthHandoffService.consume(form.consent_token, on: req.db) else {
+            throw Abort(.forbidden, reason: "Invalid or expired consent token")
         }
 
         guard let pending = try await McpOAuthPendingAuthorization.query(on: req.db)
