@@ -15,11 +15,6 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
         .package(url: "https://github.com/vapor/jwt-kit.git", from: "4.13.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
-        // Swift Testing for `AppTests` (`import Testing`). Vapor's `VaporTesting` also needs the
-        // swift-testing *package* (not only the toolchain) for `_TestingInternals` on Linux; CI and
-        // local runs apply `scripts/patch-vapor-swift-testing.py` to Vapor's checkout until upstream
-        // declares this dependency (see vapor/vapor#3391).
-        .package(url: "https://github.com/apple/swift-testing.git", from: "6.2.0"),
     ],
     targets: [
         .executableTarget(
@@ -40,7 +35,6 @@ let package = Package(
             name: "AppTests",
             dependencies: [
                 .target(name: "App"),
-                .product(name: "Testing", package: "swift-testing"),
                 .product(name: "VaporTesting", package: "vapor"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ],

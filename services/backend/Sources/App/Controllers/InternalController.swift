@@ -1,3 +1,4 @@
+import Fluent
 import Vapor
 
 /// Endpoints called by internal infrastructure — not exposed to end users.

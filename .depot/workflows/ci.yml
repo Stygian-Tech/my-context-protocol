@@ -132,13 +132,9 @@ jobs:
       # extra manifest-cache flags that can interact badly, use `-v` for progress, and emit a
       # heartbeat line every 60s so "silent" stalls are visible in logs.
       #
-      # `swift package clean` before + after resolve/patch; we only cache checkouts/repositories/
+      # `swift package clean` before + after resolve; we only cache checkouts/repositories/
       # artifacts (see "Cache SwiftPM dependencies" above).
       #
-      # Vapor's VaporTesting target imports `Testing` but does not declare a swift-testing package
-      # dependency; Linux OSS toolchains then miss `_TestingInternals`. Patch Vapor's checkout
-      # after resolve (see scripts/patch-vapor-swift-testing.py and vapor/vapor#3391).
-      # Patch is inlined below so CI works even if scripts/ was not committed on a branch.
       - name: Build and Run Tests
         id: run_tests
         env:
@@ -156,55 +152,12 @@ jobs:
           # Drop any stale build graph / incremental state (do not rely on cached llbuild JSON).
           swift package clean
           swift package resolve
-          python3 <<'PATCH_VAPOR_EOF'
-          import os
-          import sys
-          from pathlib import Path
-          pkg = Path(".build/checkouts/vapor/Package.swift")
-          if not pkg.is_file():
-              print("error: missing Vapor checkout (run swift package resolve first)", file=sys.stderr)
-              sys.exit(1)
-          text = pkg.read_text(encoding="utf-8")
-          if "github.com/apple/swift-testing.git" in text:
-              print("Vapor Package.swift already references swift-testing; skipping patch.")
-              raise SystemExit(0)
-          dep = '.package(url: "https://github.com/apple/swift-asn1.git", from: "1.0.0")'
-          if dep not in text:
-              print("error: unexpected Vapor Package.swift (swift-asn1 line)", file=sys.stderr)
-              sys.exit(1)
-          text = text.replace(dep, dep + ',\n        .package(url: "https://github.com/apple/swift-testing.git", from: "6.2.0")', 1)
-          old = (
-              '        .target(\n'
-              '            name: "VaporTesting",\n'
-              '            dependencies: [\n'
-              '                .target(name: "VaporTestUtils"),\n'
-              '                .target(name: "Vapor"),\n'
-              '            ],\n'
-              '            swiftSettings: swiftSettings\n'
-              '        ),'
-          )
-          new = (
-              '        .target(\n'
-              '            name: "VaporTesting",\n'
-              '            dependencies: [\n'
-              '                .product(name: "Testing", package: "swift-testing"),\n'
-              '                .target(name: "VaporTestUtils"),\n'
-              '                .target(name: "Vapor"),\n'
-              '            ],\n'
-              '            swiftSettings: swiftSettings\n'
-              '        ),'
-          )
-          if old not in text:
-              print("error: unexpected Vapor Package.swift (VaporTesting target)", file=sys.stderr)
-              sys.exit(1)
-          text = text.replace(old, new, 1)
-          try:
-              os.chmod(pkg, 0o644)
-          except OSError:
-              pass
-          pkg.write_text(text, encoding="utf-8")
-          print("Patched Vapor Package.swift: VaporTesting -> swift-testing.")
-          PATCH_VAPOR_EOF
+          # Older CI runs patched Vapor's manifest in the cached checkout to inject swift-testing.
+          # Swift 6.2.4 rejects that package's unsafe flags, so restore the pristine checkout if the
+          # dependency cache still contains the stale patch.
+          if [ -d .build/checkouts/vapor/.git ]; then
+            git -C .build/checkouts/vapor checkout -- Package.swift
+          fi
           swift package clean
           echo "Running swift test (after clean; single invocation; avoids incremental Planning build hang on Linux)..."
           # AppTests use Swift Testing only. `--disable-xctest` turns off the XCTest *runner* (no
@@ -253,55 +206,9 @@ jobs:
           swift package purge-cache
           swift package reset
           swift package resolve
-          python3 <<'PATCH_VAPOR_EOF'
-          import os
-          import sys
-          from pathlib import Path
-          pkg = Path(".build/checkouts/vapor/Package.swift")
-          if not pkg.is_file():
-              print("error: missing Vapor checkout (run swift package resolve first)", file=sys.stderr)
-              sys.exit(1)
-          text = pkg.read_text(encoding="utf-8")
-          if "github.com/apple/swift-testing.git" in text:
-              print("Vapor Package.swift already references swift-testing; skipping patch.")
-              raise SystemExit(0)
-          dep = '.package(url: "https://github.com/apple/swift-asn1.git", from: "1.0.0")'
-          if dep not in text:
-              print("error: unexpected Vapor Package.swift (swift-asn1 line)", file=sys.stderr)
-              sys.exit(1)
-          text = text.replace(dep, dep + ',\n        .package(url: "https://github.com/apple/swift-testing.git", from: "6.2.0")', 1)
-          old = (
-              '        .target(\n'
-              '            name: "VaporTesting",\n'
-              '            dependencies: [\n'
-              '                .target(name: "VaporTestUtils"),\n'
-              '                .target(name: "Vapor"),\n'
-              '            ],\n'
-              '            swiftSettings: swiftSettings\n'
-              '        ),'
-          )
-          new = (
-              '        .target(\n'
-              '            name: "VaporTesting",\n'
-              '            dependencies: [\n'
-              '                .product(name: "Testing", package: "swift-testing"),\n'
-              '                .target(name: "VaporTestUtils"),\n'
-              '                .target(name: "Vapor"),\n'
-              '            ],\n'
-              '            swiftSettings: swiftSettings\n'
-              '        ),'
-          )
-          if old not in text:
-              print("error: unexpected Vapor Package.swift (VaporTesting target)", file=sys.stderr)
-              sys.exit(1)
-          text = text.replace(old, new, 1)
-          try:
-              os.chmod(pkg, 0o644)
-          except OSError:
-              pass
-          pkg.write_text(text, encoding="utf-8")
-          print("Patched Vapor Package.swift: VaporTesting -> swift-testing.")
-          PATCH_VAPOR_EOF
+          if [ -d .build/checkouts/vapor/.git ]; then
+            git -C .build/checkouts/vapor checkout -- Package.swift
+          fi
           swift package clean
           rm -rf .build/index-build 2>/dev/null || true
           find .build -name build.db -delete 2>/dev/null || true
