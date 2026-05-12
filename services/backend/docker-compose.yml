@@ -16,6 +16,16 @@
 #
 # Also set `APP_ENV` in the stack so `${APP_ENV}` resolves for the image tag (must match CI: dev or prod).
 #
+# Traefik reverse proxy (optional)
+# ---------------------------------
+# If you use Traefik in front of this container, uncomment the labels block below and set
+# TRAEFIK_MCP_HOST in your stack environment to the wildcard MCP base domain, e.g.:
+#   TRAEFIK_MCP_HOST=mcp.testing.mycontextprotocol.dev
+# Traefik will then route *.mcp.testing.mycontextprotocol.dev → this container on port 8080.
+# You must also attach this service to Traefik's external network (see `networks:` at the bottom).
+#
+# If you use nginx / Caddy instead, configure a wildcard vhost there and remove the labels block.
+#
 # Remote builders: `swift package resolve` needs HTTPS to github.com if you use `build:`.
 # Prefer the CI-pushed image and omit `build:` when possible.
 services:
@@ -24,6 +34,15 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    # --- Uncomment if using Traefik ---
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.mcp-backend.rule=HostRegexp(`{subdomain:[a-z0-9-]+}.${TRAEFIK_MCP_HOST}`)"
+    #   - "traefik.http.routers.mcp-backend.entrypoints=websecure"
+    #   - "traefik.http.routers.mcp-backend.tls=true"
+    #   - "traefik.http.routers.mcp-backend.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.mcp-backend.loadbalancer.server.port=8080"
+    # ----------------------------------
     healthcheck:
       # /health returns 200 "ok" — defined in routes.swift. curl is available in swift:6.2-jammy.
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
