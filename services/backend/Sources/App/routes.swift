@@ -201,6 +201,9 @@ func routes(_ app: Application) throws {
     McpRoutePath.registerPost(on: mcpRoutes) { req in
         try await MCPController.handle(req: req)
     }
+    McpRoutePath.registerGet(on: mcpRoutes) { req in
+        try await McpSseController.handle(req: req)
+    }
     McpRoutePath.registerGetEvents(on: mcpRoutes) { req in
         try await McpSseController.handle(req: req)
     }

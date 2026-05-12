@@ -128,6 +128,33 @@ struct McpOAuthTests {
         }
     }
 
+    @Test("Unauthenticated Streamable HTTP GET includes WWW-Authenticate when OAuth is enabled")
+    func mcpGetChallengeHeader() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            try await app.testing().test(
+                .GET,
+                "/mcp",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "any.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: .accept, value: "text/event-stream")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .unauthorized)
+                    let www = res.headers.first(name: .wwwAuthenticate) ?? ""
+                    #expect(www.contains(#"resource_metadata="http://any.mcp.oauth.test/.well-known/oauth-protected-resource/mcp""#))
+                    #expect(www.contains(#"scope="mcp:invoke""#))
+                }
+            )
+        }
+    }
+
     @Test("Client credentials access token can call MCP initialize on tenant host")
     func clientCredentialsMcpInitialize() async throws {
         try await withMcpOAuthApp(env: [

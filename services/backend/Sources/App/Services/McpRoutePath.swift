@@ -49,6 +49,20 @@ enum McpRoutePath {
         group.on(.GET, "events", use: handler)
     }
 
+    /// Registers Streamable HTTP `GET` on the configured MCP path.
+    static func registerGet(on builder: RoutesBuilder, handler: @escaping @Sendable (Request) async throws -> Response) {
+        let segments = pathComponents()
+        guard !segments.isEmpty else {
+            builder.on(.GET, "mcp", use: handler)
+            return
+        }
+        var group: RoutesBuilder = builder
+        for i in 0 ..< (segments.count - 1) {
+            group = group.grouped(PathComponent(stringLiteral: segments[i]))
+        }
+        group.on(.GET, PathComponent(stringLiteral: segments[segments.count - 1]), use: handler)
+    }
+
     /// Registers `GET`, `HEAD`, and `POST …/ping` under the same base path (unauthenticated liveness).
     static func registerPing(
         on builder: RoutesBuilder,
