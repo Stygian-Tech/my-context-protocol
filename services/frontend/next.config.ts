@@ -34,12 +34,20 @@ const proxiedApiPrefixes = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: projectRoot,
   turbopack: {
     root: projectRoot,
   },
   async rewrites() {
     return [
       { source: "/api/health", destination: `${apiUrl}/health` },
+      // Map the bare /auth/mcp-oauth-resume path (used as the OAuth return_to URL by the
+      // backend) to the proxied API route that handles redirect + cookie forwarding.
+      // Must come before the generic /api/auth/:path* proxy so the filesystem route wins.
+      {
+        source: "/auth/mcp-oauth-resume",
+        destination: "/api/auth/mcp-oauth-resume",
+      },
       ...proxiedApiPrefixes.map((prefix) => ({
         source: `/api/${prefix}/:path*`,
         destination: `${apiUrl}/${prefix}/:path*`,
