@@ -546,8 +546,9 @@ struct ProcessEnvSecurityTests {
             defer { restore() }
             let state = try SignedOAuthState.signGitHubOAuth(returnTo: "/ok")
             var chars = Array(state)
-            if let last = chars.indices.last {
-                chars[last] = chars[last] == "a" ? "b" : "a"
+            if let dot = chars.firstIndex(of: ".") {
+                let signatureStart = chars.index(after: dot)
+                chars[signatureStart] = chars[signatureStart] == "a" ? "b" : "a"
             }
             let broken = String(chars)
             #expect(throws: SignedOAuthState.StateError.self) {

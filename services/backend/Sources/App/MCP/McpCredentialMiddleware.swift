@@ -38,11 +38,11 @@ struct McpCredentialMiddleware: AsyncMiddleware {
 
         request.logger.devTrace("mcp_credential missing")
         if AppEnvironment.mcpOAuthEnabled, let origin = RequestPublicOrigin.origin(for: request) {
-            let meta = "\(origin)/.well-known/oauth-protected-resource"
+            let meta = "\(origin)/.well-known/oauth-protected-resource/\(McpRoutePath.pathComponents().joined(separator: "/"))"
             let res = Response(status: .unauthorized, body: .init(string: "Unauthorized"))
             res.headers.replaceOrAdd(
                 name: .wwwAuthenticate,
-                value: "Bearer resource_metadata=\"\(meta)\""
+                value: "Bearer error=\"invalid_token\", resource_metadata=\"\(meta)\", scope=\"\(McpOAuthConstants.defaultScope)\""
             )
             return res
         }
@@ -158,11 +158,11 @@ struct McpCredentialMiddleware: AsyncMiddleware {
 
     private static func unauthorizedResponse(request: Request, message: String) -> Response {
         if AppEnvironment.mcpOAuthEnabled, let origin = RequestPublicOrigin.origin(for: request) {
-            let meta = "\(origin)/.well-known/oauth-protected-resource"
+            let meta = "\(origin)/.well-known/oauth-protected-resource/\(McpRoutePath.pathComponents().joined(separator: "/"))"
             let res = Response(status: .unauthorized, body: .init(string: message))
             res.headers.replaceOrAdd(
                 name: .wwwAuthenticate,
-                value: "Bearer resource_metadata=\"\(meta)\""
+                value: "Bearer error=\"invalid_token\", resource_metadata=\"\(meta)\", scope=\"\(McpOAuthConstants.defaultScope)\""
             )
             return res
         }

@@ -54,8 +54,9 @@ enum McpOAuthController {
         guard let issuer = RequestPublicOrigin.origin(for: req) else {
             throw Abort(.badRequest, reason: "Cannot determine issuer URL")
         }
+        let resource = mcpResourceURL(origin: issuer)
         return OAuthProtectedResourceMetadata(
-            resource: issuer,
+            resource: resource,
             authorization_servers: [issuer],
             scopes_supported: [McpOAuthConstants.defaultScope],
             bearer_methods_supported: ["header"]
@@ -696,6 +697,11 @@ enum McpOAuthController {
     private static func tenantOrigin(forProjectId projectId: UUID, db: Database) async throws -> String? {
         guard let project = try await Project.find(projectId, on: db) else { return nil }
         return McpUrlBuilder.tenantOrigin(for: project)
+    }
+
+    static func mcpResourceURL(origin: String) -> String {
+        let path = "/" + McpRoutePath.pathComponents().joined(separator: "/")
+        return origin.hasSuffix("/") ? String(origin.dropLast()) + path : origin + path
     }
 
     private static func normalizeScope(_ raw: String) throws -> String {

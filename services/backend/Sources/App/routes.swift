@@ -171,6 +171,9 @@ func routes(_ app: Application) throws {
     mcpIngress.get(".well-known", "oauth-protected-resource") { req async throws in
         try await McpOAuthController.protectedResourceMetadata(req: req).encodeResponse(for: req)
     }
+    mcpIngress.get(".well-known", "oauth-protected-resource", "**") { req async throws in
+        try await McpOAuthController.protectedResourceMetadata(req: req).encodeResponse(for: req)
+    }
     mcpIngress.get(".well-known", "oauth-authorization-server") { req async throws in
         try await McpOAuthController.authorizationServerMetadata(req: req).encodeResponse(for: req)
     }

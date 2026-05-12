@@ -51,6 +51,48 @@ struct McpOAuthTests {
                     #expect(res.status == .ok)
                     let ct = res.headers.first(name: .contentType) ?? ""
                     #expect(ct.contains("application/json"))
+                    let metadata = try res.content.decode(OAuthProtectedResourceMetadata.self)
+                    #expect(metadata.resource == "http://any.mcp.oauth.test/mcp")
+                    #expect(metadata.authorization_servers == ["http://any.mcp.oauth.test"])
+                }
+            )
+        }
+    }
+
+    @Test("Protected resource metadata supports path-suffixed discovery on verified custom domains")
+    func metadataPathSuffixForVerifiedCustomDomain() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "REQUIRE_MCP_TENANT_HOST": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_002, login: "custom-domain-oauth", email: "custom@example.com")
+            try await account.save(on: app.db)
+            let project = Project(
+                accountId: account.id!,
+                name: "Custom Domain OAuth",
+                slug: "custom-domain-oauth",
+                customDomain: "mcp.custom.example",
+                customDomainVerifiedAt: Date()
+            )
+            try await project.save(on: app.db)
+
+            try await app.testing().test(
+                .GET,
+                "/.well-known/oauth-protected-resource/mcp",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "mcp.custom.example")
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: "https")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .ok)
+                    let metadata = try res.content.decode(OAuthProtectedResourceMetadata.self)
+                    #expect(metadata.resource == "https://mcp.custom.example/mcp")
+                    #expect(metadata.authorization_servers == ["https://mcp.custom.example"])
                 }
             )
         }
@@ -79,6 +121,8 @@ struct McpOAuthTests {
                     #expect(res.status == .unauthorized)
                     let www = res.headers.first(name: .wwwAuthenticate) ?? ""
                     #expect(www.contains("resource_metadata="))
+                    #expect(www.contains(#"resource_metadata="http://any.mcp.oauth.test/.well-known/oauth-protected-resource/mcp""#))
+                    #expect(www.contains(#"scope="mcp:invoke""#))
                 }
             )
         }
