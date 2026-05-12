@@ -9,6 +9,12 @@ func routes(_ app: Application) throws {
         "ok"
     }
 
+    // Called by Caddy's on_demand_tls `ask` hook before issuing a TLS cert for a hostname.
+    // Returns 200 to allow, 422 to deny. No auth — Caddy calls from localhost only.
+    app.get("internal", "custom-domain", "verify-for-tls") { req in
+        try await InternalController.verifyForTls(req: req)
+    }
+
     app.get("auth", "github") { req in
         try await AuthController.githubInitiate(req: req)
     }
