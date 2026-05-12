@@ -27,12 +27,9 @@ struct InternalController {
             }
         }
 
-        // Allow verified custom domains.
-        let optionalHost: String? = host
-        let project = try await Project.query(on: req.db)
-            .filter(\.$customDomain == optionalHost)
-            .first()
-        if let project, project.customDomainVerifiedAt != nil {
+        // Allow verified custom domains — same filter pattern as TenantHostMiddleware.
+        if let project = try await Project.query(on: req.db).filter(\.$customDomain == host).first(),
+           project.customDomainVerifiedAt != nil {
             return Response(status: .ok)
         }
 
