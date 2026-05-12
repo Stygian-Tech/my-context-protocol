@@ -389,6 +389,13 @@ enum McpOAuthController {
             throw Abort(.forbidden, reason: "You do not have access to this project")
         }
 
+        // Generate a synchronizer CSRF token bound to this session.
+        // consentSubmit validates and clears it before acting, preventing
+        // cross-subdomain CSRF (all tenant subdomains share the same
+        // registrable domain, so SameSite=Lax does not block same-site POSTs).
+        let csrfToken = McpOAuthCrypto.randomToken(prefix: "csrf_")
+        req.session.data["consentCsrfToken"] = csrfToken
+
         let client = pending.client
         let title = "Authorize \(htmlEscape(client.publicClientId))"
         let body = """
@@ -400,6 +407,7 @@ enum McpOAuthController {
         <p>Permissions: <code>\(htmlEscape(pending.scope))</code></p>
         <form method="post" action="/oauth/consent">
           <input type="hidden" name="pending" value="\(pending.id!.uuidString)"/>
+          <input type="hidden" name="csrf_token" value="\(csrfToken)"/>
           <button type="submit" name="decision" value="approve">Approve</button>
           <button type="submit" name="decision" value="deny">Deny</button>
         </form>
@@ -413,12 +421,26 @@ enum McpOAuthController {
     struct ConsentForm: Content {
         var pending: UUID
         var decision: String
+        var csrf_token: String
     }
 
     static func consentSubmit(req: Request) async throws -> Response {
         try requireOAuthEnabled()
         let project = try requireResolvedProject(req)
         let form = try req.content.decode(ConsentForm.self)
+
+        // Validate the synchronizer CSRF token before any state-changing work.
+        // The token is generated in consentPage, stored in the session, and
+        // embedded as a hidden form field. An attacker on another subdomain
+        // (same registrable domain, so SameSite=Lax allows the POST) cannot
+        // know this value because they never received the consent page HTML.
+        guard let storedCsrf = req.session.data["consentCsrfToken"],
+              !storedCsrf.isEmpty,
+              form.csrf_token == storedCsrf else {
+            throw Abort(.forbidden, reason: "Invalid CSRF token")
+        }
+        // One-time use: clear immediately so the token cannot be replayed.
+        req.session.data["consentCsrfToken"] = nil
 
         guard let accountIdString = req.session.data["accountId"],
               let accountId = UUID(uuidString: accountIdString) else {
