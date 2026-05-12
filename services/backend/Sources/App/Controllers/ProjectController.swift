@@ -561,9 +561,11 @@ struct ProjectController {
         let instructions: String?
         if let host = project.customDomain, !host.isEmpty, let t = token, !t.isEmpty {
             var parts = ["Add a TXT record on \(host) with value: \(t)"]
-            if let ip = Environment.get("CUSTOM_DOMAIN_SERVER_IP")?
-                .trimmingCharacters(in: .whitespacesAndNewlines), !ip.isEmpty {
-                parts.append("Add an A record on \(host) pointing to: \(ip)")
+            if let subdomain = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !subdomain.isEmpty,
+               let baseDomain = Environment.get("SAAS_MCP_BASE_DOMAIN")?
+                   .trimmingCharacters(in: .whitespacesAndNewlines), !baseDomain.isEmpty {
+                parts.append("Add a CNAME record on \(host) pointing to: \(subdomain).\(baseDomain)")
             }
             instructions = parts.joined(separator: "\n")
         } else {
@@ -619,12 +621,15 @@ struct ProjectController {
         guard txtOk else {
             throw Abort(.badRequest, reason: "TXT record not found or token mismatch")
         }
-        // If CUSTOM_DOMAIN_SERVER_IP is set, also confirm the A record points to this server.
-        if let serverIp = Environment.get("CUSTOM_DOMAIN_SERVER_IP")?
-            .trimmingCharacters(in: .whitespacesAndNewlines), !serverIp.isEmpty {
-            let aOk = try await DnsTxtVerifier.aRecordMatchesIp(hostname: host, expectedIp: serverIp, client: req.client)
-            guard aOk else {
-                throw Abort(.badRequest, reason: "A record not found or does not point to this server (\(serverIp)). Add an A record on \(host) pointing to \(serverIp) and try again.")
+        // Verify the CNAME points to this project's MCP subdomain so traffic actually routes here.
+        if let subdomain = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !subdomain.isEmpty,
+           let baseDomain = Environment.get("SAAS_MCP_BASE_DOMAIN")?
+               .trimmingCharacters(in: .whitespacesAndNewlines), !baseDomain.isEmpty {
+            let expectedCname = "\(subdomain).\(baseDomain)"
+            let cnameOk = try await DnsTxtVerifier.cnameMatchesTarget(hostname: host, expectedTarget: expectedCname, client: req.client)
+            guard cnameOk else {
+                throw Abort(.badRequest, reason: "CNAME record not found or does not point to \(expectedCname). Add a CNAME record on \(host) pointing to \(expectedCname) and try again.")
             }
         }
         project.customDomainVerifiedAt = Date()

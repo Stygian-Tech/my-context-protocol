@@ -27,11 +27,12 @@ enum DnsTxtVerifier {
         return false
     }
 
-    /// Uses Cloudflare DNS-over-HTTPS to check that `hostname` has an A record pointing to `expectedIp`.
-    static func aRecordMatchesIp(hostname: String, expectedIp: String, client: Client) async throws -> Bool {
+    /// Uses Cloudflare DNS-over-HTTPS to check that `hostname` has a CNAME pointing to `expectedTarget`.
+    /// DNS CNAME values may carry a trailing dot; comparison is case-insensitive and dot-normalised.
+    static func cnameMatchesTarget(hostname: String, expectedTarget: String, client: Client) async throws -> Bool {
         let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+=?"))
         let enc = hostname.addingPercentEncoding(withAllowedCharacters: allowed) ?? hostname
-        let uri = URI(string: "https://cloudflare-dns.com/dns-query?name=\(enc)&type=A")
+        let uri = URI(string: "https://cloudflare-dns.com/dns-query?name=\(enc)&type=CNAME")
         let response = try await client.get(uri) { out in
             out.headers.add(name: "Accept", value: "application/dns-json")
             out.headers.add(name: "User-Agent", value: "MyContextProtocol/1.0")
@@ -42,12 +43,14 @@ enum DnsTxtVerifier {
               let answers = obj["Answer"] as? [[String: Any]] else {
             return false
         }
-        let expected = expectedIp.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trailingDot = CharacterSet(charactersIn: ".")
+        let expected = expectedTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased().trimmingCharacters(in: trailingDot)
         for a in answers {
             guard let d = a["data"] as? String else { continue }
-            if d.trimmingCharacters(in: .whitespacesAndNewlines) == expected {
-                return true
-            }
+            let target = d.trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased().trimmingCharacters(in: trailingDot)
+            if target == expected { return true }
         }
         return false
     }
