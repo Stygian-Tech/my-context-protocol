@@ -3,6 +3,11 @@ import Vapor
 /// Validates `Origin` / `Referer` for browser-initiated mutating requests (CSRF defense in depth for cookie auth).
 struct BrowserOriginValidationMiddleware: AsyncMiddleware {
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
+        // MCP tenant subdomains are machine-to-machine (MCP clients, not browsers).
+        // Origin validation does not apply; the MCP handler enforces its own auth.
+        if Self.isMcpTenantHost(request.headers.first(name: .host)) {
+            return try await next.respond(to: request)
+        }
         if Self.shouldSkip(path: request.url.path, method: request.method) {
             request.logger.devTrace("origin_check skipped path=\(request.url.path) method=\(request.method)")
             return try await next.respond(to: request)
@@ -32,6 +37,22 @@ struct BrowserOriginValidationMiddleware: AsyncMiddleware {
 
         request.logger.warning("Origin validation failed for \(request.method) \(request.url.path)")
         return jsonError(status: .forbidden, message: "Invalid origin")
+    }
+
+    /// Returns `true` when the `Host` header is a subdomain of `SAAS_MCP_BASE_DOMAIN`.
+    /// MCP client traffic is machine-to-machine and has no browser `Origin` to validate.
+    private static func isMcpTenantHost(_ host: String?) -> Bool {
+        guard let host = host?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              var base = Environment.get("SAAS_MCP_BASE_DOMAIN")?
+                  .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !base.isEmpty else { return false }
+        // Strip scheme / trailing slash if accidentally included in the env var.
+        if base.hasPrefix("https://") { base = String(base.dropFirst(8)) }
+        if base.hasPrefix("http://") { base = String(base.dropFirst(7)) }
+        while base.hasSuffix("/") { base.removeLast() }
+        // Strip port from host before comparing (nginx forwards Host without port on standard ports).
+        let hostWithoutPort = host.components(separatedBy: ":").first ?? host
+        return hostWithoutPort.hasSuffix("." + base)
     }
 
     private static func shouldSkip(path: String, method: HTTPMethod) -> Bool {
