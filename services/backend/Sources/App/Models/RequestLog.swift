@@ -35,6 +35,14 @@ final class RequestLog: Model, Content {
     @OptionalField(key: "error_message")
     var errorMessage: String?
 
+    /// When set with `mcp_capability_key`, identifies a concrete MCP catalog invocation (`tool` / `resource` / `prompt`).
+    @OptionalField(key: "mcp_capability_kind")
+    var mcpCapabilityKind: String?
+
+    /// Tool name, resource URI, or prompt name — matches MCP `tools/call`, `resources/read`, or `prompts/get` targets.
+    @OptionalField(key: "mcp_capability_key")
+    var mcpCapabilityKey: String?
+
     init() {}
 
     init(
@@ -46,7 +54,9 @@ final class RequestLog: Model, Content {
         latencyMs: Int? = nil,
         status: String,
         errorCode: String? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        mcpCapabilityKind: String? = nil,
+        mcpCapabilityKey: String? = nil
     ) {
         self.id = id
         self.$project.id = projectId
@@ -57,6 +67,8 @@ final class RequestLog: Model, Content {
         self.status = status
         self.errorCode = errorCode
         self.errorMessage = errorMessage
+        self.mcpCapabilityKind = mcpCapabilityKind
+        self.mcpCapabilityKey = mcpCapabilityKey
     }
 }
 

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchProjectCatalog,
+  fetchProjectDashboardSummary,
   updateProjectCatalogMarkdown,
 } from "@/lib/projects-api";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import { MarkdownPreview } from "@/components/dashboard/markdown-preview";
 import { glassSurfaceClasses } from "@/lib/glass";
 import { MYCONTEXT_CATALOG_TOOL_NAME } from "@/lib/mcp-tool-names";
 import { cn } from "@/lib/utils";
+import type { DashboardCapabilityUsage } from "@/lib/types";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +58,47 @@ const MCP_CATALOG_SUBPANEL = cn("space-y-3 p-4", MCP_CATALOG_INSET_SURFACE);
 const MCP_CATALOG_SECTION =
   "space-y-4 rounded-lg border p-4 text-sm text-card-foreground";
 
+function capabilityUsageMapKey(kind: string, key: string): string {
+  return `${kind}\u001e${key}`;
+}
+
+function lookupCapabilityUsage(
+  map: Map<string, DashboardCapabilityUsage>,
+  kind: string,
+  key: string,
+): DashboardCapabilityUsage | undefined {
+  return map.get(capabilityUsageMapKey(kind, key));
+}
+
+function CapabilityUsageCells({
+  usage,
+}: {
+  usage: DashboardCapabilityUsage | undefined;
+}) {
+  if (!usage) {
+    return (
+      <>
+        <TableCell className="text-muted-foreground text-right tabular-nums">
+          —
+        </TableCell>
+        <TableCell className="text-muted-foreground text-right tabular-nums">
+          —
+        </TableCell>
+      </>
+    );
+  }
+  return (
+    <>
+      <TableCell className="text-right tabular-nums">
+        {usage.invocations_last_7d.toLocaleString()}
+      </TableCell>
+      <TableCell className="text-right tabular-nums">
+        {usage.successful_last_7d.toLocaleString()}
+      </TableCell>
+    </>
+  );
+}
+
 interface McpCatalogSectionProps {
   projectId: string;
 }
@@ -66,6 +109,21 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
     queryKey: ["project-catalog", projectId],
     queryFn: () => fetchProjectCatalog(projectId),
   });
+
+  const { data: projectMetrics, isFetched: dashboardMetricsFetched } = useQuery({
+    queryKey: ["project-dashboard-summary", projectId],
+    queryFn: () => fetchProjectDashboardSummary(projectId),
+    enabled: !!projectId,
+  });
+
+  const capabilityUsageByTarget = useMemo(() => {
+    const rows = projectMetrics?.capability_usage_last_7d ?? [];
+    const m = new Map<string, DashboardCapabilityUsage>();
+    for (const r of rows) {
+      m.set(capabilityUsageMapKey(r.kind, r.key), r);
+    }
+    return m;
+  }, [projectMetrics?.capability_usage_last_7d]);
 
   const [draft, setDraft] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -249,6 +307,11 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
   );
   const catalogToolRow = data.tools.find(
     (t) => t.name === MYCONTEXT_CATALOG_TOOL_NAME,
+  );
+  const catalogToolUsage = lookupCapabilityUsage(
+    capabilityUsageByTarget,
+    "tool",
+    MYCONTEXT_CATALOG_TOOL_NAME,
   );
   const totalCapabilities =
     skillTools.length + data.resources.length + data.prompts.length;
@@ -718,6 +781,34 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                 {catalogToolRow.description}
               </p>
             ) : null}
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Recent usage for{" "}
+              <code className="font-mono text-[0.7rem]">
+                {MYCONTEXT_CATALOG_TOOL_NAME}
+              </code>{" "}
+              (last 7 days):{" "}
+              {!dashboardMetricsFetched ? (
+                <span className="text-muted-foreground">Loading…</span>
+              ) : catalogToolUsage ? (
+                <>
+                  {catalogToolUsage.invocations_last_7d.toLocaleString()}{" "}
+                  {pluralEn(
+                    catalogToolUsage.invocations_last_7d,
+                    "invocation",
+                    "invocations",
+                  )}
+                  , {catalogToolUsage.successful_last_7d.toLocaleString()}{" "}
+                  {pluralEn(
+                    catalogToolUsage.successful_last_7d,
+                    "success",
+                    "successes",
+                  )}{" "}
+                  (HTTP 2xx/3xx with no logged JSON-RPC error).
+                </>
+              ) : (
+                "— (no recorded calls yet)."
+              )}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -793,7 +884,12 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
             Tools, Resources, and Prompts
           </h2>
           <p className="text-sm text-muted-foreground">
-            Skill tools, resources, and prompts from the active release.
+            Skill tools, resources, and prompts from the active release. Usage
+            columns count MCP{" "}
+            <code className="font-mono text-xs">tools/call</code>,{" "}
+            <code className="font-mono text-xs">resources/read</code>, and{" "}
+            <code className="font-mono text-xs">prompts/get</code> for this
+            project in the last 7 days (from request logs).
             Resource entries can include agent routing from SKILL.md (
             <code className="font-mono text-xs">use_when</code>,{" "}
             <code className="font-mono text-xs">avoid_when</code>,{" "}
@@ -826,6 +922,8 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Invocations (7d)</TableHead>
+                  <TableHead className="text-right">Successful (7d)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -837,6 +935,13 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                     <TableCell className="max-w-md text-sm">
                       {t.description ?? "—"}
                     </TableCell>
+                    <CapabilityUsageCells
+                      usage={lookupCapabilityUsage(
+                        capabilityUsageByTarget,
+                        "tool",
+                        t.name,
+                      )}
+                    />
                   </TableRow>
                 ))}
               </TableBody>
@@ -860,6 +965,11 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                   failureModes.length > 0 ||
                   r.invoke_first === true;
                 const readRpc = sampleResourcesRead(r.uri);
+                const resourceUsage = lookupCapabilityUsage(
+                  capabilityUsageByTarget,
+                  "resource",
+                  r.uri,
+                );
                 return (
                   <div
                     key={r.uri}
@@ -878,6 +988,12 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                             {r.description}
                           </p>
                         ) : null}
+                        <p className="text-muted-foreground text-xs tabular-nums">
+                          Usage (7d):{" "}
+                          {resourceUsage
+                            ? `${resourceUsage.invocations_last_7d.toLocaleString()} reads · ${resourceUsage.successful_last_7d.toLocaleString()} successful`
+                            : "—"}
+                        </p>
                       </div>
                       <div className="flex w-full flex-shrink-0 flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
                         {r.invoke_first ? (
@@ -1003,6 +1119,8 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Invocations (7d)</TableHead>
+                  <TableHead className="text-right">Successful (7d)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1014,6 +1132,13 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                     <TableCell className="max-w-md text-sm">
                       {p.description ?? "—"}
                     </TableCell>
+                    <CapabilityUsageCells
+                      usage={lookupCapabilityUsage(
+                        capabilityUsageByTarget,
+                        "prompt",
+                        p.name,
+                      )}
+                    />
                   </TableRow>
                 ))}
               </TableBody>

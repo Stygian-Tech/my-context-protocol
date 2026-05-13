@@ -180,6 +180,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddGithubAppInstallationIdToAccounts())
     app.migrations.add(AddCompiledSkillSkillBody())
     app.migrations.add(AddRequestLogErrorMessage())
+    app.migrations.add(AddMcpCapabilityColumnsToRequestLogs())
     app.migrations.add(AddNameToApiKeys())
     app.migrations.add(AddAgentHintsToRoutingRules())
     app.migrations.add(AddCompiledSkillBodyDiffAndReleaseCounts())

@@ -40,7 +40,9 @@ struct MCPController {
                 latencyMs: latencyMs,
                 status: String(res.status.code),
                 errorCode: "-32700",
-                errorMessage: "JSON-RPC body could not be decoded"
+                errorMessage: "JSON-RPC body could not be decoded",
+                mcpCapabilityKind: nil,
+                mcpCapabilityKey: nil
             ).save(on: req.db)
             return res
         }
@@ -91,6 +93,7 @@ struct MCPController {
             "mcp_rpc done projectId=\(projectId.uuidString) method=\(body.method) httpStatus=\(out.httpStatus) jsonRpcError=\(errCodeStr) latencyMs=\(latencyMs)"
         )
         let releaseId = project.activeReleaseId
+        let capTag = Self.mcpCapabilityInvocationTag(method: body.method, params: body.params)
         try? await RequestLog(
             projectId: projectId,
             releaseId: releaseId,
@@ -99,7 +102,9 @@ struct MCPController {
             latencyMs: latencyMs,
             status: String(out.httpStatus),
             errorCode: out.jsonRpcErrorCode.map { String($0) },
-            errorMessage: out.jsonRpcErrorMessage
+            errorMessage: out.jsonRpcErrorMessage,
+            mcpCapabilityKind: capTag?.kind,
+            mcpCapabilityKey: capTag?.key
         ).save(on: req.db)
 
         req.attachMcpCatalogRevisionHeader(to: out.response)
@@ -489,6 +494,32 @@ struct MCPController {
             ]
         )
         return try await serveSuccess(Payload(jsonrpc: "2.0", id: id, result: result), req: req)
+    }
+
+    /// Tags successful or failed **invocations** of a catalog tool, resource read, or prompt fetch for dashboard metrics.
+    private static func mcpCapabilityInvocationTag(method: String, params: JSONRPCParams?) -> (
+        kind: String,
+        key: String
+    )? {
+        switch method {
+        case "tools/call":
+            guard let name = params?.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                return nil
+            }
+            return ("tool", name)
+        case "resources/read":
+            guard let uri = params?.uri?.trimmingCharacters(in: .whitespacesAndNewlines), !uri.isEmpty else {
+                return nil
+            }
+            return ("resource", uri)
+        case "prompts/get":
+            guard let name = params?.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                return nil
+            }
+            return ("prompt", name)
+        default:
+            return nil
+        }
     }
 
     private static func mcpClientLabel(req: Request) -> String? {

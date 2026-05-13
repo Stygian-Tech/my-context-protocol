@@ -184,6 +184,14 @@ export interface DashboardMethodCount {
   count: number;
 }
 
+/** MCP catalog item usage from request logs (project dashboard sample window). */
+export interface DashboardCapabilityUsage {
+  kind: string;
+  key: string;
+  invocations_last_7d: number;
+  successful_last_7d: number;
+}
+
 export interface DashboardProjectTraffic {
   project_id: string;
   project_name: string;
@@ -223,6 +231,8 @@ export interface ProjectDashboardSummary {
   active_tools: number;
   active_resources: number;
   active_prompts: number;
+  /** tools/call, resources/read, and prompts/get grouped by wire name or URI. */
+  capability_usage_last_7d: DashboardCapabilityUsage[];
 }
 
 export type AppEnv = "local" | "dev" | "prod";

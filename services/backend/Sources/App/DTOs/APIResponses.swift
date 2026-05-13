@@ -355,6 +355,21 @@ struct DashboardMethodCount: Content {
     let count: Int
 }
 
+/// Per-catalog-item MCP usage in the dashboard sample window (currently last 7 days).
+struct DashboardCapabilityUsage: Content {
+    let kind: String
+    let key: String
+    let invocations_last_7d: Int
+    let successful_last_7d: Int
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case key
+        case invocations_last_7d = "invocations_last_7d"
+        case successful_last_7d = "successful_last_7d"
+    }
+}
+
 struct DashboardProjectTraffic: Content {
     let project_id: String
     let project_name: String
@@ -418,6 +433,7 @@ struct ProjectDashboardSummaryResponse: Content {
     let active_tools: Int
     let active_resources: Int
     let active_prompts: Int
+    let capability_usage_last_7d: [DashboardCapabilityUsage]
 
     enum CodingKeys: String, CodingKey {
         case project_id = "project_id"
@@ -435,6 +451,7 @@ struct ProjectDashboardSummaryResponse: Content {
         case active_tools = "active_tools"
         case active_resources = "active_resources"
         case active_prompts = "active_prompts"
+        case capability_usage_last_7d = "capability_usage_last_7d"
     }
 }
 

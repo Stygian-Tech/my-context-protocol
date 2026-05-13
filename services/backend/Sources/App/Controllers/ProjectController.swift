@@ -1109,6 +1109,7 @@ struct ProjectController {
     // MARK: - Dashboard metrics
 
     private static let dashboardLogSampleLimit = 10_000
+    private static let dashboardCapabilityUsageSampleLimit = 50_000
 
     private static func countRequestLogs(
         db: Database,
@@ -1133,6 +1134,23 @@ struct ProjectController {
         return try await RequestLog.query(on: db)
             .filter(\.$project.$id ~~ projectIds)
             .filter(\.$timestamp >= since)
+            .sort(\.$timestamp, .descending)
+            .limit(limit)
+            .all()
+    }
+
+    private static func capabilityUsageLogSample(
+        db: Database,
+        projectIds: [UUID],
+        since: Date,
+        limit: Int
+    ) async throws -> [RequestLog] {
+        guard !projectIds.isEmpty else { return [] }
+        let kinds = ["tool", "resource", "prompt"]
+        return try await RequestLog.query(on: db)
+            .filter(\.$project.$id ~~ projectIds)
+            .filter(\.$timestamp >= since)
+            .filter(\.$mcpCapabilityKind ~~ kinds)
             .sort(\.$timestamp, .descending)
             .limit(limit)
             .all()
@@ -1300,6 +1318,13 @@ struct ProjectController {
         let (rate, avg, p95) = successRateAndLatency(from: sample)
         let caps = try await capabilityCountsForActiveRelease(project: project, db: req.db)
         let methods = methodBreakdown(from: sample)
+        let capLogs = try await capabilityUsageLogSample(
+            db: req.db,
+            projectIds: ids,
+            since: since7d,
+            limit: Self.dashboardCapabilityUsageSampleLimit
+        )
+        let capabilityUsage = CapabilityUsageAggregation.breakdown(from: capLogs)
 
         var activeSha: String?
         var activeStatus: String?
@@ -1324,7 +1349,8 @@ struct ProjectController {
             active_release_status: activeStatus,
             active_tools: caps.tools,
             active_resources: caps.resources,
-            active_prompts: caps.prompts
+            active_prompts: caps.prompts,
+            capability_usage_last_7d: capabilityUsage
         )
     }
 
