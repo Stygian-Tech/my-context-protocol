@@ -2,8 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot } from "react-dom/client";
-// `react-dom/test-utils` → `React.act` (see `lib/testing/vitest-worker-env.ts` + `vitest.config.ts`).
-import { act } from "react-dom/test-utils";
+import { act } from "react";
 
 afterEach(() => {
   vi.useRealTimers();
