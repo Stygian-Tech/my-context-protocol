@@ -168,15 +168,9 @@ function SidebarProvider({
   const [openMobile, setOpenMobile] = React.useState(false)
 
   const [sidebarWidthPx, setSidebarWidthPxState] = React.useState(
-    DEFAULT_SIDEBAR_WIDTH_PX
+    () => readStoredSidebarWidth() ?? DEFAULT_SIDEBAR_WIDTH_PX
   )
-  const [sidebarWidthHydrated, setSidebarWidthHydrated] = React.useState(false)
-
-  React.useEffect(() => {
-    const stored = readStoredSidebarWidth()
-    if (stored !== null) setSidebarWidthPxState(stored)
-    setSidebarWidthHydrated(true)
-  }, [])
+  const skipWidthPersistRef = React.useRef(true)
 
   const setSidebarWidthPx = React.useCallback(
     (value: React.SetStateAction<number>) => {
@@ -189,43 +183,22 @@ function SidebarProvider({
   )
 
   React.useEffect(() => {
-    if (!sidebarWidthHydrated || typeof window === "undefined") return
+    if (skipWidthPersistRef.current) {
+      skipWidthPersistRef.current = false
+      return
+    }
+    if (typeof window === "undefined") return
     window.localStorage.setItem(
       SIDEBAR_WIDTH_STORAGE_KEY,
       String(sidebarWidthPx)
     )
-  }, [sidebarWidthPx, sidebarWidthHydrated])
+  }, [sidebarWidthPx])
 
-  // This is the internal state of the sidebar.
-  // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(defaultOpen)
-  const open = openProp ?? _open
-  const setOpen = React.useCallback(
-    (value: boolean | ((value: boolean) => boolean)) => {
-      const openState = typeof value === "function" ? value(open) : value
-      if (setOpenProp) {
-        setOpenProp(openState)
-      } else {
-        _setOpen(openState)
-      }
-
-      persistSidebarOpenPreference(openState)
-    },
-    [setOpenProp, open]
+  const initialOpen = React.useMemo(
+    () => readStoredSidebarOpenFromLocalStorage() ?? defaultOpen,
+    [defaultOpen]
   )
-
-  /* If the server had no cookie yet, align once with localStorage (e.g. prior session wrote LS only). */
-  const openHydrationSyncedRef = React.useRef(false)
-  React.useLayoutEffect(() => {
-    if (openProp !== undefined || openHydrationSyncedRef.current) return
-    openHydrationSyncedRef.current = true
-    const fromLs = readStoredSidebarOpenFromLocalStorage()
-    if (fromLs !== null && fromLs !== defaultOpen) {
-      _setOpen(fromLs)
-      persistSidebarOpenPreference(fromLs)
-    }
-  }, [openProp, defaultOpen])
-
+  const [_open, _setOpen] = React.useState(initialOpen)
   const [peekGlassActive, setPeekGlassActive] = React.useState(false)
   const openedViaEdgeHoverRef = React.useRef(false)
   const edgeLeaveTimerRef = React.useRef<number | null>(null)
@@ -243,13 +216,25 @@ function SidebarProvider({
     return () => clearEdgeLeaveTimer()
   }, [clearEdgeLeaveTimer])
 
-  React.useEffect(() => {
-    if (!open && !isMobile) {
-      openedViaEdgeHoverRef.current = false
-      setPeekGlassActive(false)
-      clearEdgeLeaveTimer()
-    }
-  }, [open, isMobile, clearEdgeLeaveTimer])
+  const open = openProp ?? _open
+  const setOpen = React.useCallback(
+    (value: boolean | ((value: boolean) => boolean)) => {
+      const openState = typeof value === "function" ? value(open) : value
+      if (!openState) {
+        openedViaEdgeHoverRef.current = false
+        setPeekGlassActive(false)
+        clearEdgeLeaveTimer()
+      }
+      if (setOpenProp) {
+        setOpenProp(openState)
+      } else {
+        _setOpen(openState)
+      }
+
+      persistSidebarOpenPreference(openState)
+    },
+    [setOpenProp, open, clearEdgeLeaveTimer]
+  )
 
   const handleEdgeHoverOpen = React.useCallback(() => {
     if (isMobile) return

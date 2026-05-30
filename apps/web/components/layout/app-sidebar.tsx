@@ -96,7 +96,11 @@ function ProjectsNavAccordion({
   const inProjectsSection =
     pathname === "/projects" || pathname.startsWith("/projects/");
 
-  const [subOpen, setSubOpen] = useState(() => pathname.startsWith("/projects"));
+  const [subOpen, setSubOpen] = useState(() => {
+    const stored = readStoredProjectsAccordionOpen();
+    if (stored !== null) return stored;
+    return pathname.startsWith("/projects");
+  });
   /** True while the project list is still mounted after a close, playing exit animation. */
   const [subExiting, setSubExiting] = useState(false);
   const subCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,15 +116,6 @@ function ProjectsNavAccordion({
       clearTimeout(subCloseTimeoutRef.current);
       subCloseTimeoutRef.current = null;
     }
-  }, []);
-
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- hydrate accordion from localStorage after mount */
-    const stored = readStoredProjectsAccordionOpen();
-    if (stored !== null) {
-      setSubOpen(stored);
-    }
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   useEffect(() => {
@@ -288,18 +283,14 @@ export function AppSidebar() {
   const { isMobile, state, openMobile } = useSidebar();
 
   const [sidebarCascadeGen, setSidebarCascadeGen] = useState(0);
-  const sidebarWasOpenRef = useRef<boolean | null>(null);
-
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- replay nav entrance when sidebar opens from closed */
-    const open = isMobile ? openMobile : state === "expanded";
-    const prev = sidebarWasOpenRef.current;
-    if (open && prev === false) {
+  const sidebarOpen = isMobile ? openMobile : state === "expanded";
+  const [prevSidebarOpen, setPrevSidebarOpen] = useState(sidebarOpen);
+  if (sidebarOpen !== prevSidebarOpen) {
+    setPrevSidebarOpen(sidebarOpen);
+    if (sidebarOpen) {
       setSidebarCascadeGen((n) => n + 1);
     }
-    sidebarWasOpenRef.current = open;
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [isMobile, openMobile, state]);
+  }
 
   const items = user?.is_admin
     ? [

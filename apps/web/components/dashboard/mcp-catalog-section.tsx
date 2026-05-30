@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchProjectCatalog,
@@ -129,28 +129,23 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [catalogEditorOpen, setCatalogEditorOpen] = useState(false);
 
-  // Static-checkable dep for the effect below; complex `?? ""` falls afoul of
+  // Static-checkable dep for draft reset below; complex `?? ""` falls afoul of
   // react-hooks/exhaustive-deps if used inline.
   const catalogOverrideKey = data?.catalog_markdown_override ?? "";
 
-  useEffect(
-    () => {
-      if (!data) return;
-      // Reset the editable draft whenever the server-side catalog values shift
-      // (project change, release activation, save/restore). `data` itself is
-      // intentionally omitted from the dep array because query refetches on
-      // focus/interval can produce a new object reference with identical
-      // values — re-running here would clobber unsaved edits.
-      setDraft(data.catalog_markdown ?? "");
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above; `data` is intentionally omitted
-    [
-      projectId,
-      data?.catalog_markdown,
-      data?.catalog_markdown_generated,
-      catalogOverrideKey,
-    ],
+  const catalogSyncKey = useMemo(
+    () =>
+      data
+        ? `${projectId}:${data.catalog_markdown ?? ""}:${data.catalog_markdown_generated ?? ""}:${catalogOverrideKey}`
+        : "",
+    [projectId, data, catalogOverrideKey],
   );
+
+  const [prevCatalogSyncKey, setPrevCatalogSyncKey] = useState("");
+  if (data && catalogSyncKey !== prevCatalogSyncKey) {
+    setPrevCatalogSyncKey(catalogSyncKey);
+    setDraft(data.catalog_markdown ?? "");
+  }
 
   const saveMutation = useMutation({
     mutationFn: async () => {

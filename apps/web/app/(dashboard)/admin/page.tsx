@@ -137,8 +137,10 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!user?.is_admin) return;
-    void loadMetrics();
-    void loadPrivileged();
+    queueMicrotask(() => {
+      void loadMetrics();
+      void loadPrivileged();
+    });
   }, [user?.is_admin, loadMetrics, loadPrivileged]);
 
   const runLookup = async () => {

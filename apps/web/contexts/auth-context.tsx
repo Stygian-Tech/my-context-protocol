@@ -84,7 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Only fetch when we don't already have a user. Prevents a subsequent loadUser()
     // (from effect re-run after router.replace) from overwriting valid user with null.
     if (!authToken && !user) {
-      loadUser();
+      queueMicrotask(() => {
+        void loadUser();
+      });
     }
   }, [loadUser, user]);
 
