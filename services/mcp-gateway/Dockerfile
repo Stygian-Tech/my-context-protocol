@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Layer order: manifest → resolve deps (cached) → app sources → build (cached).
-# Cache mounts persist SwiftPM artifacts across Depot/BuildKit builds (see Depot SSD cache + mount docs).
+# Cache mounts persist SwiftPM artifacts across BuildKit builds.
 FROM swift:6.2-jammy AS build
 WORKDIR /build
 

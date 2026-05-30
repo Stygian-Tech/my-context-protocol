@@ -23,7 +23,7 @@ struct MCPController {
         let body: JSONRPCRequest
         do {
             body = try req.content.decode(JSONRPCRequest.self)
-            req.logger.devTrace("mcp_rpc decoded method=\(body.method) projectId=\(projectId.uuidString)")
+            req.logger.devTrace("mcp_rpc decoded method=\(body.method.rawValue) projectId=\(projectId.uuidString)")
         } catch {
             req.logger.mcpTrace("mcp_rpc decode_failed projectId=\(projectId.uuidString)")
             let res = try await jsonRPCError(id: nil, code: -32700, message: "Parse error").encodeResponse(
@@ -78,11 +78,11 @@ struct MCPController {
             out = try await handlePromptsGet(req: req, project: project, params: body.params, id: body.id)
         case "notifications/initialized", "notifications/cancelled":
             // Lifecycle / cancellation JSON-RPC notifications: no `id`, no result body (MCP over HTTP).
-            req.logger.mcpTrace("mcp dispatch handler=\(body.method) projectId=\(projectId.uuidString)")
+            req.logger.mcpTrace("mcp dispatch handler=\(body.method.rawValue) projectId=\(projectId.uuidString)")
             out = serveNotificationAck()
         default:
             req.logger.mcpTrace(
-                "mcp dispatch handler=method_not_found projectId=\(projectId.uuidString) requestedMethod=\(body.method)"
+                "mcp dispatch handler=method_not_found projectId=\(projectId.uuidString) requestedMethod=\(body.method.rawValue)"
             )
             out = try await serveRpcError(id: body.id, code: -32601, message: "Method not found", req: req)
         }
@@ -90,15 +90,15 @@ struct MCPController {
         let latencyMs = Int(Date().timeIntervalSince(start) * 1000)
         let errCodeStr = out.jsonRpcErrorCode.map { String($0) } ?? "-"
         req.logger.mcpTrace(
-            "mcp_rpc done projectId=\(projectId.uuidString) method=\(body.method) httpStatus=\(out.httpStatus) jsonRpcError=\(errCodeStr) latencyMs=\(latencyMs)"
+            "mcp_rpc done projectId=\(projectId.uuidString) method=\(body.method.rawValue) httpStatus=\(out.httpStatus) jsonRpcError=\(errCodeStr) latencyMs=\(latencyMs)"
         )
         let releaseId = project.activeReleaseId
-        let capTag = Self.mcpCapabilityInvocationTag(method: body.method, params: body.params)
+        let capTag = Self.mcpCapabilityInvocationTag(method: body.method.rawValue, params: body.params)
         try? await RequestLog(
             projectId: projectId,
             releaseId: releaseId,
             clientId: clientName,
-            method: body.method,
+            method: body.method.rawValue,
             latencyMs: latencyMs,
             status: String(out.httpStatus),
             errorCode: out.jsonRpcErrorCode.map { String($0) },

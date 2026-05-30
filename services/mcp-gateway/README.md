@@ -1,107 +1,92 @@
-# MyContextProtocol
+# MyContextProtocol MCP Gateway
 
-A hosted MCP (Model Context Protocol) gateway that ingests [SKILL.md](https://github.com/cursor-public/skill-creator)-based Agent Skills from a Git repository and exposes them via a stable MCP server endpoint.
+Swift/Vapor backend for MyContextProtocol. It syncs Git repositories containing `SKILL.md` files, compiles releases into MCP tools/resources/prompts, and serves the tenant MCP endpoint plus dashboard REST APIs.
 
-**Goal:** Point to a GitHub repo of skills, get `https://{subdomain}.mcp.yourdomain.com` that stays in sync with the repo—with auth, audit logs, and versioned rollouts.
+## Stack
 
-## Overview
+- Swift 6 / Vapor
+- Fluent with Postgres in hosted environments and SQLite for local development/tests
+- GitHub OAuth and GitHub App installation flows
+- Stripe billing webhooks
+- `mcp-server-kit` for reusable MCP protocol models and schema primitives
 
-- **Input:** Git repos containing one or more skill folders with `SKILL.md` (per Agent Skills standard)
-- **Output:** A single MCP endpoint per project serving tools, resources, and prompts derived from those skills
-- **MVP:** Skills as data only—no arbitrary code execution from repos
+## Local Development
 
-## Tech Stack
-
-| Layer | Choice |
-|-------|--------|
-| Backend | Vapor (Swift) |
-| Database | Supabase Postgres (production); **local file SQLite** via `USE_SQLITE=1` |
-| ORM | Fluent + PostgresKit / FluentSQLiteDriver |
-| MCP | Custom JSON-RPC handler (no Swift SDK) |
-| Parsing | Yams (YAML frontmatter in SKILL.md) |
-
-## Architecture
-
-```
-GitHub Repo → Webhook/Poll → Sync Pipeline → Parse SKILL.md → Validate → DB
-                                                                          ↓
-MCP Client ← JSON-RPC over HTTP ← MCP Endpoint ← Active Release Catalog ←─┘
+```bash
+cp .env.example .env
+swift run App
 ```
 
-- **Sync pipeline:** Fetches repo tarball at commit SHA, parses `SKILL.md` files, validates against Agent Skills spec, stores releases and skill catalog
-- **MCP endpoint:** Serves `tools/list` and `tools/call` from the active release’s catalog
-- **Auth:** API keys for MCP clients; optional OAuth 2.0 on the tenant MCP host when `MCP_OAUTH_ENABLED=1` (protected-resource + authorization-server metadata, authorization code + PKCE for users, client credentials for machine clients); user auth (GitHub OAuth session) for admin operations
+By default the app listens on `0.0.0.0:8080`. For local SQLite, set `USE_SQLITE=1` and leave `DATABASE_URL` / `SUPABASE_DB_URL` empty. For hosted-like local development, set `APP_ENV=dev` plus `DATABASE_URL` or `SUPABASE_DB_URL`.
 
-## Quick Start
+## Tests
 
-1. Clone and configure env:
-
-   ```bash
-   cp .env.example .env
-   # Local SQLite: `USE_SQLITE=1` and leave `DATABASE_URL` / `SUPABASE_DB_URL` empty (creates `db.sqlite`).
-   # Postgres: set `USE_SQLITE=0` and `DATABASE_URL=...` or `SUPABASE_DB_URL=...` (recommended).
-   # Or set all of `DATABASE_HOST`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, `DATABASE_NAME` (optional `DATABASE_PORT`).
-   # With `APP_ENV=dev` or `APP_ENV=prod`, discrete fields must all be non-empty — there is no silent default to `localhost`/demo creds.
-   ```
-
-2. Build and run:
-
-   ```bash
-   swift build
-   swift run App
-   ```
-
-3. Migrations run automatically on startup. For personal use, the seed creates an account from `ADMIN_EMAIL`/`ADMIN_PASSWORD` (default: admin@localhost/admin).
-
-4. **Auth**: `POST /auth/login` with `{"email":"...","password":"..."}` to get a session.
-
-5. **Sync**: `POST /sync` (requires session) triggers repo sync.
-
-6. **Create API key**: `POST /api-keys` (requires session) returns a new MCP API key.
-
-7. **MCP endpoint**: `POST` to `SAAS_MCP_PATH` (default `/mcp`) on the tenant host with `Authorization: Bearer <api_key>` for JSON-RPC: `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`.
-8. **Catalog (dashboard)**: `GET /projects/:id/catalog` (session auth) returns the active release’s tools, resources, and prompts for the UI.
-
-## Environment Variables
-
-| Variable | Description |
-|----------|--------------|
-| `APP_ENV` | `local`, `dev`, or `prod` (empty/unknown → `prod`, fail closed) |
-| `USE_SQLITE` | `1`/`true` for file-backed SQLite; unset/`0` for Postgres |
-| `DATABASE_URL` | Postgres connection URL (preferred when not using SQLite) |
-| `SUPABASE_DB_URL` | Alternate Postgres URL (read after `DATABASE_URL`) |
-| `DATABASE_HOST`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, `DATABASE_NAME` | Discrete Postgres config when URLs are unset; required (non-empty) for `APP_ENV=dev`/`prod` |
-| `DATABASE_PORT` | Postgres port (default `5432`) |
-| `DATABASE_INSECURE_TLS` | `1`/`true` to disable TLS cert verification for some managed Postgres setups |
-| `ENCRYPTION_KEY` | 32-byte key (base64) for OAuth state and token encryption |
-| `GITHUB_TOKEN` | Optional PAT for anonymous/private repo fetch fallbacks |
-| `CORS_ORIGIN` / `FRONTEND_URL` | Browser origin and app URL for OAuth and CORS |
-
-See [`.env.example`](.env.example) for the full list used by the API.
-
-## Project Structure
-
+```bash
+swift test --enable-swift-testing --disable-xctest --no-parallel -Xswiftc -warnings-as-errors
+swift build -c release --product App -Xswiftc -warnings-as-errors
 ```
-Sources/MyContextProtocol/
-├── App/           # Configure, bootstrap
-├── Controllers/   # Auth, MCP, Webhook
+
+Tests clear inherited hosted database URLs and fall back to in-memory SQLite unless explicitly configured to use Postgres.
+
+## Structure
+
+```text
+Sources/App/
+├── Controllers/   # Auth, MCP, billing, projects, admin, webhooks
+├── MCP/           # Product-specific MCP catalog, OAuth, notifications, handlers
+├── Middleware/    # Tenant host, auth, rate limits, origin checks
+├── Migrations/    # Fluent schema migrations
 ├── Models/        # Fluent models
-├── Migrations/    # DB migrations
-├── Sync/          # Repo fetcher, SKILL.md parser, validator, pipeline
-├── MCP/           # JSON-RPC handler, tool dispatch, API key middleware
-├── Middleware/    # Session auth for admin routes
-└── Routes/        # Route definitions
+├── Services/      # App services and environment helpers
+├── Sync/          # Git fetch, SKILL parsing, validation, compilation
+└── Utilities/     # Shared low-level helpers
 ```
 
-## Spec & Plan
+## Fly.io
 
-- Product specs and planning notes live in the team’s internal wiki (not linked here—this repo is open source).
-- Implementation plan: see `.cursor/plans/` for phased rollout
+First-time setup:
 
-## CI/CD
+```bash
+fly apps create my-context-protocol-dev-mcp-gateway
+fly apps create my-context-protocol-prod-mcp-gateway
+```
 
-- Backend GitHub Actions + Depot: workflow definitions are in `.github/workflows/`; extended runbooks stay in the team’s internal wiki.
+Set secrets on each Fly app:
 
-## License
+```bash
+fly secrets set \
+  APP_ENV=dev \
+  DATABASE_URL='postgres://...' \
+  ENCRYPTION_KEY='...' \
+  CORS_ORIGIN='https://testing.mycontextprotocol.dev' \
+  FRONTEND_URL='https://testing.mycontextprotocol.dev' \
+  GITHUB_CLIENT_ID='...' \
+  GITHUB_CLIENT_SECRET='...' \
+  GITHUB_OAUTH_REDIRECT_URI='https://api.testing.mycontextprotocol.dev/auth/github/callback' \
+  --app my-context-protocol-dev-mcp-gateway
+```
 
-MIT
+Include GitHub App, Stripe, SaaS MCP host, and admin/pro bypass secrets as needed from `.env.example`.
+
+Deploy:
+
+```bash
+bash deploy.sh dev
+bash deploy.sh main
+```
+
+From the repo root:
+
+```bash
+bash scripts/fly-deploy-mcp-gateway.sh dev
+```
+
+GitHub Actions uses the root script and expects `FLY_API_TOKEN`, plus optional `FLY_MCP_GATEWAY_APP_DEV`, `FLY_MCP_GATEWAY_APP_PROD`, and `FLY_ORG` secrets.
+
+## Docker / Compose
+
+`Dockerfile` builds the Vapor app for container platforms. `docker-compose.yml` remains as an optional Portainer/self-hosting reference and forwards all supported environment variables into the container.
+
+## Internal Docs Boundary
+
+Product specs and the MCP agent guide live in the team’s internal workspace. Do not add Notion URLs or the internal MCP agent guide to this open-source repo without an explicit request.

@@ -30,7 +30,7 @@
 # Prefer the CI-pushed image and omit `build:` when possible.
 services:
   app:
-    image: stygiantech/my-context-protocol:${APP_ENV:?Set APP_ENV in stack env to dev or prod}
+    image: ghcr.io/stygian-tech/my-context-protocol:${APP_ENV:?Set APP_ENV in stack env to dev or prod}
     ports:
       - "8080:8080"
     restart: unless-stopped

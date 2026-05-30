@@ -5,7 +5,7 @@ Dashboard for **MyContextProtocol**—a hosted MCP endpoint that syncs SKILL.md 
 ## Tech Stack
 
 - **Runtime:** Bun
-- **Framework:** Next.js 15 (App Router)
+- **Framework:** Next.js 16 (App Router)
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS
 - **Components:** Shadcn UI
@@ -14,14 +14,16 @@ Dashboard for **MyContextProtocol**—a hosted MCP endpoint that syncs SKILL.md 
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (v1.1+). This repo uses **`bun.lockb`** only — do not add `package-lock.json` or other package manager lockfiles.
+- [Bun](https://bun.sh) (v1.3.14). Install from the repository root so Bun workspaces use the root `bun.lock`.
 
 ## Getting Started
 
 1. Install dependencies:
 
    ```bash
+   cd ../..
    bun install
+   cd apps/web
    ```
 
 2. Copy the example environment file:
@@ -70,7 +72,7 @@ When the backend sets `MCP_OAUTH_ENABLED`, project and catalog API responses inc
 ├── lib/
 │   ├── api.ts            # API client
 │   ├── auth.ts           # Auth helpers
-│   ├── types.ts          # Shared types
+│   ├── types.ts          # Re-exported shared types from @mycontext/web-client
 │   └── projects-api.ts   # Project API calls
 └── hooks/
 ```
@@ -101,7 +103,7 @@ This frontend is designed to work with the MyContextProtocol Vapor backend. Auth
 
 Configure CORS on the backend to allow the frontend origin.
 
-For a full API contract to hand off to backend implementers, see [docs/BACKEND_API_CONTRACT.md](docs/BACKEND_API_CONTRACT.md).
+For the backend API contract, see [`../../packages/mycontext-api-contract/BACKEND_API_CONTRACT.md`](../../packages/mycontext-api-contract/BACKEND_API_CONTRACT.md).
 
 ## Scripts
 
