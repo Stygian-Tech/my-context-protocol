@@ -1,3 +1,4 @@
+import Foundation
 import Vapor
 
 @main
@@ -11,8 +12,9 @@ enum Entrypoint {
             try await configure(app)
             try await app.execute()
         } catch {
-            try await app.asyncShutdown()
-            throw error
+            app.logger.critical("Application startup failed: \(String(reflecting: error))")
+            try? await app.asyncShutdown()
+            exit(1)
         }
         try await app.asyncShutdown()
     }

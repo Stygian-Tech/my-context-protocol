@@ -33,5 +33,5 @@ COPY --from=build /build/App /app/App
 EXPOSE 8080
 ENV HOST=0.0.0.0
 ENV PORT=8080
-# Default bind for Docker / orchestrators; override with `docker run -e PORT=...`
-CMD ["/app/App", "serve", "--bind", "0.0.0.0:8080"]
+# Default bind for Docker / orchestrators; Fly sets PORT in fly.toml [env].
+CMD ["/bin/sh", "-c", "exec /app/App serve --bind ${HOST:-0.0.0.0}:${PORT:-8080}"]

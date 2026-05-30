@@ -16,6 +16,8 @@ primary_region = 'iad'
   PORT = '8080'
   APP_ENV = 'dev'
   HOST = '0.0.0.0'
+  # Supabase / managed Postgres from Linux containers often fail default TLS verify (CERTIFICATE_VERIFY_FAILED).
+  DATABASE_INSECURE_TLS = '1'
 
 [http_service]
   internal_port = 8080

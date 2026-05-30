@@ -57,6 +57,7 @@ Set secrets on each Fly app:
 fly secrets set \
   APP_ENV=dev \
   DATABASE_URL='postgres://...' \
+  DATABASE_INSECURE_TLS=1 \
   ENCRYPTION_KEY='...' \
   CORS_ORIGIN='https://testing.mycontextprotocol.dev' \
   FRONTEND_URL='https://testing.mycontextprotocol.dev' \
@@ -82,6 +83,19 @@ bash scripts/fly-deploy-mcp-gateway.sh dev
 ```
 
 GitHub Actions uses the root script and expects `FLY_API_TOKEN`, plus optional `FLY_MCP_GATEWAY_APP_DEV`, `FLY_MCP_GATEWAY_APP_PROD`, and `FLY_ORG` secrets.
+
+### Troubleshooting
+
+If Fly reports the app is not listening on `0.0.0.0:8080`, check machine logs:
+
+```bash
+fly logs -a my-context-protocol-dev-gateway
+```
+
+Common startup failures:
+
+- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — set `DATABASE_INSECURE_TLS=1` (already in `fly.toml` `[env]` for dev; can also set as a secret). Use proper CA trust for production instead of skipping verification.
+- **Missing database config** — `APP_ENV=dev` requires `DATABASE_URL` or `SUPABASE_DB_URL` (or all discrete `DATABASE_*` fields). `USE_SQLITE=1` is for local file SQLite only, not Fly.
 
 ## Docker / Compose
 
