@@ -35,7 +35,7 @@ env \
   DATABASE_URL="" \
   SUPABASE_DB_URL="" \
   DISABLE_ADMIN_ANALYTICS_ROLLUP_SCHEDULER=1 \
-  swift test --no-color-diagnostics --skip-update \
+  swift test --skip-update \
     --enable-swift-testing --disable-xctest \
     --no-parallel \
     -Xswiftc -warnings-as-errors
