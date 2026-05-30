@@ -1,9 +1,9 @@
-# Deploy from services/mcp-gateway:
-#   bash deploy.sh dev
-# Or from the repo root:
-#   bash scripts/fly-deploy-mcp-gateway.sh dev
+# fly.toml app configuration file generated for my-context-protocol-dev-gateway on 2026-05-30T19:40:37Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = 'my-context-protocol-dev-mcp-gateway'
+app = 'my-context-protocol-dev-gateway'
 primary_region = 'iad'
 
 [build]
@@ -13,9 +13,9 @@ primary_region = 'iad'
   wait_timeout = '10m0s'
 
 [env]
-  PORT = '8080'
   APP_ENV = 'dev'
   HOST = '0.0.0.0'
+  PORT = '8080'
 
 [http_service]
   internal_port = 8080
@@ -35,3 +35,4 @@ primary_region = 'iad'
   memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 512
