@@ -2,8 +2,10 @@ import type { NextConfig } from "next";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Prefer this repo as Turbopack root when other lockfiles exist higher in the tree. */
+/** App package root (`apps/web`). */
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+/** Bun workspace root (contains `bun.lock` and hoisted `node_modules`). */
+const monorepoRoot = path.resolve(projectRoot, "../..");
 
 const rawApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim() ?? "";
 const apiUrl = (rawApiUrl || "http://localhost:8080").replace(/\/$/, "");
@@ -34,9 +36,9 @@ const proxiedApiPrefixes = [
 ] as const;
 
 const nextConfig: NextConfig = {
-  outputFileTracingRoot: projectRoot,
+  outputFileTracingRoot: monorepoRoot,
   turbopack: {
-    root: projectRoot,
+    root: monorepoRoot,
   },
   async rewrites() {
     return [
