@@ -3,7 +3,7 @@
 # Or from the repo root:
 #   bash scripts/fly-deploy-mcp-gateway.sh dev
 
-app = 'my-context-protocol-dev-mcp-gateway'
+app = 'my-context-protocol-dev-gateway'
 primary_region = 'iad'
 
 [build]
