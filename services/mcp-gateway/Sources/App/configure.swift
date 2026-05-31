@@ -38,6 +38,25 @@ public func configure(_ app: Application) async throws {
     let mcpOauthApiOrigin = Environment.get("MCP_OAUTH_API_ORIGIN")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     app.logger.info("MCP config: SAAS_MCP_BASE_DOMAIN=\(mcpBaseDomain.isEmpty ? "(not set)" : mcpBaseDomain) MCP_OAUTH_ENABLED=\(mcpOauthEnabled) MCP_TRUST_X_FORWARDED_HOST=\(mcpTrustFwdHost) MCP_OAUTH_API_ORIGIN=\(mcpOauthApiOrigin.isEmpty ? "(not set)" : mcpOauthApiOrigin)")
 
+    if let oauthRedirect = Environment.get("GITHUB_OAUTH_REDIRECT_URI")?
+        .trimmingCharacters(in: .whitespacesAndNewlines), !oauthRedirect.isEmpty {
+        let normalized = oauthRedirect.lowercased()
+        if normalized.contains("/auth/github/app/") {
+            app.logger.error(
+                """
+                GITHUB_OAUTH_REDIRECT_URI must be the browser-login callback (/auth/github/callback), \
+                not the GitHub App install callback (/auth/github/app/callback). \
+                Use GITHUB_APP_SETUP_CALLBACK_URL for the App install URL. \
+                Misconfiguration causes GitHub login to redirect without auth_token (401 on /auth/me).
+                """
+            )
+        } else if normalized.hasPrefix("http://"), !normalized.contains("localhost"), !normalized.contains("127.0.0.1") {
+            app.logger.warning(
+                "GITHUB_OAUTH_REDIRECT_URI uses http:// on a non-localhost host; GitHub requires https:// in hosted environments."
+            )
+        }
+    }
+
     if DevLoggingConfig.verboseHttpEnabled {
         app.logger.info("Verbose HTTP request tracing on (non-production default; set DEV_LOG_HTTP=0 to disable)")
         app.middleware.use(VerboseRequestLoggingMiddleware(), at: .beginning)
