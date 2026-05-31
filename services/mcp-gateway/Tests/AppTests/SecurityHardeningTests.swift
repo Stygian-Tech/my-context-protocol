@@ -79,4 +79,66 @@ struct SecurityHardeningTests {
         let ok = try AppFrontendURL.validateRelativeBrowserPath("  /trimmed  ", label: "t")
         #expect(ok == "/trimmed")
     }
+
+    @Test("GitHub login redirect URI ignores misconfigured App install callback")
+    func githubLoginRedirectIgnoresAppCallback() throws {
+        let (apply, restore) = temporaryEnv([
+            "GITHUB_OAUTH_REDIRECT_URI": "http://api.example.com/auth/github/app/callback",
+            "WEBHOOK_BASE_URL": "https://api.example.com",
+        ])
+        apply()
+        defer { restore() }
+        let uri = try GitHubOAuthLoginConfig.redirectURI()
+        #expect(uri == "https://api.example.com/auth/github/callback")
+    }
+
+    @Test("GitHub login redirect URI prefers explicit login callback when valid")
+    func githubLoginRedirectUsesExplicitWhenValid() throws {
+        let (apply, restore) = temporaryEnv([
+            "GITHUB_OAUTH_REDIRECT_URI": "https://api.example.com/auth/github/callback",
+            "WEBHOOK_BASE_URL": "https://other.example.com",
+        ])
+        apply()
+        defer { restore() }
+        let uri = try GitHubOAuthLoginConfig.redirectURI()
+        #expect(uri == "https://api.example.com/auth/github/callback")
+    }
+
+    @Test("GitHub login redirect URI derives from WEBHOOK_BASE_URL when unset")
+    func githubLoginRedirectFromWebhookBase() throws {
+        let (apply, restore) = temporaryEnv([
+            "GITHUB_OAUTH_REDIRECT_URI": nil,
+            "WEBHOOK_BASE_URL": "https://api.example.com/",
+        ])
+        apply()
+        defer { restore() }
+        let uri = try GitHubOAuthLoginConfig.redirectURI()
+        #expect(uri == "https://api.example.com/auth/github/callback")
+    }
+}
+
+private func temporaryEnv(_ overrides: [String: String?]) -> (() -> Void, () -> Void) {
+    var saved: [String: String?] = [:]
+    for (key, _) in overrides {
+        saved[key] = ProcessInfo.processInfo.environment[key]
+    }
+    let apply: () -> Void = {
+        for (key, val) in overrides {
+            if let v = val {
+                setenv(key, v, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+    }
+    let restore: () -> Void = {
+        for (key, val) in saved {
+            if let v = val {
+                setenv(key, v, 1)
+            } else {
+                unsetenv(key)
+            }
+        }
+    }
+    return (apply, restore)
 }
