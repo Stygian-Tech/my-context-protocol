@@ -21,6 +21,7 @@ interface AuthContextValue {
   isLoading: boolean;
   loginWithGitHub: (returnTo?: string) => void;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -113,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, loginWithGitHub, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, loginWithGitHub, logout, refreshUser: loadUser }}>
       {children}
     </AuthContext.Provider>
   );
