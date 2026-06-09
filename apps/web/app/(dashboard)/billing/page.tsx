@@ -9,16 +9,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getCurrentUser } from "@/lib/auth";
 import { createCheckoutSession, createPortalSession } from "@/lib/billing-api";
 import { assertStripeRedirectUrl } from "@/lib/trusted-redirect";
 import { useMutation } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 const PRO_PRICE_MONTHLY_LABEL = "$5/mo";
 const PRO_PRICE_YEARLY_LABEL = "$50/yr";
-
-type ConfirmState = "polling" | "confirmed" | "timeout";
 
 const POLL_INTERVAL_MS = 2500;
 const POLL_MAX_ATTEMPTS = 10; // 25s total
@@ -29,40 +28,33 @@ export default function BillingPage() {
   const billingBanner = searchParams.get("billing");
 
   const [billingInterval, setBillingInterval] = useState<"month" | "year">("month");
-  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
-  const pollCount = useRef(0);
+  // Only tracks whether polling exhausted — "confirmed" is derived from user.plan directly.
+  const [timedOut, setTimedOut] = useState(false);
+
+  const successState =
+    billingBanner !== "success" ? null
+    : user?.plan === "pro" ? "confirmed"
+    : timedOut ? "timeout"
+    : "polling";
 
   // When Stripe redirects back with ?billing=success, poll /auth/me until plan=pro or timeout.
   useEffect(() => {
-    if (billingBanner !== "success") return;
-    // Already confirmed in a previous render cycle
-    if (user?.plan === "pro") {
-      setConfirmState("confirmed");
-      return;
-    }
-    setConfirmState("polling");
-    pollCount.current = 0;
-
-    const interval = setInterval(async () => {
-      pollCount.current += 1;
-      await refreshUser();
-      // After refreshUser, the user state will update on the next render; check via ref below.
+    if (billingBanner !== "success" || user?.plan === "pro") return;
+    let attempts = 0;
+    const id = setInterval(async () => {
+      attempts += 1;
+      const latest = await getCurrentUser();
+      if (latest?.plan === "pro") {
+        clearInterval(id);
+        void refreshUser();
+      } else if (attempts >= POLL_MAX_ATTEMPTS) {
+        clearInterval(id);
+        setTimedOut(true);
+      }
     }, POLL_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-    // Only run once on mount when billing=success — intentionally omit user/refreshUser from deps.
+    return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billingBanner]);
-
-  // React to user.plan changes while polling.
-  useEffect(() => {
-    if (confirmState !== "polling") return;
-    if (user?.plan === "pro") {
-      setConfirmState("confirmed");
-    } else if (pollCount.current >= POLL_MAX_ATTEMPTS) {
-      setConfirmState("timeout");
-    }
-  }, [user?.plan, confirmState]);
 
   const checkout = useMutation({
     mutationFn: () =>
@@ -99,15 +91,15 @@ export default function BillingPage() {
         </p>
       </div>
 
-      {billingBanner === "success" && confirmState === "polling" && (
+      {successState === "polling" && (
         <p className="text-muted-foreground text-sm">Confirming your subscription…</p>
       )}
-      {billingBanner === "success" && confirmState === "confirmed" && (
+      {successState === "confirmed" && (
         <p className="text-sm text-green-600 dark:text-green-500">
           You&apos;re now on Pro.
         </p>
       )}
-      {billingBanner === "success" && confirmState === "timeout" && (
+      {successState === "timeout" && (
         <p className="text-sm text-amber-600 dark:text-amber-500">
           Payment received, but your plan hasn&apos;t updated yet. Try refreshing in a moment — if
           this persists, contact support.
