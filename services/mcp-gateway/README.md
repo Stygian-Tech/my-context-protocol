@@ -57,6 +57,7 @@ Set secrets on each Fly app:
 fly secrets set \
   APP_ENV=dev \
   DATABASE_URL='postgres://...' \
+  DATABASE_INSECURE_TLS=1 \
   ENCRYPTION_KEY='...' \
   CORS_ORIGIN='https://testing.mycontextprotocol.dev' \
   FRONTEND_URL='https://testing.mycontextprotocol.dev' \
@@ -65,6 +66,8 @@ fly secrets set \
   GITHUB_OAUTH_REDIRECT_URI='https://api.testing.mycontextprotocol.dev/auth/github/callback' \
   --app my-context-protocol-dev-mcp-gateway
 ```
+
+`GITHUB_OAUTH_REDIRECT_URI` is **only** for dashboard GitHub login (`/auth/github/callback`). Do not point it at `/auth/github/app/callback` — that path is for GitHub App installation and uses `GITHUB_APP_SETUP_CALLBACK_URL` instead. If login OAuth is sent to the app callback, users return to the frontend with `github_app_error=invalid_state` and `/auth/me` stays 401.
 
 Include GitHub App, Stripe, SaaS MCP host, and admin/pro bypass secrets as needed from `.env.example`.
 
@@ -82,6 +85,19 @@ bash scripts/fly-deploy-mcp-gateway.sh dev
 ```
 
 GitHub Actions uses the root script and expects `FLY_API_TOKEN`, plus optional `FLY_MCP_GATEWAY_APP_DEV`, `FLY_MCP_GATEWAY_APP_PROD`, and `FLY_ORG` secrets.
+
+### Troubleshooting
+
+If Fly reports the app is not listening on `0.0.0.0:8080`, check machine logs:
+
+```bash
+fly logs -a my-context-protocol-dev-gateway
+```
+
+Common startup failures:
+
+- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — set `DATABASE_INSECURE_TLS=1` (already in `fly.toml` `[env]` for dev; can also set as a secret). Use proper CA trust for production instead of skipping verification.
+- **Missing database config** — `APP_ENV=dev` requires `DATABASE_URL` or `SUPABASE_DB_URL` (or all discrete `DATABASE_*` fields). `USE_SQLITE=1` is for local file SQLite only, not Fly.
 
 ## Docker / Compose
 

@@ -9,10 +9,10 @@ BRANCH="${1:?usage: deploy.sh dev|main}"
 shift
 
 if [ "$BRANCH" = "main" ]; then
-  APP="${FLY_MCP_GATEWAY_APP_PROD:-my-context-protocol-prod-mcp-gateway}"
+  APP="${FLY_MCP_GATEWAY_APP_PROD:-my-context-protocol-prod-gateway}"
   APP_ENV_VALUE="prod"
 else
-  APP="${FLY_MCP_GATEWAY_APP_DEV:-my-context-protocol-dev-mcp-gateway}"
+  APP="${FLY_MCP_GATEWAY_APP_DEV:-my-context-protocol-dev-gateway}"
   APP_ENV_VALUE="dev"
 fi
 

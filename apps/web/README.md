@@ -14,7 +14,7 @@ Dashboard for **MyContextProtocol**—a hosted MCP endpoint that syncs SKILL.md 
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (v1.3.14). Install from the repository root so Bun workspaces use the root `bun.lock`.
+- [Bun](https://bun.sh) (v1.3.6; see repo-root `.bun-version`). Install from the repository root so Bun workspaces use the root `bun.lock`.
 
 ## Getting Started
 

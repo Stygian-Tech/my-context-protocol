@@ -350,6 +350,19 @@ struct ProjectController {
             throw Abort(.conflict, reason: "Slug already in use for this account")
         }
 
+        if !account.hasProEntitlements {
+            let freeLimit = Int(Environment.get("FREE_PROJECT_LIMIT") ?? "") ?? 1
+            let existing = try await Project.query(on: req.db)
+                .filter(\.$account.$id == account.id!)
+                .count()
+            if existing >= freeLimit {
+                throw Abort(
+                    .paymentRequired,
+                    reason: "Free accounts are limited to \(freeLimit) project. Upgrade to Pro to create more."
+                )
+            }
+        }
+
         let subdomain = try await allocateSubdomain(db: req.db)
         let project = Project(
             accountId: account.id!,

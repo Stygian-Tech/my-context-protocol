@@ -38,6 +38,10 @@ public func configure(_ app: Application) async throws {
     let mcpOauthApiOrigin = Environment.get("MCP_OAUTH_API_ORIGIN")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     app.logger.info("MCP config: SAAS_MCP_BASE_DOMAIN=\(mcpBaseDomain.isEmpty ? "(not set)" : mcpBaseDomain) MCP_OAUTH_ENABLED=\(mcpOauthEnabled) MCP_TRUST_X_FORWARDED_HOST=\(mcpTrustFwdHost) MCP_OAUTH_API_ORIGIN=\(mcpOauthApiOrigin.isEmpty ? "(not set)" : mcpOauthApiOrigin)")
 
+    if let loginRedirect = try? GitHubOAuthLoginConfig.redirectURI(logger: app.logger) {
+        app.logger.info("GitHub login OAuth redirect_uri=\(loginRedirect)")
+    }
+
     if DevLoggingConfig.verboseHttpEnabled {
         app.logger.info("Verbose HTTP request tracing on (non-production default; set DEV_LOG_HTTP=0 to disable)")
         app.middleware.use(VerboseRequestLoggingMiddleware(), at: .beginning)

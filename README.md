@@ -55,7 +55,7 @@ The workflow detects changes with `scripts/ci-detect-changes.sh`, runs the Bun/T
 ### Deployment
 
 - **Backend**: Fly.io, configured by `services/mcp-gateway/fly.toml` and deployed with `bash scripts/fly-deploy-mcp-gateway.sh dev|main`.
-- **Frontend**: Vercel Git integration with **Root Directory = `apps/web`**. Vercel reads `apps/web/vercel.json`.
+- **Frontend**: Vercel Git integration with **Root Directory = `apps/web`**. Vercel reads `apps/web/vercel.json`. Install runs from the monorepo root (`cd ../.. && bun install --frozen-lockfile`) so workspace deps and `bun.lock` stay in sync. Bun is pinned to **1.3.6** (`.bun-version`) to match Vercel’s default runtime. Production builds use Turbopack (`next build --turbopack` in `apps/web/package.json`).
 - **Optional self-hosting**: `services/mcp-gateway/docker-compose.yml` remains as a Portainer/Compose reference, but Fly is the primary backend path.
 
 ## History

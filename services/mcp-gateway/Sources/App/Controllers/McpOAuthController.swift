@@ -285,9 +285,7 @@ enum McpOAuthController {
         guard let ghClientId = Environment.get("GITHUB_CLIENT_ID"), !ghClientId.isEmpty else {
             throw Abort(.internalServerError, reason: "GITHUB_CLIENT_ID not configured")
         }
-        guard let redirectUri = Environment.get("GITHUB_OAUTH_REDIRECT_URI"), !redirectUri.isEmpty else {
-            throw Abort(.internalServerError, reason: "GITHUB_OAUTH_REDIRECT_URI not configured")
-        }
+        let redirectUri = try GitHubOAuthLoginConfig.redirectURI(logger: req.logger)
 
         let state: String
         do {

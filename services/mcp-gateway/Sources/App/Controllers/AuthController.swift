@@ -50,9 +50,7 @@ struct AuthController {
         guard let clientId = Environment.get("GITHUB_CLIENT_ID"), !clientId.isEmpty else {
             throw Abort(.internalServerError, reason: "GITHUB_CLIENT_ID not configured")
         }
-        guard let redirectUri = Environment.get("GITHUB_OAUTH_REDIRECT_URI"), !redirectUri.isEmpty else {
-            throw Abort(.internalServerError, reason: "GITHUB_OAUTH_REDIRECT_URI not configured")
-        }
+        let redirectUri = try GitHubOAuthLoginConfig.redirectURI(logger: req.logger)
 
         let returnTo: String
         if let q = req.query[String.self, at: "return_to"], !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -93,9 +91,7 @@ struct AuthController {
               let clientSecret = Environment.get("GITHUB_CLIENT_SECRET"), !clientSecret.isEmpty else {
             throw Abort(.internalServerError, reason: "GitHub OAuth not configured")
         }
-        guard let redirectUri = Environment.get("GITHUB_OAUTH_REDIRECT_URI"), !redirectUri.isEmpty else {
-            throw Abort(.internalServerError, reason: "GITHUB_OAUTH_REDIRECT_URI not configured")
-        }
+        let redirectUri = try GitHubOAuthLoginConfig.redirectURI(logger: req.logger)
 
         let stateParam = req.query[String.self, at: "state"]
         let returnTo: String
