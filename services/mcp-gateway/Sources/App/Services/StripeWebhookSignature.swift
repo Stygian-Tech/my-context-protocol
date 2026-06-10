@@ -3,15 +3,10 @@ import Foundation
 import Vapor
 
 enum StripeWebhookSignature {
-    /// Decodes `whsec_...` signing secret to the HMAC key bytes.
+    /// Returns the HMAC key bytes for the given Stripe signing secret.
+    /// Stripe uses the raw UTF-8 bytes of the full `whsec_...` string as the key.
     static func signingKey(from secret: String) -> Data {
-        guard secret.hasPrefix("whsec_") else { return Data(secret.utf8) }
-        // Stripe uses base64url encoding; normalize to standard base64 before decoding.
-        let b64url = String(secret.dropFirst(6))
-        let b64 = b64url
-            .replacingOccurrences(of: "-", with: "+")
-            .replacingOccurrences(of: "_", with: "/")
-        return Data(base64Encoded: b64) ?? Data(secret.utf8)
+        Data(secret.utf8)
     }
 
     /// Verifies `Stripe-Signature` header (t=timestamp,v1=hex,...). Returns payload if valid.
