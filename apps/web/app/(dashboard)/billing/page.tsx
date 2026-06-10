@@ -101,7 +101,7 @@ export default function BillingPage() {
       )}
       {successState === "timeout" && (
         <p className="text-sm text-amber-600 dark:text-amber-500">
-          Payment received, but your plan hasn&apos;t updated yet. Try refreshing in a moment — if
+          Checkout completed, but your plan hasn&apos;t updated yet. Try refreshing in a moment — if
           this persists, contact support.
         </p>
       )}
