@@ -11,17 +11,9 @@ struct StripeWebhookSignatureTests {
         #expect(k == Data("my_secret".utf8))
     }
 
-    @Test("signingKey decodes whsec_ base64")
+    @Test("signingKey uses raw bytes for whsec_ secrets")
     func signingKeyWhsec() {
-        let raw = Data((0 ..< 16).map { _ in UInt8(9) })
-        let b64 = "whsec_" + raw.base64EncodedString()
-        let k = StripeWebhookSignature.signingKey(from: b64)
-        #expect(k == raw)
-    }
-
-    @Test("signingKey falls back to full secret bytes when whsec_ payload is invalid base64")
-    func signingKeyWhsecInvalid() {
-        let s = "whsec_!!!not-base64!!!"
+        let s = "whsec_AAAAAAAAAAAAAAAAAAAAAA=="
         let k = StripeWebhookSignature.signingKey(from: s)
         #expect(k == Data(s.utf8))
     }
