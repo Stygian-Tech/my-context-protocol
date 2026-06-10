@@ -6,7 +6,11 @@ enum StripeWebhookSignature {
     /// Decodes `whsec_...` signing secret to the HMAC key bytes.
     static func signingKey(from secret: String) -> Data {
         guard secret.hasPrefix("whsec_") else { return Data(secret.utf8) }
-        let b64 = String(secret.dropFirst(6))
+        // Stripe uses base64url encoding; normalize to standard base64 before decoding.
+        let b64url = String(secret.dropFirst(6))
+        let b64 = b64url
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
         return Data(base64Encoded: b64) ?? Data(secret.utf8)
     }
 
