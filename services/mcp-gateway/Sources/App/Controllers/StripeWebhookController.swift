@@ -15,6 +15,13 @@ struct StripeWebhookController {
             throw Abort(.badRequest, reason: "Empty body")
         }
         let payload = collected.readData(length: collected.readableBytes) ?? Data()
+
+        // Temporary signature debug — remove once webhook verification is confirmed working.
+        let secretMasked = secret.count > 10
+            ? "\(secret.prefix(6))...\(secret.suffix(4)) (len=\(secret.count))"
+            : "(len=\(secret.count))"
+        req.logger.warning("stripe_webhook_debug secret=\(secretMasked) payloadBytes=\(payload.count) sigHeader=\(sig.prefix(80))")
+
         _ = try StripeWebhookSignature.verify(payload: payload, header: sig, secret: secret)
 
         guard let top = try JSONSerialization.jsonObject(with: payload) as? [String: Any],
