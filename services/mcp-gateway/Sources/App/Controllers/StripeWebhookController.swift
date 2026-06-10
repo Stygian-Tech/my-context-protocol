@@ -1,3 +1,4 @@
+import Crypto
 import Fluent
 import Foundation
 import Vapor
@@ -20,7 +21,19 @@ struct StripeWebhookController {
         let secretMasked = secret.count > 10
             ? "\(secret.prefix(6))...\(secret.suffix(4)) (len=\(secret.count))"
             : "(len=\(secret.count))"
-        req.logger.warning("stripe_webhook_debug secret=\(secretMasked) payloadBytes=\(payload.count) sigHeader=\(sig.prefix(80))")
+        let keyBytes = StripeWebhookSignature.signingKey(from: secret)
+        let keyHexPrefix = keyBytes.prefix(4).map { String(format: "%02x", $0) }.joined()
+        // Compute expected HMAC for comparison against v1= in Stripe-Signature header
+        var computedHmac = "(parse_error)"
+        let sigParts = sig.split(separator: ",")
+        if let tPart = sigParts.first(where: { $0.hasPrefix("t=") }) {
+            let ts = String(tPart.dropFirst(2))
+            let signedPayload = Data((ts + ".").utf8) + payload
+            let mac = HMAC<SHA256>.authenticationCode(for: signedPayload, using: SymmetricKey(data: keyBytes))
+            computedHmac = mac.map { String(format: "%02x", $0) }.joined()
+        }
+        req.logger.warning("stripe_webhook_debug secret=\(secretMasked) keyBytes=\(keyBytes.count) keyPrefix=\(keyHexPrefix) payloadBytes=\(payload.count) sigHeader=\(sig.prefix(80))")
+        req.logger.warning("stripe_webhook_debug computed_v1=\(computedHmac)")
 
         _ = try StripeWebhookSignature.verify(payload: payload, header: sig, secret: secret)
 
