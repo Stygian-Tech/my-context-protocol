@@ -36,6 +36,10 @@ final class Account: Model, Content {
     @OptionalField(key: "subscription_status")
     var subscriptionStatus: String?
 
+    /// Last time subscription status was confirmed with the Stripe API (for staleness checks).
+    @OptionalField(key: "stripe_status_checked_at")
+    var stripeStatusCheckedAt: Date?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 

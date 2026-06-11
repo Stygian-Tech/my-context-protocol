@@ -238,6 +238,7 @@ struct AuthController {
                 throw Abort(.unauthorized, reason: "Invalid session")
             }
             try await syncEnvAdminBootstrap(account: account, db: req.db)
+            try await syncStripeStatusIfStale(account: account, req: req)
             let suggest = try await Self.suggestedGithubAppMe(account: account, db: req.db)
             return userResponse(for: account, suggestedGithubAppInstall: suggest)
         } catch let abort as AbortError {
@@ -245,6 +246,26 @@ struct AuthController {
         } catch {
             req.logger.error("auth/me infrastructure error: \(error)")
             throw Abort(.serviceUnavailable, reason: "Auth service temporarily unavailable")
+        }
+    }
+
+    /// Re-fetches Stripe subscription status when the cached value is older than 5 minutes.
+    /// Silently swallows errors so a Stripe outage never breaks `/auth/me`.
+    private static func syncStripeStatusIfStale(account: Account, req: Request) async throws {
+        guard account.stripeSubscriptionId != nil else { return }
+        let staleCutoff: TimeInterval = 300  // 5 minutes
+        if let checked = account.stripeStatusCheckedAt, Date().timeIntervalSince(checked) < staleCutoff {
+            return
+        }
+        do {
+            try await StripeSubscriptionSync.syncAccount(
+                account: account,
+                client: req.client,
+                db: req.db,
+                logger: req.logger
+            )
+        } catch {
+            req.logger.warning("stripe_sync on /auth/me failed (non-fatal): \(error)")
         }
     }
 

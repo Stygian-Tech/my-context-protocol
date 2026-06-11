@@ -202,10 +202,12 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateMcpOauthAuthorizationCodes())
     app.migrations.add(CreateMcpOauthAccessTokens())
     app.migrations.add(StripLegacySkillPrefixFromMcpWireNames())
+    app.migrations.add(AddStripeStatusCheckedAt())
 
     try await app.autoMigrate()
 
     app.lifecycle.use(AdminAnalyticsRollupLifecycle())
+    app.lifecycle.use(StripeReconciliationLifecycle())
     app.lifecycle.use(LocalDevFixtureLifecycle())
 
     try routes(app)
