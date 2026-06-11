@@ -324,10 +324,14 @@ enum McpOAuthController {
             }
             req.session.data["accountId"] = account.id!.uuidString
             let path = "/auth/mcp-oauth-resume?pending=\(pid.uuidString)"
-            guard let base = AppFrontendURL.normalizedBase() else {
-                throw Abort(.internalServerError, reason: "FRONTEND_URL or CORS_ORIGIN must be set")
+            // Redirect back to this endpoint on the API host (not the Next.js frontend).
+            // Using MCP_OAUTH_API_ORIGIN when set; otherwise a relative path keeps us on the same host.
+            if let apiRaw = Environment.get("MCP_OAUTH_API_ORIGIN")?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !apiRaw.isEmpty {
+                let base = apiRaw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                return req.redirect(to: "\(base)\(path)", redirectType: .normal)
             }
-            return req.redirect(to: base + path, redirectType: .normal)
+            return req.redirect(to: path, redirectType: .normal)
         }
 
         guard let accountIdString = req.session.data["accountId"],

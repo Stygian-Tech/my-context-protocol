@@ -158,7 +158,7 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
             </dl>
           </div>
           <McpCatalogSection projectId={projectId} />
-          {user?.plan === "pro" && <CustomDomainSection projectId={projectId} />}
+          <CustomDomainSection projectId={projectId} isPro={user?.plan === "pro"} />
         </TabsContent>
         <TabsContent value="repo">
           <RepoConnectionSection projectId={projectId} />

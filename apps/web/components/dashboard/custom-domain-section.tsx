@@ -23,9 +23,39 @@ const INSET_SURFACE =
 
 interface CustomDomainSectionProps {
   projectId: string;
+  isPro?: boolean;
 }
 
-export function CustomDomainSection({ projectId }: CustomDomainSectionProps) {
+export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSectionProps) {
+  if (!isPro) {
+    return (
+      <section className={SECTION_SHELL} aria-labelledby="custom-domain-heading">
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1">
+            <h2
+              id="custom-domain-heading"
+              className="text-base leading-snug font-medium text-foreground"
+            >
+              Custom Domain
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Point your own hostname at this project with automatic TLS — available on Pro.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            Pro
+          </span>
+        </div>
+        <a
+          href="/billing"
+          className="inline-flex w-fit items-center rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium shadow-sm hover:bg-accent hover:text-accent-foreground"
+        >
+          Upgrade to Pro
+        </a>
+      </section>
+    );
+  }
+
   const [hostname, setHostname] = useState("");
   const queryClient = useQueryClient();
 

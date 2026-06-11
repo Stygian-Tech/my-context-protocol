@@ -52,11 +52,18 @@ enum AppFrontendURL {
         return out
     }
 
-    /// Bases allowed for MCP OAuth resume redirects: frontend origins plus optional `MCP_OAUTH_RESUME_BASE_URLS`.
+    /// Bases allowed for MCP OAuth resume redirects: frontend origins, `MCP_OAUTH_RESUME_BASE_URLS`, and `MCP_OAUTH_API_ORIGIN`.
+    /// `MCP_OAUTH_API_ORIGIN` is included automatically because it is already used to *generate* resume URLs —
+    /// requiring a separate `MCP_OAUTH_RESUME_BASE_URLS` for the same host is a footgun.
     static func allowedOAuthReturnToBases() -> [String] {
         var bases = allowedOriginBases()
         for b in allowedMcpOAuthResumeOriginBases() where !bases.contains(b) {
             bases.append(b)
+        }
+        if let raw = Environment.get("MCP_OAUTH_API_ORIGIN")?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            let b = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if !bases.contains(b) { bases.append(b) }
         }
         return bases
     }
