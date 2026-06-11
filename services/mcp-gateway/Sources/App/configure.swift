@@ -176,8 +176,9 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateValidationReports())
     app.migrations.add(AddBillingToAccounts())
     // Before AlterProjectsTenantAndDomain: `Project` queries (e.g. subdomain backfill) and the
-    // SQLite table swap must see `mcp_catalog_markdown_override` if the model declares it.
+    // SQLite table swap must see all columns the model declares at that point.
     app.migrations.add(AddMcpCatalogMarkdownOverrideToProjects())
+    app.migrations.add(AddSuspendedAtToProjects())
     app.migrations.add(AlterProjectsTenantAndDomain())
     app.migrations.add(AddGithubInstallationToRepoConnections())
     app.migrations.add(CreateGitHubAppInstallIntents())

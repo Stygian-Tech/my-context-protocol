@@ -15,6 +15,9 @@ struct TenantHostMiddleware: AsyncMiddleware {
 
         if let byCustom = try await Project.query(on: request.db).filter(\.$customDomain == host).first(),
            byCustom.customDomainVerifiedAt != nil {
+            if byCustom.suspendedAt != nil {
+                return Response(status: .paymentRequired, body: .init(string: "This project is suspended. The account owner must select an active project or upgrade to Pro."))
+            }
             request.storage[ResolvedHostProjectKey.self] = byCustom
             request.logger.devTrace("tenant_host resolved=verified_custom_domain host=\(host) projectId=\(byCustom.id?.uuidString ?? "nil")")
             return try await next.respond(to: request)
@@ -34,6 +37,9 @@ struct TenantHostMiddleware: AsyncMiddleware {
               let project = try await Project.query(on: request.db).filter(\.$subdomain == prefix).first() else {
             request.logger.devTrace("tenant_host subdomain_unresolved prefix=\(prefix)")
             return try await next.respond(to: request)
+        }
+        if project.suspendedAt != nil {
+            return Response(status: .paymentRequired, body: .init(string: "This project is suspended. The account owner must select an active project or upgrade to Pro."))
         }
         request.storage[ResolvedHostProjectKey.self] = project
         request.logger.devTrace("tenant_host resolved=subdomain prefix=\(prefix) projectId=\(project.id?.uuidString ?? "nil")")

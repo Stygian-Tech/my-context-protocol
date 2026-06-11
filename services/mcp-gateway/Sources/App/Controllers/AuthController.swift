@@ -1,7 +1,7 @@
 import Fluent
 import Vapor
 
-private func userResponse(for account: Account, suggestedGithubAppInstall: Bool = false) -> UserResponse {
+private func userResponse(for account: Account, suggestedGithubAppInstall: Bool = false, needsProjectSelection: Bool = false) -> UserResponse {
     UserResponse(
         id: account.id!.uuidString,
         email: account.email,
@@ -13,7 +13,8 @@ private func userResponse(for account: Account, suggestedGithubAppInstall: Bool 
         can_manage_subscription: account.hasStripeCustomerRecord,
         suggested_github_app_install: suggestedGithubAppInstall,
         app_env: AppEnvironment.appEnvString,
-        non_production_bypasses: AppEnvironment.nonProductionBypassesActive
+        non_production_bypasses: AppEnvironment.nonProductionBypassesActive,
+        needs_project_selection: needsProjectSelection
     )
 }
 
@@ -240,7 +241,8 @@ struct AuthController {
             try await syncEnvAdminBootstrap(account: account, db: req.db)
             try await syncStripeStatusIfStale(account: account, req: req)
             let suggest = try await Self.suggestedGithubAppMe(account: account, db: req.db)
-            return userResponse(for: account, suggestedGithubAppInstall: suggest)
+            let needsProjectSelection = try await Self.computeNeedsProjectSelection(account: account, db: req.db)
+            return userResponse(for: account, suggestedGithubAppInstall: suggest, needsProjectSelection: needsProjectSelection)
         } catch let abort as AbortError {
             throw abort
         } catch {
@@ -267,6 +269,17 @@ struct AuthController {
         } catch {
             req.logger.warning("stripe_sync on /auth/me failed (non-fatal): \(error)")
         }
+    }
+
+    /// True when the account is on free tier and has more non-suspended projects than the free limit.
+    static func computeNeedsProjectSelection(account: Account, db: Database) async throws -> Bool {
+        guard !account.hasProEntitlements else { return false }
+        let freeLimit = Int(Environment.get("FREE_PROJECT_LIMIT") ?? "") ?? 1
+        let activeCount = try await Project.query(on: db)
+            .filter(\.$account.$id == account.id!)
+            .filter(\.$suspendedAt == .null)
+            .count()
+        return activeCount > freeLimit
     }
 
     /// Repositories the session user can access on GitHub (uses stored OAuth token).
@@ -311,7 +324,8 @@ struct AuthController {
         }
 
         let suggest = try await Self.suggestedGithubAppMe(account: account, db: req.db)
-        return try await userResponse(for: account, suggestedGithubAppInstall: suggest).encodeResponse(for: req)
+        let needsProjectSelection = try await Self.computeNeedsProjectSelection(account: account, db: req.db)
+        return try await userResponse(for: account, suggestedGithubAppInstall: suggest, needsProjectSelection: needsProjectSelection).encodeResponse(for: req)
     }
 
     /// Pro users with GitHub repos missing App installation, when slug + webhook base URL are configured.
@@ -354,6 +368,8 @@ struct UserResponse: Content {
     let app_env: String
     /// True when local-only Pro/rate-limit bypasses are active (`APP_ENV=local` and `strictProGating` is off).
     let non_production_bypasses: Bool
+    /// True when account is on free tier but has more active (non-suspended) projects than the free limit.
+    let needs_project_selection: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, email, login, plan
@@ -364,6 +380,7 @@ struct UserResponse: Content {
         case suggested_github_app_install = "suggested_github_app_install"
         case app_env = "app_env"
         case non_production_bypasses = "non_production_bypasses"
+        case needs_project_selection = "needs_project_selection"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -377,6 +394,7 @@ struct UserResponse: Content {
         try c.encode(can_manage_subscription, forKey: .can_manage_subscription)
         try c.encode(suggested_github_app_install, forKey: .suggested_github_app_install)
         try c.encode(app_env, forKey: .app_env)
+        try c.encode(needs_project_selection, forKey: .needs_project_selection)
         if AppEnvironment.exposeUserDebugFields {
             try c.encode(internal_pro_bypass, forKey: .internal_pro_bypass)
             try c.encode(non_production_bypasses, forKey: .non_production_bypasses)
@@ -394,7 +412,8 @@ struct UserResponse: Content {
         can_manage_subscription: Bool,
         suggested_github_app_install: Bool,
         app_env: String,
-        non_production_bypasses: Bool
+        non_production_bypasses: Bool,
+        needs_project_selection: Bool = false
     ) {
         self.id = id
         self.email = email
@@ -407,6 +426,7 @@ struct UserResponse: Content {
         self.suggested_github_app_install = suggested_github_app_install
         self.app_env = app_env
         self.non_production_bypasses = non_production_bypasses
+        self.needs_project_selection = needs_project_selection
     }
 
     init(from decoder: Decoder) throws {
@@ -422,5 +442,6 @@ struct UserResponse: Content {
         suggested_github_app_install = try c.decodeIfPresent(Bool.self, forKey: .suggested_github_app_install) ?? false
         app_env = try c.decodeIfPresent(String.self, forKey: .app_env) ?? "prod"
         non_production_bypasses = try c.decodeIfPresent(Bool.self, forKey: .non_production_bypasses) ?? false
+        needs_project_selection = try c.decodeIfPresent(Bool.self, forKey: .needs_project_selection) ?? false
     }
 }

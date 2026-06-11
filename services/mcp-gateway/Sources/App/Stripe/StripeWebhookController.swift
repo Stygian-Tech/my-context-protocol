@@ -60,9 +60,20 @@ struct StripeWebhookController {
         guard let account = try await Account.query(on: req.db).filter(\.$stripeCustomerId == customerId).first() else {
             return
         }
+        let previousStatus = account.subscriptionStatus
         account.stripeSubscriptionId = subId
         account.subscriptionStatus = status
         try await account.save(on: req.db)
+        // Re-activating to Pro — un-suspend all projects so the user gets their full roster back.
+        let reactivating = (status == "active" || status == "trialing")
+            && previousStatus != "active" && previousStatus != "trialing"
+        if reactivating {
+            try await Project.query(on: req.db)
+                .filter(\.$account.$id == account.id!)
+                .filter(\.$suspendedAt != .null)
+                .set(\.$suspendedAt, to: nil)
+                .update()
+        }
         if status == "canceled" || status == "unpaid" || status == "incomplete_expired" {
             try await GitHubWebhookCleanup.removeAllWebhooks(
                 account: account,

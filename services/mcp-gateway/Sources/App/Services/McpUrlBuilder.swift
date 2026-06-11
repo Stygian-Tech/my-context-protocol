@@ -3,9 +3,9 @@ import Vapor
 
 /// Builds the public MCP HTTP endpoint URL (`{scheme}://{host}{path}`) from env + project.
 enum McpUrlBuilder {
-    /// Full URL for `POST /mcp` for this project (verified custom domain, else `{subdomain}.{SAAS_MCP_BASE_DOMAIN}`).
-    static func publicMcpUrl(for project: Project) -> String? {
-        if let host = customDomainHost(project) {
+    /// Full URL for `POST /mcp` for this project (verified custom domain when `isPro`, else `{subdomain}.{SAAS_MCP_BASE_DOMAIN}`).
+    static func publicMcpUrl(for project: Project, isPro: Bool = true) -> String? {
+        if isPro, let host = customDomainHost(project) {
             return build(host: host)
         }
         guard let sub = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty,

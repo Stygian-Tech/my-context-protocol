@@ -11,7 +11,7 @@ struct ProjectController {
         return formatter.string(from: date)
     }
 
-    private static func projectResponse(_ project: Project) -> ProjectResponse {
+    private static func projectResponse(_ project: Project, isPro: Bool = true) -> ProjectResponse {
         ProjectResponse(
             id: project.id!.uuidString,
             account_id: project.$account.id.uuidString,
@@ -22,8 +22,9 @@ struct ProjectController {
             custom_domain: project.customDomain,
             custom_domain_verified_at: project.customDomainVerifiedAt.map { formatDate($0) },
             active_release_id: project.activeReleaseId?.uuidString,
-            mcp_url: McpUrlBuilder.publicMcpUrl(for: project),
-            mcp_oauth_enabled: AppEnvironment.mcpOAuthEnabled
+            mcp_url: McpUrlBuilder.publicMcpUrl(for: project, isPro: isPro),
+            mcp_oauth_enabled: AppEnvironment.mcpOAuthEnabled,
+            suspended_at: project.suspendedAt.map { formatDate($0) }
         )
     }
 
@@ -179,13 +180,13 @@ struct ProjectController {
         let projects = try await Project.query(on: req.db)
             .filter(\.$account.$id == account.id!)
             .all()
-        return projects.map { projectResponse($0) }
+        return projects.map { projectResponse($0, isPro: account.hasProEntitlements) }
     }
 
     static func get(req: Request) async throws -> ProjectResponse {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
-        return projectResponse(project)
+        return projectResponse(project, isPro: account.hasProEntitlements)
     }
 
     /// Update project metadata (display name only for now).
@@ -201,7 +202,7 @@ struct ProjectController {
         guard name.count <= 256 else { throw Abort(.badRequest, reason: "Name is too long") }
         project.name = name
         try await project.save(on: req.db)
-        return projectResponse(project)
+        return projectResponse(project, isPro: account.hasProEntitlements)
     }
 
     /// Active-release MCP catalog (tools, resources, prompts) for dashboard clients.
@@ -374,7 +375,55 @@ struct ProjectController {
             subdomain: subdomain
         )
         try await project.save(on: req.db)
-        return projectResponse(project)
+        return projectResponse(project, isPro: account.hasProEntitlements)
+    }
+
+    /// Marks the given project as the active project for the account, suspending all others that exceed
+    /// the free-tier project limit. No-op for Pro accounts (all their projects stay active).
+    static func setActive(req: Request) async throws -> ProjectResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+
+        if account.hasProEntitlements {
+            // Pro: just un-suspend the requested project if it was suspended.
+            if project.suspendedAt != nil {
+                project.suspendedAt = nil
+                try await project.save(on: req.db)
+            }
+            return projectResponse(project, isPro: true)
+        }
+
+        let freeLimit = Int(Environment.get("FREE_PROJECT_LIMIT") ?? "") ?? 1
+        let allProjects = try await Project.query(on: req.db)
+            .filter(\.$account.$id == account.id!)
+            .all()
+
+        // Suspend every project beyond the free limit except the selected one.
+        for p in allProjects {
+            let isSelected = p.id == project.id
+            if isSelected {
+                if p.suspendedAt != nil {
+                    p.suspendedAt = nil
+                    try await p.save(on: req.db)
+                }
+            } else {
+                // Count how many non-selected, currently-active projects can stay.
+                // We want exactly (freeLimit - 1) active after selecting this one.
+                // Simplest: suspend everything that isn't selected.
+                if freeLimit <= 1 {
+                    if p.suspendedAt == nil {
+                        p.suspendedAt = Date()
+                        try await p.save(on: req.db)
+                    }
+                }
+            }
+        }
+
+        // Re-fetch after saves.
+        guard let updated = try await Project.find(project.id, on: req.db) else {
+            throw Abort(.internalServerError)
+        }
+        return projectResponse(updated, isPro: false)
     }
 
     static func getRepoConnection(req: Request) async throws -> RepoConnectionResponse {

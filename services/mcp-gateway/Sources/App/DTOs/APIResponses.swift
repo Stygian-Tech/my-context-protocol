@@ -16,6 +16,8 @@ struct ProjectResponse: Content {
     let mcp_url: String?
     /// True when `MCP_OAUTH_ENABLED` is set on the API (tenant MCP host exposes OAuth alongside API keys).
     let mcp_oauth_enabled: Bool
+    /// Set when this project has been suspended (free-tier downgrade with multiple projects).
+    let suspended_at: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, slug, subdomain
@@ -26,6 +28,7 @@ struct ProjectResponse: Content {
         case active_release_id = "active_release_id"
         case mcp_url = "mcp_url"
         case mcp_oauth_enabled = "mcp_oauth_enabled"
+        case suspended_at = "suspended_at"
     }
 }
 

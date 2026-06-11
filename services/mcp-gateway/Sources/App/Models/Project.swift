@@ -35,6 +35,9 @@ final class Project: Model, Content {
     @OptionalField(key: "mcp_catalog_markdown_override")
     var mcpCatalogMarkdownOverride: String?
 
+    @OptionalField(key: "suspended_at")
+    var suspendedAt: Date?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 

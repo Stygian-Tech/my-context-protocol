@@ -1,21 +1,26 @@
 "use client";
 
+import { useAuth } from "@/contexts/auth-context";
 import { AuthGuard } from "@/components/auth-guard";
 import { EnvironmentBanner } from "@/components/dashboard/environment-banner";
+import { ProjectSelectionDialog } from "@/components/dashboard/project-selection-dialog";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Header } from "@/components/layout/header";
 
-export function DashboardLayoutClient({
+function DashboardLayoutInner({
   children,
   defaultSidebarOpen,
 }: {
   children: React.ReactNode;
-  /** From `sidebar_state` cookie (server) so the first paint matches refresh/navigation. */
   defaultSidebarOpen: boolean;
 }) {
+  const { user } = useAuth();
+  const needsSelection = user?.needs_project_selection === true;
+
   return (
-    <AuthGuard>
+    <>
+      <ProjectSelectionDialog open={needsSelection} />
       <SidebarProvider defaultOpen={defaultSidebarOpen}>
         <AppSidebar />
         <SidebarInset>
@@ -28,6 +33,23 @@ export function DashboardLayoutClient({
           </div>
         </SidebarInset>
       </SidebarProvider>
+    </>
+  );
+}
+
+export function DashboardLayoutClient({
+  children,
+  defaultSidebarOpen,
+}: {
+  children: React.ReactNode;
+  /** From `sidebar_state` cookie (server) so the first paint matches refresh/navigation. */
+  defaultSidebarOpen: boolean;
+}) {
+  return (
+    <AuthGuard>
+      <DashboardLayoutInner defaultSidebarOpen={defaultSidebarOpen}>
+        {children}
+      </DashboardLayoutInner>
     </AuthGuard>
   );
 }

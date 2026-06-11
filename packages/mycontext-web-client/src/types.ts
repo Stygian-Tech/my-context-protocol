@@ -15,6 +15,8 @@ export interface Project {
   mcp_url?: string | null;
   /** True when the API has MCP OAuth enabled (`MCP_OAUTH_ENABLED`); MCP host serves discovery and token endpoints. */
   mcp_oauth_enabled?: boolean;
+  /** Set when this project is suspended (free-tier downgrade with multiple projects). */
+  suspended_at?: string | null;
 }
 
 export interface RepoConnection {
@@ -253,4 +255,6 @@ export interface User {
   app_env?: AppEnv;
   /** True when API applies non-production Pro/rate-limit bypasses. */
   non_production_bypasses?: boolean;
+  /** True when account is on free tier with more active projects than the free limit. */
+  needs_project_selection?: boolean;
 }

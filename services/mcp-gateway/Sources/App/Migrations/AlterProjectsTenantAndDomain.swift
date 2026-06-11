@@ -18,6 +18,7 @@ struct AlterProjectsTenantAndDomain: AsyncMigration {
         "custom_domain_verified_at",
         "custom_domain_verification_token",
         "mcp_catalog_markdown_override",
+        "suspended_at",
     ]
 
     func prepare(on database: Database) async throws {
@@ -141,6 +142,7 @@ struct AlterProjectsTenantAndDomain: AsyncMigration {
             .field("custom_domain_verified_at", .datetime)
             .field("custom_domain_verification_token", .string)
             .field("mcp_catalog_markdown_override", .string)
+            .field("suspended_at", .datetime)
             .unique(on: "account_id", "slug", name: "uq_projects_account_slug")
             .unique(on: "subdomain", name: "uq_projects_subdomain")
             .unique(on: "custom_domain", name: "uq_projects_custom_domain")

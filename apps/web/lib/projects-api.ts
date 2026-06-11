@@ -87,6 +87,10 @@ export async function updateProject(
   return api.patch<Project>(`/projects/${projectId}`, body);
 }
 
+export async function setActiveProject(projectId: string): Promise<Project> {
+  return api.post<Project>(`/projects/${projectId}/set-active`, {});
+}
+
 export interface CustomDomainStatus {
   hostname: string | null;
   verified: boolean;

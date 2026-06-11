@@ -95,6 +95,7 @@ extension Account {
 
     /// Pro feature gate: non-production bypass, paywall bypass flag, active Stripe subscription, or internal env allowlist (`INTERNAL_PRO_*`).
     var hasProEntitlements: Bool {
+        if isAdmin { return true }
         if paywallBypass { return true }
         if AppEnvironment.nonProductionBypassesActive { return true }
         if hasActiveProSubscription { return true }

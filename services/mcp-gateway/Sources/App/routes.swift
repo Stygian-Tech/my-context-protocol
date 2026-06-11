@@ -65,6 +65,9 @@ func routes(_ app: Application) throws {
     protected.patch("projects", ":id") { req in
         try await ProjectController.update(req: req)
     }
+    protected.post("projects", ":id", "set-active") { req in
+        try await ProjectController.setActive(req: req)
+    }
     protected.get("projects", ":id", "catalog") { req in
         try await ProjectController.catalog(req: req)
     }
