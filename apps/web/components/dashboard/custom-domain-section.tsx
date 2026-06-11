@@ -27,6 +27,32 @@ interface CustomDomainSectionProps {
 }
 
 export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSectionProps) {
+  // Hooks must be called unconditionally before any early returns.
+  const [hostname, setHostname] = useState("");
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["custom-domain", projectId],
+    queryFn: () => fetchCustomDomain(projectId),
+  });
+
+  const setMutation = useMutation({
+    mutationFn: () => setProjectCustomDomain(projectId, hostname.trim()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      setHostname("");
+    },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: () => verifyProjectCustomDomain(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    },
+  });
+
   if (!isPro) {
     return (
       <section className={SECTION_SHELL} aria-labelledby="custom-domain-heading">
@@ -55,31 +81,6 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
       </section>
     );
   }
-
-  const [hostname, setHostname] = useState("");
-  const queryClient = useQueryClient();
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["custom-domain", projectId],
-    queryFn: () => fetchCustomDomain(projectId),
-  });
-
-  const setMutation = useMutation({
-    mutationFn: () => setProjectCustomDomain(projectId, hostname.trim()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
-      setHostname("");
-    },
-  });
-
-  const verifyMutation = useMutation({
-    mutationFn: () => verifyProjectCustomDomain(projectId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
-    },
-  });
 
   if (isLoading || !data) {
     return <Skeleton className="h-40 w-full" />;
