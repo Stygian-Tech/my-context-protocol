@@ -576,8 +576,9 @@ struct ProjectController {
             var parts = ["Add a TXT record on \(host) with value: \(t)"]
             if let subdomain = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines),
                !subdomain.isEmpty,
-               let baseDomain = Environment.get("SAAS_MCP_BASE_DOMAIN")?
-                   .trimmingCharacters(in: .whitespacesAndNewlines), !baseDomain.isEmpty {
+               let baseRaw = Environment.get("SAAS_MCP_BASE_DOMAIN")?
+                   .trimmingCharacters(in: .whitespacesAndNewlines), !baseRaw.isEmpty {
+                let baseDomain = McpUrlBuilder.normalizedBaseDomain(baseRaw)
                 parts.append("Add a CNAME record on \(host) pointing to: \(subdomain).\(baseDomain)")
             }
             instructions = parts.joined(separator: "\n")
@@ -637,9 +638,9 @@ struct ProjectController {
         // Verify the CNAME points to this project's MCP subdomain so traffic actually routes here.
         if let subdomain = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines),
            !subdomain.isEmpty,
-           let baseDomain = Environment.get("SAAS_MCP_BASE_DOMAIN")?
-               .trimmingCharacters(in: .whitespacesAndNewlines), !baseDomain.isEmpty {
-            let expectedCname = "\(subdomain).\(baseDomain)"
+           let baseRaw = Environment.get("SAAS_MCP_BASE_DOMAIN")?
+               .trimmingCharacters(in: .whitespacesAndNewlines), !baseRaw.isEmpty {
+            let expectedCname = "\(subdomain).\(McpUrlBuilder.normalizedBaseDomain(baseRaw))"
             let cnameOk = try await DnsTxtVerifier.cnameMatchesTarget(hostname: host, expectedTarget: expectedCname, client: req.client)
             guard cnameOk else {
                 throw Abort(.badRequest, reason: "CNAME record not found or does not point to \(expectedCname). Add a CNAME record on \(host) pointing to \(expectedCname) and try again.")

@@ -13,7 +13,7 @@ enum McpUrlBuilder {
               !baseRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
-        let base = normalizeBaseDomain(baseRaw)
+        let base = normalizedBaseDomain(baseRaw)
         return build(host: "\(sub).\(base)")
     }
 
@@ -24,7 +24,7 @@ enum McpUrlBuilder {
         return d.lowercased()
     }
 
-    private static func normalizeBaseDomain(_ raw: String) -> String {
+    static func normalizedBaseDomain(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if s.hasPrefix("https://") { s = String(s.dropFirst(8)) }
         else if s.hasPrefix("http://") { s = String(s.dropFirst(7)) }
@@ -60,7 +60,7 @@ enum McpUrlBuilder {
               !baseRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
-        let base = normalizeBaseDomain(baseRaw)
+        let base = normalizedBaseDomain(baseRaw)
         return "\(normalizedScheme())://\(sub).\(base)"
     }
 }
