@@ -42,6 +42,7 @@ private struct TokenRequestForm: Content {
     var client_id: String?
     var client_secret: String?
     var code_verifier: String?
+    var resource: String?
 }
 
 // MARK: - Controller
@@ -55,6 +56,7 @@ enum McpOAuthController {
             throw Abort(.badRequest, reason: "Cannot determine issuer URL")
         }
         let resource = mcpResourceURL(origin: issuer)
+        logOAuth(req, phase: "protected_resource_metadata", details: "resource=\(resource)")
         return OAuthProtectedResourceMetadata(
             resource: resource,
             authorization_servers: [issuer],
@@ -68,6 +70,7 @@ enum McpOAuthController {
         guard let origin = RequestPublicOrigin.origin(for: req) else {
             throw Abort(.badRequest, reason: "Cannot determine issuer URL")
         }
+        logOAuth(req, phase: "authorization_server_metadata", details: "issuer=\(origin)")
         return OAuthAuthorizationServerMetadata(
             issuer: origin,
             authorization_endpoint: "\(origin)/authorize",
@@ -137,6 +140,11 @@ enum McpOAuthController {
             projectId: project.id!
         )
         try await client.save(on: req.db)
+        logOAuth(
+            req,
+            phase: "dynamic_client_registration",
+            details: "auth_method=\(authMethod) grants=\(requestedGrants.joined(separator: ",")) redirect_hosts=\(redirectHosts(body.redirect_uris).joined(separator: ",")) confidential=\(isConfidential)"
+        )
 
         var responseDict: [String: Any] = [
             "client_id": clientId,
@@ -187,6 +195,7 @@ enum McpOAuthController {
             throw Abort(.badRequest, reason: "Missing code_challenge_method")
         }
         let scope = req.query[String.self, at: "scope"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? McpOAuthConstants.defaultScope
+        let resource = req.query[String.self, at: "resource"]
 
         guard responseType == "code" else {
             return try redirectOAuthError(
@@ -207,6 +216,16 @@ enum McpOAuthController {
                 state: state,
                 error: "invalid_request",
                 description: "code_challenge_method must be S256"
+            )
+        }
+        guard try resourceMatchesCurrentHost(resource, req: req) else {
+            logOAuth(req, phase: "authorize_rejected", details: "reason=resource_mismatch")
+            return try redirectOAuthError(
+                req: req,
+                redirectUri: redirectUri,
+                state: state,
+                error: "invalid_target",
+                description: "resource does not match this MCP host"
             )
         }
 
@@ -237,6 +256,11 @@ enum McpOAuthController {
         guard clientRow.isConfidential == false else {
             throw Abort(.badRequest, reason: "Confidential clients are not supported for browser authorization_code in this version")
         }
+        logOAuth(
+            req,
+            phase: "authorize_pending",
+            details: "client_id=\(clientId) redirect_host=\(redirectHost(redirectUri) ?? "-") scope=\(normalizedScope) resource_present=\(resource?.isEmpty == false)"
+        )
 
         let now = Date()
         let expires = now.addingTimeInterval(McpOAuthConstants.pendingAuthorizationTTLSeconds)
@@ -285,6 +309,7 @@ enum McpOAuthController {
         guard let ghClientId = Environment.get("GITHUB_CLIENT_ID"), !ghClientId.isEmpty else {
             throw Abort(.internalServerError, reason: "GITHUB_CLIENT_ID not configured")
         }
+        logOAuth(req, phase: "github_mcp_oauth_start", details: "pending=\(pid.uuidString)")
         let redirectUri = try GitHubOAuthLoginConfig.redirectURI(logger: req.logger)
 
         let state: String
@@ -355,6 +380,7 @@ enum McpOAuthController {
         }
         let handoffToken = try await OAuthHandoffService.issue(accountId: accountId, on: req.db)
         let loc = "\(tenantBase)/oauth/consent?pending=\(pid.uuidString)&auth_token=\(handoffToken)"
+        logOAuth(req, phase: "mcp_oauth_resume", details: "pending=\(pid.uuidString) tenant_host=\(URL(string: tenantBase)?.host ?? "-")")
         return req.redirect(to: loc, redirectType: .normal)
     }
 
@@ -402,6 +428,7 @@ enum McpOAuthController {
         guard try await accountOwnsProject(accountId: accountId, projectId: project.id!, db: req.db) else {
             throw Abort(.forbidden, reason: "You do not have access to this project")
         }
+        logOAuth(req, phase: "consent_page", details: "pending=\(pid.uuidString) scope=\(pending.scope)")
 
         // Issue a single-use DB-backed consent token. Embedded as a hidden form field, it
         // simultaneously authenticates the submitter and prevents CSRF/replay without
@@ -467,6 +494,7 @@ enum McpOAuthController {
         }
 
         if form.decision != "approve" {
+            logOAuth(req, phase: "consent_denied", details: "pending=\(form.pending.uuidString)")
             try await pending.delete(on: req.db)
             return try redirectOAuthError(
                 req: req,
@@ -492,6 +520,7 @@ enum McpOAuthController {
         )
         try await codeRow.save(on: req.db)
         try await pending.delete(on: req.db)
+        logOAuth(req, phase: "consent_approved", details: "pending=\(form.pending.uuidString) redirect_host=\(redirectHost(pending.redirectUri) ?? "-")")
 
         var c = URLComponents(string: pending.redirectUri)!
         var q = c.queryItems ?? []
@@ -512,6 +541,16 @@ enum McpOAuthController {
 
         let form = try req.content.decode(TokenRequestForm.self)
         let grant = form.grant_type?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard try resourceMatchesCurrentHost(form.resource, req: req) else {
+            logOAuth(req, phase: "token_rejected", details: "grant=\(grant) reason=resource_mismatch")
+            return try await oauthTokenErrorResponse(
+                req: req,
+                status: .badRequest,
+                error: "invalid_target",
+                description: "resource does not match this MCP host"
+            )
+        }
+        logOAuth(req, phase: "token_request", details: "grant=\(grant) resource_present=\(form.resource?.isEmpty == false)")
 
         switch grant {
         case "authorization_code":
@@ -615,6 +654,7 @@ enum McpOAuthController {
             expires_in: Int(McpOAuthConstants.accessTokenTTLSeconds),
             scope: row.scope
         )
+        logOAuth(req, phase: "token_issued", details: "grant=authorization_code client_id=\(clientId) scope=\(row.scope)")
         return try await body.encodeResponse(status: .ok, for: req)
     }
 
@@ -668,6 +708,7 @@ enum McpOAuthController {
             expires_in: Int(McpOAuthConstants.accessTokenTTLSeconds),
             scope: McpOAuthConstants.defaultScope
         )
+        logOAuth(req, phase: "token_issued", details: "grant=client_credentials client_id=\(clientId) scope=\(McpOAuthConstants.defaultScope)")
         return try await body.encodeResponse(status: .ok, for: req)
     }
 
@@ -704,6 +745,38 @@ enum McpOAuthController {
     static func mcpResourceURL(origin: String) -> String {
         let path = "/" + McpRoutePath.pathComponents().joined(separator: "/")
         return origin.hasSuffix("/") ? String(origin.dropLast()) + path : origin + path
+    }
+
+    private static func resourceMatchesCurrentHost(_ raw: String?, req: Request) throws -> Bool {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return true
+        }
+        guard let origin = RequestPublicOrigin.origin(for: req),
+              let expected = normalizedResourceForComparison(mcpResourceURL(origin: origin)),
+              let actual = normalizedResourceForComparison(raw) else {
+            return false
+        }
+        return expected == actual
+    }
+
+    private static func normalizedResourceForComparison(_ raw: String) -> String? {
+        guard var components = URLComponents(string: raw),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = components.host?.lowercased(), !host.isEmpty,
+              components.fragment == nil else {
+            return nil
+        }
+        components.scheme = scheme
+        components.host = host
+        if (scheme == "https" && components.port == 443) || (scheme == "http" && components.port == 80) {
+            components.port = nil
+        }
+        if components.path.count > 1, components.path.hasSuffix("/") {
+            components.path.removeLast()
+        }
+        components.query = nil
+        return components.string
     }
 
     private static func normalizeScope(_ raw: String) throws -> String {
@@ -759,5 +832,17 @@ enum McpOAuthController {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    private static func logOAuth(_ req: Request, phase: String, details: String) {
+        req.logger.info("mcp_oauth phase=\(phase) host=\(req.headers.first(name: .host) ?? "-") \(details)")
+    }
+
+    private static func redirectHosts(_ uris: [String]) -> [String] {
+        uris.map { redirectHost($0) ?? "-" }
+    }
+
+    private static func redirectHost(_ uri: String) -> String? {
+        URL(string: uri)?.host
     }
 }

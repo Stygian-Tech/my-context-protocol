@@ -1,6 +1,7 @@
 import Fluent
 import Foundation
 import NIOCore
+import Crypto
 import Testing
 import Vapor
 import VaporTesting
@@ -54,6 +55,35 @@ struct McpOAuthTests {
                     let metadata = try res.content.decode(OAuthProtectedResourceMetadata.self)
                     #expect(metadata.resource == "http://any.mcp.oauth.test/mcp")
                     #expect(metadata.authorization_servers == ["http://any.mcp.oauth.test"])
+                }
+            )
+        }
+    }
+
+    @Test("Authorization server metadata advertises Claude-compatible public clients")
+    func authorizationServerMetadataSupportsPublicClients() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            try await app.testing().test(
+                .GET,
+                "/.well-known/oauth-authorization-server",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "any.mcp.oauth.test")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .ok)
+                    let metadata = try res.content.decode(OAuthAuthorizationServerMetadata.self)
+                    #expect(metadata.issuer == "http://any.mcp.oauth.test")
+                    #expect(metadata.registration_endpoint == "http://any.mcp.oauth.test/register")
+                    #expect(metadata.code_challenge_methods_supported.contains("S256"))
+                    #expect(metadata.token_endpoint_auth_methods_supported.contains("none"))
+                    #expect(metadata.scopes_supported == [McpOAuthConstants.defaultScope])
                 }
             )
         }
@@ -219,6 +249,281 @@ struct McpOAuthTests {
             )
         }
     }
+
+    @Test("Claude public DCR returns no client_secret for token_endpoint_auth_method none")
+    func publicClientRegistrationOmitsSecret() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_003, login: "claude-dcr", email: "claude-dcr@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Claude DCR", slug: "claude-dcr", subdomain: "claudedcr")
+            try await project.save(on: app.db)
+
+            let body = """
+            {"redirect_uris":["http://localhost:49152/callback"],"client_name":"Claude","grant_types":["authorization_code"],"response_types":["code"],"token_endpoint_auth_method":"none"}
+            """
+            try await app.testing().test(
+                .POST,
+                "/register",
+                body: ByteBuffer(string: body),
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "claudedcr.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .created)
+                    let registration = try JSONDecoder().decode(TestRegistrationResponse.self, from: Data(buffer: res.body))
+                    #expect(!registration.client_id.isEmpty)
+                    #expect(registration.client_secret == nil)
+                    #expect(registration.token_endpoint_auth_method == "none")
+                }
+            )
+        }
+    }
+
+    @Test("Claude authorization code flow accepts localhost loopback and resource parameter")
+    func claudeAuthorizationCodeFlowLocalhost() async throws {
+        try await runClaudeAuthorizationCodeFlow(redirectUri: "http://localhost:49152/callback")
+    }
+
+    @Test("Claude authorization code flow accepts 127.0.0.1 loopback and resource parameter")
+    func claudeAuthorizationCodeFlowLoopbackIP() async throws {
+        try await runClaudeAuthorizationCodeFlow(redirectUri: "http://127.0.0.1:49153/callback")
+    }
+
+    @Test("Authorize rejects resource for a different MCP host")
+    func authorizeRejectsMismatchedResource() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_006, login: "claude-resource", email: "claude-resource@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Claude Resource", slug: "claude-resource", subdomain: "clauderesource")
+            try await project.save(on: app.db)
+            let client = try await registerPublicClient(app, host: "clauderesource.mcp.oauth.test", redirectUri: "http://localhost:49154/callback")
+            let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+            let challenge = pkceChallenge(verifier)
+            let authorizePath = "/authorize?response_type=code&client_id=\(urlEncode(client.client_id))&redirect_uri=\(urlEncode("http://localhost:49154/callback"))&state=state-resource&scope=\(urlEncode(McpOAuthConstants.defaultScope))&code_challenge=\(urlEncode(challenge))&code_challenge_method=S256&resource=\(urlEncode("http://other.mcp.oauth.test/mcp"))"
+
+            try await app.testing().test(
+                .GET,
+                authorizePath,
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "clauderesource.mcp.oauth.test")
+                },
+                afterResponse: { res in
+                    #expect(res.status.code >= 300 && res.status.code < 400)
+                    let location = res.headers.first(name: .location) ?? ""
+                    #expect(location.contains("error=invalid_target"))
+                }
+            )
+        }
+    }
+}
+
+private struct TestRegistrationResponse: Decodable {
+    var client_id: String
+    var client_secret: String?
+    var redirect_uris: [String]
+    var grant_types: [String]
+    var response_types: [String]
+    var token_endpoint_auth_method: String
+}
+
+private func runClaudeAuthorizationCodeFlow(redirectUri: String) async throws {
+    try await withMcpOAuthApp(env: [
+        "USE_SQLITE": "1",
+        "MCP_OAUTH_ENABLED": "1",
+        "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+        "FRONTEND_URL": "http://localhost:3000",
+        "DATABASE_URL": nil,
+        "SUPABASE_DB_URL": nil,
+    ]) { app in
+        let account = Account(githubId: Int64(900_004 + redirectUri.count), login: "claude-flow", email: "claude-flow@example.com")
+        try await account.save(on: app.db)
+        let project = Project(accountId: account.id!, name: "Claude Flow", slug: "claude-flow", subdomain: "claudeflow")
+        try await project.save(on: app.db)
+
+        let host = "claudeflow.mcp.oauth.test"
+        let resource = "http://\(host)/mcp"
+        let client = try await registerPublicClient(app, host: host, redirectUri: redirectUri)
+        #expect(client.client_secret == nil)
+
+        let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+        let challenge = pkceChallenge(verifier)
+        let state = "claude-state"
+        let authorizePath = "/authorize?response_type=code&client_id=\(urlEncode(client.client_id))&redirect_uri=\(urlEncode(redirectUri))&state=\(urlEncode(state))&scope=\(urlEncode(McpOAuthConstants.defaultScope))&code_challenge=\(urlEncode(challenge))&code_challenge_method=S256&resource=\(urlEncode(resource))"
+
+        var pendingId: UUID?
+        try await app.testing().test(
+            .GET,
+            authorizePath,
+            beforeRequest: { req in
+                req.headers.replaceOrAdd(name: .host, value: host)
+            },
+            afterResponse: { res in
+                #expect(res.status.code >= 300 && res.status.code < 400)
+                let location = res.headers.first(name: .location) ?? ""
+                #expect(location.hasPrefix("/auth/github/mcp-oauth-start?pending="))
+                pendingId = pendingFromGithubStartLocation(location)
+            }
+        )
+        let pending = try #require(pendingId)
+        let handoffToken = try await OAuthHandoffService.issue(accountId: account.id!, on: app.db)
+
+        var consentToken = ""
+        try await app.testing().test(
+            .GET,
+            "/oauth/consent?pending=\(pending.uuidString)&auth_token=\(urlEncode(handoffToken))",
+            beforeRequest: { req in
+                req.headers.replaceOrAdd(name: .host, value: host)
+            },
+            afterResponse: { res in
+                #expect(res.status == .ok)
+                consentToken = try extractHiddenInput("consent_token", from: res.body.string)
+                #expect(!consentToken.isEmpty)
+            }
+        )
+
+        var authorizationCode = ""
+        let consentForm = formEncode([
+            "pending": pending.uuidString,
+            "decision": "approve",
+            "consent_token": consentToken,
+        ])
+        try await app.testing().test(
+            .POST,
+            "/oauth/consent",
+            body: ByteBuffer(string: consentForm),
+            beforeRequest: { req in
+                req.headers.replaceOrAdd(name: .host, value: host)
+                req.headers.replaceOrAdd(name: .contentType, value: "application/x-www-form-urlencoded")
+            },
+            afterResponse: { res in
+                #expect(res.status.code >= 300 && res.status.code < 400)
+                let location = res.headers.first(name: .location) ?? ""
+                #expect(location.hasPrefix(redirectUri))
+                #expect(location.contains("state=\(state)"))
+                authorizationCode = try queryValue("code", in: location)
+                #expect(!authorizationCode.isEmpty)
+            }
+        )
+
+        let tokenForm = formEncode([
+            "grant_type": "authorization_code",
+            "code": authorizationCode,
+            "redirect_uri": redirectUri,
+            "client_id": client.client_id,
+            "code_verifier": verifier,
+            "resource": resource,
+        ])
+        var accessToken = ""
+        try await app.testing().test(
+            .POST,
+            "/token",
+            body: ByteBuffer(string: tokenForm),
+            beforeRequest: { req in
+                req.headers.replaceOrAdd(name: .host, value: host)
+                req.headers.replaceOrAdd(name: .contentType, value: "application/x-www-form-urlencoded")
+            },
+            afterResponse: { res in
+                #expect(res.status == .ok, "token response status=\(res.status) body=\(res.body.string)")
+                let token = try res.content.decode(OAuthTokenSuccess.self)
+                accessToken = token.access_token
+                #expect(token.token_type == "Bearer")
+                #expect(token.scope == McpOAuthConstants.defaultScope)
+            }
+        )
+
+        let initBody =
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{}}}"#
+        try await app.testing().test(
+            .POST,
+            "/mcp",
+            body: ByteBuffer(string: initBody),
+            beforeRequest: { req in
+                req.headers.replaceOrAdd(name: .host, value: host)
+                req.headers.replaceOrAdd(name: .authorization, value: "Bearer \(accessToken)")
+                req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+            },
+            afterResponse: { res in
+                #expect(res.status == .ok)
+                #expect(res.headers.first(name: "X-MCP-Catalog-Revision") != nil)
+            }
+        )
+    }
+}
+
+private func registerPublicClient(_ app: Application, host: String, redirectUri: String) async throws -> TestRegistrationResponse {
+    let body = """
+    {"redirect_uris":["\(redirectUri)"],"client_name":"Claude","grant_types":["authorization_code"],"response_types":["code"],"token_endpoint_auth_method":"none"}
+    """
+    var registration: TestRegistrationResponse?
+    try await app.testing().test(
+        .POST,
+        "/register",
+        body: ByteBuffer(string: body),
+        beforeRequest: { req in
+            req.headers.replaceOrAdd(name: .host, value: host)
+            req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+        },
+        afterResponse: { res in
+            #expect(res.status == .created, "registration status=\(res.status) body=\(res.body.string)")
+            registration = try JSONDecoder().decode(TestRegistrationResponse.self, from: Data(buffer: res.body))
+        }
+    )
+    return try #require(registration)
+}
+
+private func pkceChallenge(_ verifier: String) -> String {
+    let hash = SHA256.hash(data: Data(verifier.utf8))
+    return Data(hash).base64URLEncodedString
+}
+
+private func formEncode(_ values: [String: String]) -> String {
+    values.map { "\($0.key)=\(urlEncode($0.value))" }.joined(separator: "&")
+}
+
+private func urlEncode(_ value: String) -> String {
+    var allowed = CharacterSet.urlQueryAllowed
+    allowed.remove(charactersIn: ":/?#[]@!$&'()*+,;=")
+    return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+}
+
+private func pendingFromGithubStartLocation(_ location: String) -> UUID? {
+    guard let components = URLComponents(string: "http://test\(location)"),
+          let raw = components.queryItems?.first(where: { $0.name == "pending" })?.value else {
+        return nil
+    }
+    return UUID(uuidString: raw)
+}
+
+private func queryValue(_ name: String, in url: String) throws -> String {
+    let components = try #require(URLComponents(string: url))
+    return try #require(components.queryItems?.first(where: { $0.name == name })?.value)
+}
+
+private func extractHiddenInput(_ name: String, from html: String) throws -> String {
+    let marker = #"name="\#(name)" value=""#
+    guard let markerRange = html.range(of: marker) else {
+        throw Abort(.internalServerError, reason: "Missing hidden input \(name)")
+    }
+    let start = markerRange.upperBound
+    guard let end = html[start...].firstIndex(of: "\"") else {
+        throw Abort(.internalServerError, reason: "Malformed hidden input \(name)")
+    }
+    return String(html[start..<end])
 }
 
 private func withMcpOAuthApp(

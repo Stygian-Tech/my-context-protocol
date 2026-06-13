@@ -554,7 +554,18 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
           >
             <p className="font-medium text-foreground">OAuth on This MCP Host</p>
             <p>
-              Discovery (same origin as your MCP URL):{" "}
+              Claude Code:{" "}
+              <code className="font-mono text-xs break-all">
+                claude mcp add --transport http mycontext {url ?? "https://your-mcp-host/mcp"}
+              </code>
+              , then run <code className="font-mono text-xs">/mcp</code> and authenticate.
+              Use <code className="font-mono text-xs">--callback-port</code> if your OAuth
+              redirect URI setup requires a fixed localhost port. If the browser cannot
+              reach Claude&apos;s local callback, paste the full callback URL back into Claude
+              Code. Claude.ai Custom Connectors should use the full HTTPS MCP URL.
+            </p>
+            <p>
+              OAuth discovery (same origin as your MCP URL):{" "}
               <code className="font-mono text-xs break-all">
                 {oauthOrigin}/.well-known/oauth-protected-resource
               </code>{" "}
@@ -573,6 +584,15 @@ export function McpCatalogSection({ projectId }: McpCatalogSectionProps) {
                 Authorization: Bearer &lt;access_token&gt;
               </code>
               .
+            </p>
+            <p>
+              If Claude authentication fails, check that protected-resource metadata,
+              authorization-server metadata, dynamic registration scopes, and token
+              response scopes all agree on{" "}
+              <code className="font-mono text-xs">mcp:invoke</code>
+              . For custom domains, verify the public scheme/host seen by the MCP host
+              matches the URL Claude uses. On WSL2, default NAT networking can prevent a
+              Windows browser from reaching Claude Code&apos;s WSL localhost callback.
             </p>
           </div>
         ) : null}
