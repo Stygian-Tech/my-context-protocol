@@ -533,6 +533,15 @@ struct McpOAuthTests {
         try await runClaudeAuthorizationCodeFlow(redirectUri: "http://127.0.0.1:49153/callback")
     }
 
+    @Test("Claude authorization code flow supports confidential client_secret_post registration")
+    func claudeAuthorizationCodeFlowConfidentialClientSecretPost() async throws {
+        try await runClaudeAuthorizationCodeFlow(
+            redirectUri: "https://claude.ai/api/mcp/auth_callback",
+            registrationGrantTypes: ["authorization_code", "refresh_token"],
+            tokenEndpointAuthMethod: "client_secret_post"
+        )
+    }
+
     @Test("Authorize rejects resource for a different MCP host")
     func authorizeRejectsMismatchedResource() async throws {
         try await withMcpOAuthApp(env: [
@@ -577,7 +586,11 @@ private struct TestRegistrationResponse: Decodable {
     var token_endpoint_auth_method: String
 }
 
-private func runClaudeAuthorizationCodeFlow(redirectUri: String) async throws {
+private func runClaudeAuthorizationCodeFlow(
+    redirectUri: String,
+    registrationGrantTypes: [String] = ["authorization_code"],
+    tokenEndpointAuthMethod: String = "none"
+) async throws {
     try await withMcpOAuthApp(env: [
         "USE_SQLITE": "1",
         "MCP_OAUTH_ENABLED": "1",
@@ -593,8 +606,18 @@ private func runClaudeAuthorizationCodeFlow(redirectUri: String) async throws {
 
         let host = "claudeflow.mcp.oauth.test"
         let resource = "http://\(host)/mcp"
-        let client = try await registerPublicClient(app, host: host, redirectUri: redirectUri)
-        #expect(client.client_secret == nil)
+        let client = try await registerClient(
+            app,
+            host: host,
+            redirectUri: redirectUri,
+            grantTypes: registrationGrantTypes,
+            tokenEndpointAuthMethod: tokenEndpointAuthMethod
+        )
+        if tokenEndpointAuthMethod == "none" {
+            #expect(client.client_secret == nil)
+        } else {
+            #expect(client.client_secret?.isEmpty == false)
+        }
 
         let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
         let challenge = pkceChallenge(verifier)
@@ -656,14 +679,18 @@ private func runClaudeAuthorizationCodeFlow(redirectUri: String) async throws {
             }
         )
 
-        let tokenForm = formEncode([
+        var tokenFields = [
             "grant_type": "authorization_code",
             "code": authorizationCode,
             "redirect_uri": redirectUri,
             "client_id": client.client_id,
             "code_verifier": verifier,
             "resource": resource,
-        ])
+        ]
+        if let clientSecret = client.client_secret {
+            tokenFields["client_secret"] = clientSecret
+        }
+        let tokenForm = formEncode(tokenFields)
         var accessToken = ""
         try await app.testing().test(
             .POST,
@@ -702,8 +729,19 @@ private func runClaudeAuthorizationCodeFlow(redirectUri: String) async throws {
 }
 
 private func registerPublicClient(_ app: Application, host: String, redirectUri: String) async throws -> TestRegistrationResponse {
+    try await registerClient(app, host: host, redirectUri: redirectUri, grantTypes: ["authorization_code"], tokenEndpointAuthMethod: "none")
+}
+
+private func registerClient(
+    _ app: Application,
+    host: String,
+    redirectUri: String,
+    grantTypes: [String],
+    tokenEndpointAuthMethod: String
+) async throws -> TestRegistrationResponse {
+    let grantsJson = grantTypes.map { #""\#($0)""# }.joined(separator: ",")
     let body = """
-    {"redirect_uris":["\(redirectUri)"],"client_name":"Claude","grant_types":["authorization_code"],"response_types":["code"],"token_endpoint_auth_method":"none"}
+    {"redirect_uris":["\(redirectUri)"],"client_name":"Claude","grant_types":[\(grantsJson)],"response_types":["code"],"token_endpoint_auth_method":"\(tokenEndpointAuthMethod)"}
     """
     var registration: TestRegistrationResponse?
     try await app.testing().test(

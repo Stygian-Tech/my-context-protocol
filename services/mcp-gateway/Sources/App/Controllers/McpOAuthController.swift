@@ -272,9 +272,6 @@ enum McpOAuthController {
         }
 
         let normalizedScope = try normalizeScope(scope)
-        guard clientRow.isConfidential == false else {
-            throw Abort(.badRequest, reason: "Confidential clients are not supported for browser authorization_code in this version")
-        }
         logOAuth(
             req,
             phase: "authorize_pending",
