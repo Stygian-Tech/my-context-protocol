@@ -90,6 +90,63 @@ struct McpOAuthTests {
         }
     }
 
+    @Test("Tenant root on MCP host returns OAuth discovery challenge")
+    func tenantRootReturnsOAuthChallenge() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_008, login: "root-challenge", email: "root-challenge@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Root Challenge", slug: "root-challenge", subdomain: "rootchallenge")
+            try await project.save(on: app.db)
+
+            try await app.testing().test(
+                .GET,
+                "/",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "rootchallenge.mcp.oauth.test")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .unauthorized)
+                    let www = res.headers.first(name: .wwwAuthenticate) ?? ""
+                    #expect(www.contains(#"resource_metadata="http://rootchallenge.mcp.oauth.test/.well-known/oauth-protected-resource/mcp""#))
+                    #expect(www.contains(#"scope="mcp:invoke""#))
+                    #expect(res.body.string.contains("http://rootchallenge.mcp.oauth.test/mcp"))
+                }
+            )
+        }
+    }
+
+    @Test("App root remains plain text on non-MCP host")
+    func appRootRemainsPlainText() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            try await app.testing().test(
+                .GET,
+                "/",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "api.example.test")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .ok)
+                    #expect(res.body.string == "MyContextProtocol")
+                    #expect(res.headers.first(name: .wwwAuthenticate) == nil)
+                }
+            )
+        }
+    }
+
     @Test("Protected resource metadata supports path-suffixed discovery on verified custom domains")
     func metadataPathSuffixForVerifiedCustomDomain() async throws {
         try await withMcpOAuthApp(env: [

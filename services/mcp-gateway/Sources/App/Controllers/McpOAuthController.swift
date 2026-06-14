@@ -50,6 +50,21 @@ private struct TokenRequestForm: Content {
 enum McpOAuthController {
     // MARK: Discovery
 
+    static func rootOAuthChallenge(req: Request) throws -> Response {
+        try requireOAuthEnabled()
+        guard let origin = RequestPublicOrigin.origin(for: req) else {
+            throw Abort(.badRequest, reason: "Cannot determine issuer URL")
+        }
+        let metadataURL = protectedResourceMetadataURL(origin: origin)
+        logOAuth(req, phase: "root_oauth_challenge", details: "resource_metadata=\(metadataURL)")
+        let res = Response(status: .unauthorized, body: .init(string: "OAuth required for MCP. Use \(mcpResourceURL(origin: origin))"))
+        res.headers.replaceOrAdd(
+            name: .wwwAuthenticate,
+            value: "Bearer error=\"invalid_token\", resource_metadata=\"\(metadataURL)\", scope=\"\(McpOAuthConstants.defaultScope)\""
+        )
+        return res
+    }
+
     static func protectedResourceMetadata(req: Request) async throws -> OAuthProtectedResourceMetadata {
         try requireOAuthEnabled()
         guard let issuer = RequestPublicOrigin.origin(for: req) else {
@@ -750,6 +765,11 @@ enum McpOAuthController {
 
     static func mcpResourceURL(origin: String) -> String {
         let path = "/" + McpRoutePath.pathComponents().joined(separator: "/")
+        return origin.hasSuffix("/") ? String(origin.dropLast()) + path : origin + path
+    }
+
+    static func protectedResourceMetadataURL(origin: String) -> String {
+        let path = "/.well-known/oauth-protected-resource/" + McpRoutePath.pathComponents().joined(separator: "/")
         return origin.hasSuffix("/") ? String(origin.dropLast()) + path : origin + path
     }
 

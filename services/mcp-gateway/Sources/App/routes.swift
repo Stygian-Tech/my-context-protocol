@@ -1,8 +1,28 @@
 import Vapor
 
 func routes(_ app: Application) throws {
-    app.get { _ in
-        "MyContextProtocol"
+    let mcpIngress = app.grouped(
+        TenantHostMiddleware(),
+        McpTenantHostRequiredMiddleware(),
+        McpIpRateLimitMiddleware()
+    )
+
+    app.get { req async throws -> Response in
+        if let host = RequestPublicOrigin.routingHostname(for: req) {
+            switch try await TenantHostMiddleware.resolveProject(for: host, request: req) {
+            case .resolved(let project, _):
+                if project.suspendedAt != nil {
+                    return Response(status: .paymentRequired, body: .init(string: "This project is suspended. The account owner must select an active project or upgrade to Pro."))
+                }
+                req.storage[ResolvedHostProjectKey.self] = project
+            case .unresolved:
+                break
+            }
+        }
+        if req.storage[ResolvedHostProjectKey.self] != nil, AppEnvironment.mcpOAuthEnabled {
+            return try McpOAuthController.rootOAuthChallenge(req: req)
+        }
+        return Response(status: .ok, body: .init(string: "MyContextProtocol"))
     }
 
     app.get("health") { _ in
@@ -164,12 +184,6 @@ func routes(_ app: Application) throws {
     app.on(.POST, ["webhooks", "stripe"], body: .collect(maxSize: ByteCount(value: 1024 * 1024))) { req in
         try await StripeWebhookController.handle(req: req)
     }
-
-    let mcpIngress = app.grouped(
-        TenantHostMiddleware(),
-        McpTenantHostRequiredMiddleware(),
-        McpIpRateLimitMiddleware()
-    )
 
     mcpIngress.get(".well-known", "oauth-protected-resource") { req async throws in
         try await McpOAuthController.protectedResourceMetadata(req: req).encodeResponse(for: req)
