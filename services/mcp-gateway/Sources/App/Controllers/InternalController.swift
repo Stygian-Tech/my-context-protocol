@@ -18,12 +18,14 @@ struct InternalController {
               !domain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return Response(status: .unprocessableEntity)
         }
-        let host = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let host = McpUrlBuilder.canonicalCustomDomainHost(domain) else {
+            return Response(status: .unprocessableEntity)
+        }
 
         // Allow any subdomain of the MCP base domain.
         if let rawBase = Environment.get("SAAS_MCP_BASE_DOMAIN")?
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !rawBase.isEmpty {
-            if host.hasSuffix("." + rawBase) {
+            .trimmingCharacters(in: .whitespacesAndNewlines), !rawBase.isEmpty {
+            if host.hasSuffix("." + McpUrlBuilder.normalizedBaseDomain(rawBase)) {
                 return Response(status: .ok)
             }
         }

@@ -32,11 +32,12 @@ struct TenantHostMiddleware: AsyncMiddleware {
     }
 
     static func resolveProject(for host: String, request: Request) async throws -> Resolution {
-        if let byCustom = try await Project.query(on: request.db).filter(\.$customDomain == host).first(),
+        let customHost = McpUrlBuilder.canonicalCustomDomainHost(host) ?? host
+        if let byCustom = try await Project.query(on: request.db).filter(\.$customDomain == customHost).first(),
            byCustom.customDomainVerifiedAt != nil {
             return .resolved(
                 byCustom,
-                "tenant_host resolved=verified_custom_domain host=\(host) projectId=\(byCustom.id?.uuidString ?? "nil")"
+                "tenant_host resolved=verified_custom_domain host=\(customHost) projectId=\(byCustom.id?.uuidString ?? "nil")"
             )
         }
         guard let base = Environment.get("SAAS_MCP_BASE_DOMAIN"), !base.isEmpty else {

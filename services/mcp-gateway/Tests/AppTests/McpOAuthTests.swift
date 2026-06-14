@@ -543,6 +543,22 @@ struct McpOAuthTests {
         )
     }
 
+    @Test("Claude authorization code flow works on verified custom domain")
+    func claudeAuthorizationCodeFlowVerifiedCustomDomain() async throws {
+        try await runClaudeAuthorizationCodeFlow(
+            redirectUri: "https://claude.ai/api/mcp/auth_callback",
+            registrationGrantTypes: ["authorization_code", "refresh_token"],
+            tokenEndpointAuthMethod: "client_secret_post",
+            host: "mcp.custom.example.",
+            resourceOrigin: "https://mcp.custom.example",
+            forwardedProto: "https",
+            configureProject: { project in
+                project.customDomain = "mcp.custom.example"
+                project.customDomainVerifiedAt = Date()
+            }
+        )
+    }
+
     @Test("Authorize rejects resource for a different MCP host")
     func authorizeRejectsMismatchedResource() async throws {
         try await withMcpOAuthApp(env: [
@@ -590,7 +606,11 @@ private struct TestRegistrationResponse: Decodable {
 private func runClaudeAuthorizationCodeFlow(
     redirectUri: String,
     registrationGrantTypes: [String] = ["authorization_code"],
-    tokenEndpointAuthMethod: String = "none"
+    tokenEndpointAuthMethod: String = "none",
+    host: String = "claudeflow.mcp.oauth.test",
+    resourceOrigin: String? = nil,
+    forwardedProto: String? = nil,
+    configureProject: (@Sendable (Project) -> Void)? = nil
 ) async throws {
     try await withMcpOAuthApp(env: [
         "USE_SQLITE": "1",
@@ -603,10 +623,10 @@ private func runClaudeAuthorizationCodeFlow(
         let account = Account(githubId: Int64(900_004 + redirectUri.count), login: "claude-flow", email: "claude-flow@example.com")
         try await account.save(on: app.db)
         let project = Project(accountId: account.id!, name: "Claude Flow", slug: "claude-flow", subdomain: "claudeflow")
+        configureProject?(project)
         try await project.save(on: app.db)
 
-        let host = "claudeflow.mcp.oauth.test"
-        let resource = "http://\(host)/mcp"
+        let resource = "\(resourceOrigin ?? "http://\(host)")/mcp"
         let client = try await registerClient(
             app,
             host: host,
@@ -631,6 +651,9 @@ private func runClaudeAuthorizationCodeFlow(
             authorizePath,
             beforeRequest: { req in
                 req.headers.replaceOrAdd(name: .host, value: host)
+                if let forwardedProto {
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: forwardedProto)
+                }
             },
             afterResponse: { res in
                 #expect(res.status.code >= 300 && res.status.code < 400)
@@ -648,6 +671,9 @@ private func runClaudeAuthorizationCodeFlow(
             "/oauth/consent?pending=\(pending.uuidString)&auth_token=\(urlEncode(handoffToken))",
             beforeRequest: { req in
                 req.headers.replaceOrAdd(name: .host, value: host)
+                if let forwardedProto {
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: forwardedProto)
+                }
             },
             afterResponse: { res in
                 #expect(res.status == .ok)
@@ -669,6 +695,9 @@ private func runClaudeAuthorizationCodeFlow(
             beforeRequest: { req in
                 req.headers.replaceOrAdd(name: .host, value: host)
                 req.headers.replaceOrAdd(name: .contentType, value: "application/x-www-form-urlencoded")
+                if let forwardedProto {
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: forwardedProto)
+                }
             },
             afterResponse: { res in
                 #expect(res.status.code >= 300 && res.status.code < 400)
@@ -700,6 +729,9 @@ private func runClaudeAuthorizationCodeFlow(
             beforeRequest: { req in
                 req.headers.replaceOrAdd(name: .host, value: host)
                 req.headers.replaceOrAdd(name: .contentType, value: "application/x-www-form-urlencoded")
+                if let forwardedProto {
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: forwardedProto)
+                }
             },
             afterResponse: { res in
                 #expect(res.status == .ok, "token response status=\(res.status) body=\(res.body.string)")
@@ -720,6 +752,9 @@ private func runClaudeAuthorizationCodeFlow(
                 req.headers.replaceOrAdd(name: .host, value: host)
                 req.headers.replaceOrAdd(name: .authorization, value: "Bearer \(accessToken)")
                 req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+                if let forwardedProto {
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: forwardedProto)
+                }
             },
             afterResponse: { res in
                 #expect(res.status == .ok)

@@ -653,8 +653,8 @@ struct ProjectController {
         let project = try await requireProject(req, accountId: account.id!)
         struct Body: Content { let hostname: String }
         let body = try req.content.decode(Body.self)
-        let raw = body.hostname.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !raw.isEmpty, raw.count <= 253 else {
+        guard let raw = McpUrlBuilder.canonicalCustomDomainHost(body.hostname),
+              raw.count <= 253 else {
             throw Abort(.badRequest, reason: "Invalid hostname")
         }
         guard raw.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" }) else {

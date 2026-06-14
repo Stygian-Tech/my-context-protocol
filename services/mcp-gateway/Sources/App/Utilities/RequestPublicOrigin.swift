@@ -5,7 +5,7 @@ enum RequestPublicOrigin {
     /// `MCP_TRUST_X_FORWARDED_HOST` is enabled so verified custom domains work behind TLS-terminating proxies.
     static func routingHostname(for req: Request) -> String? {
         guard let hostFull = publicHostField(for: req) else { return nil }
-        let host = String(hostFull.split(separator: ":").first ?? Substring(hostFull)).lowercased()
+        let host = String(canonicalHostPort(hostFull).split(separator: ":").first ?? Substring(hostFull)).lowercased()
         return host.isEmpty ? nil : host
     }
 
@@ -15,7 +15,7 @@ enum RequestPublicOrigin {
         guard let hostRaw = publicHostField(for: req)?.trimmingCharacters(in: .whitespacesAndNewlines), !hostRaw.isEmpty else {
             return nil
         }
-        let hostLower = hostRaw.lowercased()
+        let hostLower = canonicalHostPort(hostRaw)
         let displayHost = stripDefaultHttpPorts(from: hostLower, scheme: scheme)
         return "\(scheme)://\(displayHost)"
     }
@@ -30,6 +30,23 @@ enum RequestPublicOrigin {
             }
         }
         return req.headers.first(name: .host)
+    }
+
+    private static func canonicalHostPort(_ raw: String) -> String {
+        let hostPort = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !hostPort.contains("[") else { return hostPort }
+        guard let colonIdx = hostPort.lastIndex(of: ":") else {
+            return stripTrailingDots(hostPort)
+        }
+        let hostPart = stripTrailingDots(String(hostPort[..<colonIdx]))
+        let portPart = String(hostPort[hostPort.index(after: colonIdx)...])
+        return hostPart.isEmpty ? hostPort : "\(hostPart):\(portPart)"
+    }
+
+    private static func stripTrailingDots(_ raw: String) -> String {
+        var s = raw
+        while s.hasSuffix(".") { s.removeLast() }
+        return s
     }
 
     private static func forwardedProto(for req: Request) -> String? {

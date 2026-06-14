@@ -5,7 +5,7 @@ import Vapor
 enum McpUrlBuilder {
     /// Full URL for `POST /mcp` for this project (verified custom domain when `isPro`, else `{subdomain}.{SAAS_MCP_BASE_DOMAIN}`).
     static func publicMcpUrl(for project: Project, isPro: Bool = true) -> String? {
-        if isPro, let host = customDomainHost(project) {
+        if isPro, let host = canonicalCustomDomainHost(project) {
             return build(host: host)
         }
         guard let sub = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty,
@@ -17,11 +17,18 @@ enum McpUrlBuilder {
         return build(host: "\(sub).\(base)")
     }
 
-    private static func customDomainHost(_ project: Project) -> String? {
-        guard project.customDomainVerifiedAt != nil,
-              let d = project.customDomain?.trimmingCharacters(in: .whitespacesAndNewlines),
+    static func canonicalCustomDomainHost(_ raw: String?) -> String? {
+        guard var d = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               !d.isEmpty else { return nil }
-        return d.lowercased()
+        while d.hasSuffix(".") { d.removeLast() }
+        guard !d.isEmpty else { return nil }
+        return d
+    }
+
+    static func canonicalCustomDomainHost(_ project: Project) -> String? {
+        guard project.customDomainVerifiedAt != nil,
+              let d = canonicalCustomDomainHost(project.customDomain) else { return nil }
+        return d
     }
 
     static func normalizedBaseDomain(_ raw: String) -> String {
@@ -52,7 +59,7 @@ enum McpUrlBuilder {
 
     /// Origin for the tenant MCP host (no path), e.g. `https://sub.example.dev` or `https://custom.domain`.
     static func tenantOrigin(for project: Project) -> String? {
-        if let host = customDomainHost(project) {
+        if let host = canonicalCustomDomainHost(project) {
             return "\(normalizedScheme())://\(host)"
         }
         guard let sub = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty,
