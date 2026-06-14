@@ -38,6 +38,7 @@ enum StripeSubscriptionSync {
                 account.subscriptionStatus = "canceled"
                 account.stripeSubscriptionId = nil
                 try await account.save(on: db)
+                try await ProjectEntitlementReconciler.reconcileProjects(for: account, db: db, logger: logger)
                 return changed
             }
             logger.warning("stripe_sync: unexpected status \(response.status) for subscription \(subId)")
@@ -52,6 +53,9 @@ enum StripeSubscriptionSync {
         }
         account.subscriptionStatus = sub.status
         try await account.save(on: db)
+        if changed {
+            try await ProjectEntitlementReconciler.reconcileProjects(for: account, db: db, logger: logger)
+        }
         return changed
     }
 

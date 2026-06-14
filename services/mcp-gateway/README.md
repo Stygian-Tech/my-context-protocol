@@ -71,6 +71,36 @@ fly secrets set \
 
 Include GitHub App, Stripe, SaaS MCP host, and admin/pro bypass secrets as needed from `.env.example`.
 
+## MCP OAuth
+
+Tenant MCP OAuth is designed for Claude-compatible public clients:
+
+- Dynamic client registration accepts public clients only (`token_endpoint_auth_method=none`).
+- The only supported grant is `authorization_code` with PKCE (`S256`).
+- Public DCR does not issue `client_secret` values.
+- `client_credentials` and `refresh_token` are not supported by the public OAuth surface.
+
+Claude Code should be added with the project MCP URL, for example:
+
+```bash
+claude mcp add --transport http my-context https://<project-host>/mcp
+```
+
+Use Claude's fixed callback-port option only when you need a stable localhost redirect URI for local testing.
+
+For tenant custom domains, the gateway must create Fly edge certificates after DNS verification. Set a Fly token with certificate access and the gateway app name:
+
+```bash
+fly secrets set \
+  FLY_API_TOKEN='FlyV1...' \
+  FLY_CERTIFICATE_APP_NAME='my-context-protocol-dev-gateway' \
+  --app my-context-protocol-dev-gateway
+```
+
+Without these runtime secrets, a tenant CNAME can route to Fly but TLS for that custom hostname will fail before Vapor sees the request.
+
+Verified custom domains remain stored when an account loses Pro, but runtime routing requires current Pro entitlement. Routing resumes automatically after the account regains Pro access.
+
 Deploy:
 
 ```bash

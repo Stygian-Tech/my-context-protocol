@@ -92,9 +92,9 @@ enum McpOAuthController {
             token_endpoint: "\(origin)/token",
             registration_endpoint: "\(origin)/register",
             response_types_supported: ["code"],
-            grant_types_supported: ["authorization_code", "client_credentials", "refresh_token"],
+            grant_types_supported: ["authorization_code"],
             code_challenge_methods_supported: ["S256"],
-            token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "none"],
+            token_endpoint_auth_methods_supported: ["none"],
             scopes_supported: [McpOAuthConstants.defaultScope]
         )
     }
@@ -126,33 +126,24 @@ enum McpOAuthController {
         }
 
         let authMethod = body.token_endpoint_auth_method ?? "none"
-        let isConfidential = (authMethod == "client_secret_post" || authMethod == "client_secret_basic")
-        guard authMethod == "none" || authMethod == "client_secret_post" || authMethod == "client_secret_basic" else {
+        guard authMethod == "none" else {
             logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=unsupported_auth_method auth_method=\(authMethod)")
             throw Abort(.badRequest, reason: "Unsupported token_endpoint_auth_method: \(authMethod)")
         }
 
         let requestedGrants = body.grant_types ?? ["authorization_code"]
-        let allowedGrantSet = Set(["authorization_code", "client_credentials", "refresh_token"])
-        for g in requestedGrants where !allowedGrantSet.contains(g) {
-            logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=unsupported_grant grant=\(g) auth_method=\(authMethod)")
-            throw Abort(.badRequest, reason: "Unsupported grant_type: \(g)")
+        guard requestedGrants == ["authorization_code"] else {
+            logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=unsupported_grants grants=\(requestedGrants.joined(separator: ",")) auth_method=\(authMethod)")
+            throw Abort(.badRequest, reason: "Public DCR supports only authorization_code")
         }
 
         let clientId = UUID().uuidString
-        var rawSecret: String? = nil
-        var secretHash: String? = nil
-        if isConfidential {
-            let s = McpOAuthCrypto.randomToken(prefix: "mcs_")
-            rawSecret = s
-            secretHash = McpOAuthCrypto.sha256Hex(s)
-        }
 
         let urisJson = String(data: try JSONEncoder().encode(body.redirect_uris), encoding: .utf8)!
         let client = McpOAuthClient(
             publicClientId: clientId,
-            clientSecretHash: secretHash,
-            isConfidential: isConfidential,
+            clientSecretHash: nil,
+            isConfidential: false,
             redirectUrisJson: urisJson,
             allowedGrants: requestedGrants.joined(separator: ","),
             status: "active",
@@ -162,17 +153,16 @@ enum McpOAuthController {
         logOAuth(
             req,
             phase: "dynamic_client_registration",
-            details: "auth_method=\(authMethod) grants=\(requestedGrants.joined(separator: ",")) redirect_hosts=\(redirectHosts(body.redirect_uris).joined(separator: ",")) confidential=\(isConfidential)"
+            details: "auth_method=\(authMethod) grants=\(requestedGrants.joined(separator: ",")) redirect_hosts=\(redirectHosts(body.redirect_uris).joined(separator: ",")) confidential=false"
         )
 
-        var responseDict: [String: Any] = [
+        let responseDict: [String: Any] = [
             "client_id": clientId,
             "redirect_uris": body.redirect_uris,
             "grant_types": requestedGrants,
             "response_types": body.response_types ?? ["code"],
             "token_endpoint_auth_method": authMethod,
         ]
-        if let secret = rawSecret { responseDict["client_secret"] = secret }
 
         let json = try JSONSerialization.data(withJSONObject: responseDict)
         var headers = HTTPHeaders()
@@ -216,36 +206,8 @@ enum McpOAuthController {
         let scope = req.query[String.self, at: "scope"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? McpOAuthConstants.defaultScope
         let resource = req.query[String.self, at: "resource"]
 
-        guard responseType == "code" else {
-            return try redirectOAuthError(
-                req: req,
-                redirectUri: redirectUri,
-                state: state,
-                error: "unsupported_response_type",
-                description: "Only code is supported"
-            )
-        }
         guard !state.isEmpty else {
             throw Abort(.badRequest, reason: "state is required")
-        }
-        guard codeChallengeMethod.uppercased() == "S256" else {
-            return try redirectOAuthError(
-                req: req,
-                redirectUri: redirectUri,
-                state: state,
-                error: "invalid_request",
-                description: "code_challenge_method must be S256"
-            )
-        }
-        guard try resourceMatchesCurrentHost(resource, req: req) else {
-            logOAuth(req, phase: "authorize_rejected", details: "reason=resource_mismatch")
-            return try redirectOAuthError(
-                req: req,
-                redirectUri: redirectUri,
-                state: state,
-                error: "invalid_target",
-                description: "resource does not match this MCP host"
-            )
         }
 
         guard let clientRow = try await McpOAuthClient.query(on: req.db)
@@ -269,6 +231,34 @@ enum McpOAuthController {
         let uris = try clientRow.parsedRedirectUris()
         guard uris.contains(redirectUri) else {
             throw Abort(.badRequest, reason: "redirect_uri is not registered for this client")
+        }
+        guard responseType == "code" else {
+            return try redirectOAuthError(
+                req: req,
+                redirectUri: redirectUri,
+                state: state,
+                error: "unsupported_response_type",
+                description: "Only code is supported"
+            )
+        }
+        guard codeChallengeMethod.uppercased() == "S256" else {
+            return try redirectOAuthError(
+                req: req,
+                redirectUri: redirectUri,
+                state: state,
+                error: "invalid_request",
+                description: "code_challenge_method must be S256"
+            )
+        }
+        guard try resourceMatchesCurrentHost(resource, req: req) else {
+            logOAuth(req, phase: "authorize_rejected", details: "reason=resource_mismatch")
+            return try redirectOAuthError(
+                req: req,
+                redirectUri: redirectUri,
+                state: state,
+                error: "invalid_target",
+                description: "resource does not match this MCP host"
+            )
         }
 
         let normalizedScope = try normalizeScope(scope)
@@ -572,7 +562,12 @@ enum McpOAuthController {
         case "authorization_code":
             return try await tokenAuthorizationCode(req: req, form: form)
         case "client_credentials":
-            return try await tokenClientCredentials(req: req, form: form)
+            return try await oauthTokenErrorResponse(
+                req: req,
+                status: .badRequest,
+                error: "unsupported_grant_type",
+                description: "client_credentials is not supported"
+            )
         default:
             return try await oauthTokenErrorResponse(
                 req: req,
@@ -672,61 +667,6 @@ enum McpOAuthController {
             scope: row.scope
         )
         logOAuth(req, phase: "token_issued", details: "grant=authorization_code client_id=\(clientId) scope=\(row.scope)")
-        return try await body.encodeResponse(status: .ok, for: req)
-    }
-
-    private static func tokenClientCredentials(req: Request, form: TokenRequestForm) async throws -> Response {
-        let basic = basicClientCredentials(req)
-        guard let clientId = trimmedNonEmpty(form.client_id) ?? basic?.clientId,
-              let secret = trimmedNonEmpty(form.client_secret) ?? basic?.clientSecret else {
-            return try await oauthTokenErrorResponse(
-                req: req,
-                status: .badRequest,
-                error: "invalid_request",
-                description: "client_id and client_secret are required"
-            )
-        }
-        guard let clientRow = try await McpOAuthClient.query(on: req.db)
-            .filter(\.$publicClientId == clientId)
-            .first(),
-            clientRow.isActive,
-            clientRow.isConfidential else {
-            return try await oauthTokenErrorResponse(req: req, status: .badRequest, error: "invalid_client", description: "Unknown or invalid client")
-        }
-        guard let expected = clientRow.clientSecretHash,
-              expected == McpOAuthCrypto.sha256Hex(secret) else {
-            return try await oauthTokenErrorResponse(req: req, status: .unauthorized, error: "invalid_client", description: "Invalid client credentials")
-        }
-        guard clientRow.allowsGrant("client_credentials") else {
-            return try await oauthTokenErrorResponse(
-                req: req,
-                status: .badRequest,
-                error: "unauthorized_client",
-                description: "Client cannot use client_credentials"
-            )
-        }
-
-        let project = try requireResolvedProject(req)
-        let rawToken = McpOAuthCrypto.randomToken(prefix: McpOAuthConstants.accessTokenPrefix)
-        let tokenHash = McpOAuthCrypto.sha256Hex(rawToken)
-        let access = McpOAuthAccessToken(
-            tokenHash: tokenHash,
-            projectId: project.id!,
-            clientId: clientRow.id!,
-            accountId: nil,
-            subjectType: "service",
-            scope: McpOAuthConstants.defaultScope,
-            expiresAt: Date().addingTimeInterval(McpOAuthConstants.accessTokenTTLSeconds)
-        )
-        try await access.save(on: req.db)
-
-        let body = OAuthTokenSuccess(
-            access_token: rawToken,
-            token_type: "Bearer",
-            expires_in: Int(McpOAuthConstants.accessTokenTTLSeconds),
-            scope: McpOAuthConstants.defaultScope
-        )
-        logOAuth(req, phase: "token_issued", details: "grant=client_credentials client_id=\(clientId) scope=\(McpOAuthConstants.defaultScope)")
         return try await body.encodeResponse(status: .ok, for: req)
     }
 

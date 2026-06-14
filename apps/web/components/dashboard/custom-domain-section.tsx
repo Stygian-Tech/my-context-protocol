@@ -21,6 +21,25 @@ const SECTION_SHELL =
 const INSET_SURFACE =
   "rounded-lg border border-border/80 bg-muted/35 dark:bg-muted/20";
 
+function certificateStatusLabel(
+  status: "not_configured" | "pending" | "issued" | "failed" | "unknown" | null | undefined,
+) {
+  switch (status) {
+    case "issued":
+      return "TLS issued";
+    case "pending":
+      return "TLS pending";
+    case "failed":
+      return "TLS failed";
+    case "not_configured":
+      return "TLS not configured";
+    case "unknown":
+      return "TLS unknown";
+    default:
+      return null;
+  }
+}
+
 interface CustomDomainSectionProps {
   projectId: string;
   isPro?: boolean;
@@ -65,7 +84,8 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
               Custom Domain
             </h2>
             <p className="text-sm text-muted-foreground">
-              Point your own hostname at this project with automatic TLS — available on Pro.
+              Point your own hostname at this project with automatic TLS. Verified domains stay saved,
+              but routing requires active Pro.
             </p>
           </div>
           <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
@@ -86,6 +106,8 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
     return <Skeleton className="h-40 w-full" />;
   }
 
+  const tlsLabel = certificateStatusLabel(data.certificate_status);
+
   return (
     <section
       className={SECTION_SHELL}
@@ -100,7 +122,7 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
         </h2>
         <p className="text-sm text-muted-foreground">
           Point your own hostname at this project. Add the TXT record we show,
-          then verify.
+          then verify. Routing remains active while the account has Pro.
         </p>
       </div>
       <div className="space-y-4">
@@ -117,9 +139,23 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
                 Pending verification
               </span>
             )}
+            {tlsLabel && (
+              <span
+                className={cn(
+                  "ml-2",
+                  data.certificate_status === "issued"
+                    ? "text-green-600 dark:text-green-500"
+                    : data.certificate_status === "failed" || data.certificate_status === "not_configured"
+                      ? "text-destructive"
+                      : "text-muted-foreground",
+                )}
+              >
+                {tlsLabel}
+              </span>
+            )}
           </div>
         )}
-        {!data.verified && data.instructions && (
+        {data.instructions && (
           <p
             className={cn(
               INSET_SURFACE,

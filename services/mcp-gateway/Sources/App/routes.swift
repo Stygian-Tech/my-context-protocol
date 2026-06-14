@@ -15,6 +15,8 @@ func routes(_ app: Application) throws {
                     return Response(status: .paymentRequired, body: .init(string: "This project is suspended. The account owner must select an active project or upgrade to Pro."))
                 }
                 req.storage[ResolvedHostProjectKey.self] = project
+            case .denied(let status, let message):
+                return Response(status: status, body: .init(string: message))
             case .unresolved:
                 break
             }

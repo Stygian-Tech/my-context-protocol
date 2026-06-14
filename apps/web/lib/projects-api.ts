@@ -96,6 +96,8 @@ export interface CustomDomainStatus {
   verified: boolean;
   verification_token?: string | null;
   instructions?: string | null;
+  certificate_status?: "not_configured" | "pending" | "issued" | "failed" | "unknown" | null;
+  certificate_message?: string | null;
 }
 
 export async function fetchCustomDomain(projectId: string): Promise<CustomDomainStatus> {

@@ -51,6 +51,7 @@ struct StripeWebhookController {
         account.stripeSubscriptionId = subscriptionId
         account.subscriptionStatus = "active"
         try await account.save(on: req.db)
+        try await ProjectEntitlementReconciler.reconcileProjects(for: account, db: req.db, logger: req.logger)
     }
 
     private static func handleSubscriptionUpdated(object: StripeEventObject, req: Request) async throws {
@@ -68,11 +69,9 @@ struct StripeWebhookController {
         let reactivating = (status == "active" || status == "trialing")
             && previousStatus != "active" && previousStatus != "trialing"
         if reactivating {
-            try await Project.query(on: req.db)
-                .filter(\.$account.$id == account.id!)
-                .filter(\.$suspendedAt != .null)
-                .set(\.$suspendedAt, to: nil)
-                .update()
+            try await ProjectEntitlementReconciler.reconcileProjects(for: account, db: req.db, logger: req.logger)
+        } else if previousStatus != status {
+            try await ProjectEntitlementReconciler.reconcileProjects(for: account, db: req.db, logger: req.logger)
         }
         if status == "canceled" || status == "unpaid" || status == "incomplete_expired" {
             try await GitHubWebhookCleanup.removeAllWebhooks(
@@ -92,6 +91,7 @@ struct StripeWebhookController {
         account.subscriptionStatus = "canceled"
         account.stripeSubscriptionId = nil
         try await account.save(on: req.db)
+        try await ProjectEntitlementReconciler.reconcileProjects(for: account, db: req.db, logger: req.logger)
         try await GitHubWebhookCleanup.removeAllWebhooks(
             account: account,
             db: req.db,

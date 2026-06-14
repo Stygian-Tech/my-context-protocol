@@ -82,9 +82,10 @@ struct McpOAuthTests {
                     #expect(metadata.issuer == "http://any.mcp.oauth.test")
                     #expect(metadata.registration_endpoint == "http://any.mcp.oauth.test/register")
                     #expect(metadata.code_challenge_methods_supported.contains("S256"))
-                    #expect(metadata.grant_types_supported.contains("refresh_token"))
-                    #expect(metadata.token_endpoint_auth_methods_supported.contains("client_secret_basic"))
-                    #expect(metadata.token_endpoint_auth_methods_supported.contains("none"))
+                    #expect(metadata.grant_types_supported == ["authorization_code"])
+                    #expect(!metadata.grant_types_supported.contains("client_credentials"))
+                    #expect(!metadata.grant_types_supported.contains("refresh_token"))
+                    #expect(metadata.token_endpoint_auth_methods_supported == ["none"])
                     #expect(metadata.scopes_supported == [McpOAuthConstants.defaultScope])
                 }
             )
@@ -327,8 +328,8 @@ struct McpOAuthTests {
         }
     }
 
-    @Test("Client credentials access token can call MCP initialize on tenant host")
-    func clientCredentialsMcpInitialize() async throws {
+    @Test("Client credentials grant is rejected on token endpoint")
+    func clientCredentialsGrantRejected() async throws {
         try await withMcpOAuthApp(env: [
             "USE_SQLITE": "1",
             "MCP_OAUTH_ENABLED": "1",
@@ -353,7 +354,6 @@ struct McpOAuthTests {
             try await m2m.save(on: app.db)
 
             let form = "grant_type=client_credentials&client_id=m2m-test&client_secret=supersecret"
-            var accessToken = ""
             try await app.testing().test(
                 .POST,
                 "/token",
@@ -366,27 +366,9 @@ struct McpOAuthTests {
                     )
                 },
                 afterResponse: { res in
-                    #expect(res.status == .ok, "token response status=\(res.status)")
-                    let dec = try res.content.decode(OAuthTokenSuccess.self)
-                    accessToken = dec.access_token
-                }
-            )
-            #expect(!accessToken.isEmpty)
-
-            let initBody =
-                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{}}}"#
-            try await app.testing().test(
-                .POST,
-                "/mcp",
-                body: ByteBuffer(string: initBody),
-                beforeRequest: { req in
-                    req.headers.replaceOrAdd(name: .host, value: "oauthsub.mcp.oauth.test")
-                    req.headers.replaceOrAdd(name: .authorization, value: "Bearer \(accessToken)")
-                    req.headers.replaceOrAdd(name: .contentType, value: "application/json")
-                },
-                afterResponse: { res in
-                    #expect(res.status == .ok)
-                    #expect(res.headers.first(name: "X-MCP-Catalog-Revision") != nil)
+                    #expect(res.status == .badRequest, "token response status=\(res.status)")
+                    let dec = try res.content.decode(OAuthTokenError.self)
+                    #expect(dec.error == "unsupported_grant_type")
                 }
             )
         }
@@ -429,8 +411,8 @@ struct McpOAuthTests {
         }
     }
 
-    @Test("Claude DCR accepts refresh_token grant registration request")
-    func claudeRegistrationAllowsRefreshTokenGrantRequest() async throws {
+    @Test("Claude DCR rejects refresh_token grant registration request")
+    func claudeRegistrationRejectsRefreshTokenGrantRequest() async throws {
         try await withMcpOAuthApp(env: [
             "USE_SQLITE": "1",
             "MCP_OAUTH_ENABLED": "1",
@@ -456,18 +438,14 @@ struct McpOAuthTests {
                     req.headers.replaceOrAdd(name: .contentType, value: "application/json")
                 },
                 afterResponse: { res in
-                    #expect(res.status == .created, "registration status=\(res.status) body=\(res.body.string)")
-                    let registration = try JSONDecoder().decode(TestRegistrationResponse.self, from: Data(buffer: res.body))
-                    #expect(registration.token_endpoint_auth_method == "client_secret_post")
-                    #expect(registration.grant_types == ["authorization_code", "refresh_token"])
-                    #expect(registration.client_secret?.isEmpty == false)
+                    #expect(res.status == .badRequest, "registration status=\(res.status) body=\(res.body.string)")
                 }
             )
         }
     }
 
-    @Test("Confidential DCR supports client_secret_basic and token endpoint Basic auth")
-    func confidentialClientRegistrationSupportsBasicAuth() async throws {
+    @Test("Confidential DCR rejects client_secret_basic and client_credentials")
+    func confidentialClientRegistrationRejectsBasicAuthAndClientCredentials() async throws {
         try await withMcpOAuthApp(env: [
             "USE_SQLITE": "1",
             "MCP_OAUTH_ENABLED": "1",
@@ -484,7 +462,6 @@ struct McpOAuthTests {
             let body = """
             {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"client_name":"Claude","grant_types":["client_credentials"],"token_endpoint_auth_method":"client_secret_basic"}
             """
-            var registration: TestRegistrationResponse?
             try await app.testing().test(
                 .POST,
                 "/register",
@@ -494,31 +471,40 @@ struct McpOAuthTests {
                     req.headers.replaceOrAdd(name: .contentType, value: "application/json")
                 },
                 afterResponse: { res in
-                    #expect(res.status == .created)
-                    registration = try JSONDecoder().decode(TestRegistrationResponse.self, from: Data(buffer: res.body))
-                    #expect(registration?.token_endpoint_auth_method == "client_secret_basic")
-                    #expect(registration?.client_secret?.isEmpty == false)
+                    #expect(res.status == .badRequest, "registration status=\(res.status) body=\(res.body.string)")
                 }
             )
-            let client = try #require(registration)
-            let secret = try #require(client.client_secret)
-            let credentials = Data("\(client.client_id):\(secret)".utf8).base64EncodedString()
-            let tokenForm = "grant_type=client_credentials&client_id=\(urlEncode(client.client_id))"
+        }
+    }
 
+    @Test("DCR rejects confidential authorization_code client_secret_post request")
+    func dcrRejectsConfidentialAuthorizationCodeClient() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_012, login: "claude-confidential", email: "claude-confidential@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Claude Confidential", slug: "claude-confidential", subdomain: "claudeconf")
+            try await project.save(on: app.db)
+
+            let body = """
+            {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"client_name":"Claude","grant_types":["authorization_code"],"response_types":["code"],"token_endpoint_auth_method":"client_secret_post"}
+            """
             try await app.testing().test(
                 .POST,
-                "/token",
-                body: ByteBuffer(string: tokenForm),
+                "/register",
+                body: ByteBuffer(string: body),
                 beforeRequest: { req in
-                    req.headers.replaceOrAdd(name: .host, value: "claudebasic.mcp.oauth.test")
-                    req.headers.replaceOrAdd(name: .contentType, value: "application/x-www-form-urlencoded")
-                    req.headers.replaceOrAdd(name: .authorization, value: "Basic \(credentials)")
+                    req.headers.replaceOrAdd(name: .host, value: "claudeconf.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: .contentType, value: "application/json")
                 },
                 afterResponse: { res in
-                    #expect(res.status == .ok, "token response status=\(res.status) body=\(res.body.string)")
-                    let token = try res.content.decode(OAuthTokenSuccess.self)
-                    #expect(token.token_type == "Bearer")
-                    #expect(token.scope == McpOAuthConstants.defaultScope)
+                    #expect(res.status == .badRequest, "registration status=\(res.status) body=\(res.body.string)")
                 }
             )
         }
@@ -534,12 +520,10 @@ struct McpOAuthTests {
         try await runClaudeAuthorizationCodeFlow(redirectUri: "http://127.0.0.1:49153/callback")
     }
 
-    @Test("Claude authorization code flow supports confidential client_secret_post registration")
-    func claudeAuthorizationCodeFlowConfidentialClientSecretPost() async throws {
+    @Test("Claude authorization code flow accepts HTTPS callback as public client")
+    func claudeAuthorizationCodeFlowHTTPSCallbackPublicClient() async throws {
         try await runClaudeAuthorizationCodeFlow(
-            redirectUri: "https://claude.ai/api/mcp/auth_callback",
-            registrationGrantTypes: ["authorization_code", "refresh_token"],
-            tokenEndpointAuthMethod: "client_secret_post"
+            redirectUri: "https://claude.ai/api/mcp/auth_callback"
         )
     }
 
@@ -547,8 +531,6 @@ struct McpOAuthTests {
     func claudeAuthorizationCodeFlowVerifiedCustomDomain() async throws {
         try await runClaudeAuthorizationCodeFlow(
             redirectUri: "https://claude.ai/api/mcp/auth_callback",
-            registrationGrantTypes: ["authorization_code", "refresh_token"],
-            tokenEndpointAuthMethod: "client_secret_post",
             host: "mcp.custom.example.",
             resourceOrigin: "https://mcp.custom.example",
             forwardedProto: "https",
@@ -588,6 +570,38 @@ struct McpOAuthTests {
                     #expect(res.status.code >= 300 && res.status.code < 400)
                     let location = res.headers.first(name: .location) ?? ""
                     #expect(location.contains("error=invalid_target"))
+                }
+            )
+        }
+    }
+
+    @Test("Authorize does not redirect early errors to unregistered redirect_uri")
+    func authorizeEarlyErrorDoesNotRedirectToUnregisteredRedirectUri() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_013, login: "redirect-safety", email: "redirect-safety@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Redirect Safety", slug: "redirect-safety", subdomain: "redirectsafe")
+            try await project.save(on: app.db)
+
+            let client = try await registerPublicClient(app, host: "redirectsafe.mcp.oauth.test", redirectUri: "http://localhost:49154/callback")
+            let authorizePath = "/authorize?response_type=token&client_id=\(urlEncode(client.client_id))&redirect_uri=\(urlEncode("https://evil.example/callback"))&state=state-open-redirect&scope=\(urlEncode(McpOAuthConstants.defaultScope))&code_challenge=abc&code_challenge_method=S256"
+
+            try await app.testing().test(
+                .GET,
+                authorizePath,
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "redirectsafe.mcp.oauth.test")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .badRequest)
+                    #expect(res.headers.first(name: .location) == nil)
                 }
             )
         }

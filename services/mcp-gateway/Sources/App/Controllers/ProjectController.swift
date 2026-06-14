@@ -385,37 +385,33 @@ struct ProjectController {
         let project = try await requireProject(req, accountId: account.id!)
 
         if account.hasProEntitlements {
-            // Pro: just un-suspend the requested project if it was suspended.
-            if project.suspendedAt != nil {
-                project.suspendedAt = nil
-                try await project.save(on: req.db)
+            try await ProjectEntitlementReconciler.reconcileProjects(for: account, db: req.db, logger: req.logger)
+            guard let updated = try await Project.find(project.id, on: req.db) else {
+                throw Abort(.internalServerError)
             }
-            return projectResponse(project, isPro: true)
+            return projectResponse(updated, isPro: true)
         }
 
-        let freeLimit = Int(Environment.get("FREE_PROJECT_LIMIT") ?? "") ?? 1
         let allProjects = try await Project.query(on: req.db)
             .filter(\.$account.$id == account.id!)
+            .sort(\.$createdAt, .ascending)
+            .sort(\.$id, .ascending)
             .all()
 
-        // Suspend every project beyond the free limit except the selected one.
+        let freeLimit = max(1, Int(Environment.get("FREE_PROJECT_LIMIT") ?? "") ?? 1)
+        var nonSelectedKept = 0
         for p in allProjects {
             let isSelected = p.id == project.id
-            if isSelected {
+            let shouldStayActive = isSelected || nonSelectedKept < max(0, freeLimit - 1)
+            if shouldStayActive {
+                if !isSelected { nonSelectedKept += 1 }
                 if p.suspendedAt != nil {
                     p.suspendedAt = nil
                     try await p.save(on: req.db)
                 }
-            } else {
-                // Count how many non-selected, currently-active projects can stay.
-                // We want exactly (freeLimit - 1) active after selecting this one.
-                // Simplest: suspend everything that isn't selected.
-                if freeLimit <= 1 {
-                    if p.suspendedAt == nil {
-                        p.suspendedAt = Date()
-                        try await p.save(on: req.db)
-                    }
-                }
+            } else if p.suspendedAt == nil {
+                p.suspendedAt = Date()
+                try await p.save(on: req.db)
             }
         }
 
@@ -623,6 +619,7 @@ struct ProjectController {
         let project = try await requireProject(req, accountId: account.id!)
         let verified = project.customDomainVerifiedAt != nil
         let token = verified ? nil : project.customDomainVerificationToken
+        let certificate = await customDomainCertificateStatus(project: project, verified: verified, req: req)
         let instructions: String?
         if let host = project.customDomain, !host.isEmpty, let t = token, !t.isEmpty {
             var parts = ["Add a TXT record on \(host) with value: \(t)"]
@@ -634,6 +631,8 @@ struct ProjectController {
                 parts.append("Add a CNAME record on \(host) pointing to: \(subdomain).\(baseDomain)")
             }
             instructions = parts.joined(separator: "\n")
+        } else if verified, certificate?.status != .issued, let message = certificate?.message, !message.isEmpty {
+            instructions = message
         } else {
             instructions = nil
         }
@@ -641,7 +640,9 @@ struct ProjectController {
             hostname: project.customDomain,
             verified: verified,
             verification_token: token,
-            instructions: instructions
+            instructions: instructions,
+            certificate_status: certificate?.status.rawValue,
+            certificate_message: certificate?.message
         )
     }
 
@@ -701,7 +702,36 @@ struct ProjectController {
         project.customDomainVerifiedAt = Date()
         project.customDomainVerificationToken = nil
         try await project.save(on: req.db)
-        return try await getCustomDomain(req: req)
+        let certificate = await FlyCertificateService.ensureCertificate(
+            hostname: host,
+            client: req.client,
+            logger: req.logger
+        )
+        return CustomDomainResponse(
+            hostname: project.customDomain,
+            verified: true,
+            verification_token: nil,
+            instructions: certificate.status == .issued ? nil : certificate.message,
+            certificate_status: certificate.status.rawValue,
+            certificate_message: certificate.message
+        )
+    }
+
+    private static func customDomainCertificateStatus(
+        project: Project,
+        verified: Bool,
+        req: Request
+    ) async -> FlyCertificateService.Result? {
+        guard verified,
+              let host = project.customDomain,
+              !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return await FlyCertificateService.checkCertificateStatus(
+            hostname: host,
+            client: req.client,
+            logger: req.logger
+        )
     }
 
     static func listReleases(req: Request) async throws -> [ReleaseResponse] {

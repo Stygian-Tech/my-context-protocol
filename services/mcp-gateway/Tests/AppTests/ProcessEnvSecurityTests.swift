@@ -679,6 +679,39 @@ struct ProcessEnvSecurityTests {
         }
     }
 
+    @Test("FlyCertificateService reads runtime certificate config")
+    func flyCertificateConfig() throws {
+        withIsolatedProcessEnv {
+            let (apply, restore) = temporaryEnv([
+                "FLY_API_TOKEN": "fly-token",
+                "FLY_ACCESS_TOKEN": "",
+                "FLY_CERTIFICATE_APP_NAME": "gateway-app",
+                "FLY_MCP_GATEWAY_APP": "",
+                "FLY_APP_NAME": "",
+                "FLY_CERTIFICATE_API_BASE_URL": "https://fly-api.test/",
+                "FLY_API_BASE_URL": "",
+            ])
+            apply()
+            defer { restore() }
+            let config = FlyCertificateService.currentConfig()
+            #expect(config?.apiToken == "fly-token")
+            #expect(config?.appName == "gateway-app")
+            #expect(config?.apiBaseURL == "https://fly-api.test")
+        }
+    }
+
+    @Test("FlyCertificateService parses issued and failed certificate responses")
+    func flyCertificateResponseParsing() throws {
+        let issued = Data(#"{"certificate":{"configured":true,"client_status":"Ready","issued":{"nodes":[{"type":"rsa"}]}}}"#.utf8)
+        let issuedResult = FlyCertificateService.parseResult(from: issued)
+        #expect(issuedResult.status == .issued)
+
+        let failed = Data(#"{"certificate":{"configured":false,"validation_errors":[{"message":"CNAME does not point to app"}]}}"#.utf8)
+        let failedResult = FlyCertificateService.parseResult(from: failed)
+        #expect(failedResult.status == .failed)
+        #expect(failedResult.message == "CNAME does not point to app")
+    }
+
     @Test("McpIpRateLimitMiddleware uses X-Forwarded-For when trusted")
     func mcpRateLimitXff() async throws {
         try await withIsolatedProcessEnv {

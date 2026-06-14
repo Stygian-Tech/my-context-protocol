@@ -20,6 +20,9 @@ struct TenantHostMiddleware: AsyncMiddleware {
             }
             request.storage[ResolvedHostProjectKey.self] = project
             request.logger.devTrace(message)
+        case .denied(let status, let message):
+            request.logger.devTrace(message)
+            return Response(status: status, body: .init(string: message))
         case .unresolved(let message):
             request.logger.devTrace(message)
         }
@@ -28,6 +31,7 @@ struct TenantHostMiddleware: AsyncMiddleware {
 
     enum Resolution {
         case resolved(Project, String)
+        case denied(HTTPResponseStatus, String)
         case unresolved(String)
     }
 
@@ -35,6 +39,13 @@ struct TenantHostMiddleware: AsyncMiddleware {
         let customHost = McpUrlBuilder.canonicalCustomDomainHost(host) ?? host
         if let byCustom = try await Project.query(on: request.db).filter(\.$customDomain == customHost).first(),
            byCustom.customDomainVerifiedAt != nil {
+            guard let account = try await Account.find(byCustom.$account.id, on: request.db),
+                  account.hasProEntitlements else {
+                return .denied(
+                    .paymentRequired,
+                    "Custom domain routing requires an active Pro entitlement. The domain remains verified and will resume when the account upgrades."
+                )
+            }
             return .resolved(
                 byCustom,
                 "tenant_host resolved=verified_custom_domain host=\(customHost) projectId=\(byCustom.id?.uuidString ?? "nil")"

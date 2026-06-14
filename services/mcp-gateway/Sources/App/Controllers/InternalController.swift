@@ -33,6 +33,11 @@ struct InternalController {
         // Allow verified custom domains — same filter pattern as TenantHostMiddleware.
         if let project = try await Project.query(on: req.db).filter(\.$customDomain == host).first(),
            project.customDomainVerifiedAt != nil {
+            guard let account = try await Account.find(project.$account.id, on: req.db),
+                  account.hasProEntitlements else {
+                req.logger.warning("verify-for-tls rejected domain=\(host) reason=pro_required")
+                return Response(status: .unprocessableEntity)
+            }
             return Response(status: .ok)
         }
 
