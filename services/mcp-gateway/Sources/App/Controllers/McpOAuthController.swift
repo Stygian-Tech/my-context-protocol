@@ -79,7 +79,7 @@ enum McpOAuthController {
             response_types_supported: ["code"],
             grant_types_supported: ["authorization_code", "client_credentials"],
             code_challenge_methods_supported: ["S256"],
-            token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
+            token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "none"],
             scopes_supported: [McpOAuthConstants.defaultScope]
         )
     }
@@ -100,23 +100,27 @@ enum McpOAuthController {
         let body = try req.content.decode(RegistrationRequest.self)
 
         guard !body.redirect_uris.isEmpty else {
+            logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=empty_redirect_uris")
             throw Abort(.badRequest, reason: "redirect_uris must be non-empty")
         }
         for uriString in body.redirect_uris {
             guard URL(string: uriString) != nil else {
+                logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=invalid_redirect_uri")
                 throw Abort(.badRequest, reason: "Invalid redirect_uri: \(uriString)")
             }
         }
 
         let authMethod = body.token_endpoint_auth_method ?? "none"
-        let isConfidential = (authMethod == "client_secret_post")
-        guard authMethod == "none" || authMethod == "client_secret_post" else {
+        let isConfidential = (authMethod == "client_secret_post" || authMethod == "client_secret_basic")
+        guard authMethod == "none" || authMethod == "client_secret_post" || authMethod == "client_secret_basic" else {
+            logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=unsupported_auth_method auth_method=\(authMethod)")
             throw Abort(.badRequest, reason: "Unsupported token_endpoint_auth_method: \(authMethod)")
         }
 
         let requestedGrants = body.grant_types ?? ["authorization_code"]
         let allowedGrantSet = Set(["authorization_code", "client_credentials"])
         for g in requestedGrants where !allowedGrantSet.contains(g) {
+            logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=unsupported_grant grant=\(g) auth_method=\(authMethod)")
             throw Abort(.badRequest, reason: "Unsupported grant_type: \(g)")
         }
 
@@ -568,9 +572,10 @@ enum McpOAuthController {
     }
 
     private static func tokenAuthorizationCode(req: Request, form: TokenRequestForm) async throws -> Response {
+        let basic = basicClientCredentials(req)
         guard let code = form.code?.trimmingCharacters(in: .whitespacesAndNewlines), !code.isEmpty,
               let redirectUri = form.redirect_uri?.trimmingCharacters(in: .whitespacesAndNewlines), !redirectUri.isEmpty,
-              let clientId = form.client_id?.trimmingCharacters(in: .whitespacesAndNewlines), !clientId.isEmpty else {
+              let clientId = trimmedNonEmpty(form.client_id) ?? basic?.clientId else {
             return try await oauthTokenErrorResponse(
                 req: req,
                 status: .badRequest,
@@ -595,7 +600,7 @@ enum McpOAuthController {
         }
 
         if clientRow.isConfidential {
-            guard let secret = form.client_secret?.trimmingCharacters(in: .whitespacesAndNewlines), !secret.isEmpty,
+            guard let secret = trimmedNonEmpty(form.client_secret) ?? basic?.clientSecret,
                   let expected = clientRow.clientSecretHash,
                   expected == McpOAuthCrypto.sha256Hex(secret) else {
                 return try await oauthTokenErrorResponse(
@@ -659,8 +664,9 @@ enum McpOAuthController {
     }
 
     private static func tokenClientCredentials(req: Request, form: TokenRequestForm) async throws -> Response {
-        guard let clientId = form.client_id?.trimmingCharacters(in: .whitespacesAndNewlines), !clientId.isEmpty,
-              let secret = form.client_secret?.trimmingCharacters(in: .whitespacesAndNewlines), !secret.isEmpty else {
+        let basic = basicClientCredentials(req)
+        guard let clientId = trimmedNonEmpty(form.client_id) ?? basic?.clientId,
+              let secret = trimmedNonEmpty(form.client_secret) ?? basic?.clientSecret else {
             return try await oauthTokenErrorResponse(
                 req: req,
                 status: .badRequest,
@@ -832,6 +838,36 @@ enum McpOAuthController {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    private static func trimmedNonEmpty(_ raw: String?) -> String? {
+        guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    private static func basicClientCredentials(_ req: Request) -> (clientId: String, clientSecret: String)? {
+        guard let header = req.headers.first(name: .authorization) else {
+            return nil
+        }
+        let prefix = "Basic "
+        guard header.lowercased().hasPrefix(prefix.lowercased()),
+              header.count > prefix.count else {
+            return nil
+        }
+        let encoded = String(header.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = Data(base64Encoded: encoded),
+              let decoded = String(data: data, encoding: .utf8),
+              let separator = decoded.firstIndex(of: ":") else {
+            return nil
+        }
+        let clientId = String(decoded[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let clientSecret = String(decoded[decoded.index(after: separator)...])
+        guard !clientId.isEmpty, !clientSecret.isEmpty else {
+            return nil
+        }
+        return (clientId, clientSecret)
     }
 
     private static func logOAuth(_ req: Request, phase: String, details: String) {

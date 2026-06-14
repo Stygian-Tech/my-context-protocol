@@ -82,6 +82,7 @@ struct McpOAuthTests {
                     #expect(metadata.issuer == "http://any.mcp.oauth.test")
                     #expect(metadata.registration_endpoint == "http://any.mcp.oauth.test/register")
                     #expect(metadata.code_challenge_methods_supported.contains("S256"))
+                    #expect(metadata.token_endpoint_auth_methods_supported.contains("client_secret_basic"))
                     #expect(metadata.token_endpoint_auth_methods_supported.contains("none"))
                     #expect(metadata.scopes_supported == [McpOAuthConstants.defaultScope])
                 }
@@ -282,6 +283,64 @@ struct McpOAuthTests {
                     #expect(!registration.client_id.isEmpty)
                     #expect(registration.client_secret == nil)
                     #expect(registration.token_endpoint_auth_method == "none")
+                }
+            )
+        }
+    }
+
+    @Test("Confidential DCR supports client_secret_basic and token endpoint Basic auth")
+    func confidentialClientRegistrationSupportsBasicAuth() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_007, login: "claude-basic", email: "claude-basic@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Claude Basic", slug: "claude-basic", subdomain: "claudebasic")
+            try await project.save(on: app.db)
+
+            let body = """
+            {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"client_name":"Claude","grant_types":["client_credentials"],"token_endpoint_auth_method":"client_secret_basic"}
+            """
+            var registration: TestRegistrationResponse?
+            try await app.testing().test(
+                .POST,
+                "/register",
+                body: ByteBuffer(string: body),
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "claudebasic.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .created)
+                    registration = try JSONDecoder().decode(TestRegistrationResponse.self, from: Data(buffer: res.body))
+                    #expect(registration?.token_endpoint_auth_method == "client_secret_basic")
+                    #expect(registration?.client_secret?.isEmpty == false)
+                }
+            )
+            let client = try #require(registration)
+            let secret = try #require(client.client_secret)
+            let credentials = Data("\(client.client_id):\(secret)".utf8).base64EncodedString()
+            let tokenForm = "grant_type=client_credentials&client_id=\(urlEncode(client.client_id))"
+
+            try await app.testing().test(
+                .POST,
+                "/token",
+                body: ByteBuffer(string: tokenForm),
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "claudebasic.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: .contentType, value: "application/x-www-form-urlencoded")
+                    req.headers.replaceOrAdd(name: .authorization, value: "Basic \(credentials)")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .ok, "token response status=\(res.status) body=\(res.body.string)")
+                    let token = try res.content.decode(OAuthTokenSuccess.self)
+                    #expect(token.token_type == "Bearer")
+                    #expect(token.scope == McpOAuthConstants.defaultScope)
                 }
             )
         }
