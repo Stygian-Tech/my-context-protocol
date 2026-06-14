@@ -20,6 +20,7 @@ enum FlyCertificateService {
         let apiBaseURL: String
         let appName: String
         let apiToken: String
+        let ownershipTxtValue: String?
 
         static func fromEnvironment() -> Config? {
             guard let apiToken = firstNonEmptyEnv(["FLY_API_TOKEN", "FLY_ACCESS_TOKEN"]) else {
@@ -38,12 +39,25 @@ enum FlyCertificateService {
                   isValidFlyAppName(appName) else {
                 return nil
             }
+            let ownershipTxtValue = firstNonEmptyEnv([
+                "FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE",
+                "FLY_OWNERSHIP_TXT_VALUE",
+            ])
+            guard ownershipTxtValue.map(isValidOwnershipTxtValue) ?? true else {
+                return nil
+            }
             return Config(
                 apiBaseURL: normalizedBaseURL,
                 appName: appName,
-                apiToken: apiToken
+                apiToken: apiToken,
+                ownershipTxtValue: ownershipTxtValue
             )
         }
+    }
+
+    struct OwnershipTxtRecord: Equatable {
+        let name: String
+        let value: String
     }
 
     static func currentConfig() -> Config? {
@@ -55,6 +69,18 @@ enum FlyCertificateService {
             status: .notConfigured,
             message: "Fly certificate provisioning is not configured. Set FLY_API_TOKEN and FLY_CERTIFICATE_APP_NAME or FLY_APP_NAME on the MCP gateway."
         )
+    }
+
+    static func ownershipTxtRecord(hostname: String) -> OwnershipTxtRecord? {
+        guard let config = Config.fromEnvironment(),
+              let value = config.ownershipTxtValue else {
+            return nil
+        }
+        let host = hostname.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        guard !host.isEmpty else { return nil }
+        return OwnershipTxtRecord(name: "_fly-ownership.\(host)", value: value)
     }
 
     static func ensureCertificate(hostname: String, client: Client, logger: Logger) async -> Result {
@@ -228,6 +254,12 @@ enum FlyCertificateService {
             return false
         }
         return app.allSatisfy { $0.isLowercase || $0.isNumber || $0 == "-" }
+    }
+
+    static func isValidOwnershipTxtValue(_ raw: String) -> Bool {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (1...128).contains(value.count) else { return false }
+        return value.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
     }
 
     private static func firstNonEmptyEnv(_ keys: [String]) -> String? {

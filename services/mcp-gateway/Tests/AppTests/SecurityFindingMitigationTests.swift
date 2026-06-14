@@ -186,10 +186,12 @@ struct SecurityFindingMitigationTests {
                 "FLY_API_TOKEN": "fly_secret",
                 "FLY_CERTIFICATE_APP_NAME": "valid-app-1",
                 "FLY_CERTIFICATE_API_BASE_URL": "https://api.machines.dev/",
+                "FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE": "app-12qq5w0",
             ])
             apply()
             defer { restore() }
             #expect(FlyCertificateService.Config.fromEnvironment()?.apiBaseURL == "https://api.machines.dev")
+            #expect(FlyCertificateService.Config.fromEnvironment()?.ownershipTxtValue == "app-12qq5w0")
         }
 
         await TestProcessEnvGate.run {
@@ -208,6 +210,18 @@ struct SecurityFindingMitigationTests {
                 "FLY_API_TOKEN": "fly_secret",
                 "FLY_CERTIFICATE_APP_NAME": "valid-app-1",
                 "FLY_CERTIFICATE_API_BASE_URL": "file:///tmp/fly",
+            ])
+            apply()
+            defer { restore() }
+            #expect(FlyCertificateService.Config.fromEnvironment() == nil)
+        }
+
+        await TestProcessEnvGate.run {
+            let (apply, restore) = hardeningTemporaryEnv([
+                "FLY_API_TOKEN": "fly_secret",
+                "FLY_CERTIFICATE_APP_NAME": "valid-app-1",
+                "FLY_CERTIFICATE_API_BASE_URL": "https://api.machines.dev",
+                "FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE": "bad token with spaces",
             ])
             apply()
             defer { restore() }

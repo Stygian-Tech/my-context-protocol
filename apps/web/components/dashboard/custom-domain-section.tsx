@@ -159,7 +159,7 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
           <p
             className={cn(
               INSET_SURFACE,
-              "p-3 font-mono text-xs break-all",
+              "whitespace-pre-wrap p-3 font-mono text-xs break-all",
             )}
           >
             {data.instructions}

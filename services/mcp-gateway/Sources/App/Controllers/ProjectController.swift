@@ -620,9 +620,15 @@ struct ProjectController {
         let verified = project.customDomainVerifiedAt != nil
         let token = verified ? nil : project.customDomainVerificationToken
         let certificate = await customDomainCertificateStatus(project: project, verified: verified, req: req)
+        let flyOwnershipRecord = project.customDomain.flatMap {
+            FlyCertificateService.ownershipTxtRecord(hostname: $0)
+        }
         let instructions: String?
         if let host = project.customDomain, !host.isEmpty, let t = token, !t.isEmpty {
             var parts = ["Add a TXT record on \(host) with value: \(t)"]
+            if let flyOwnershipRecord {
+                parts.append("Add a TXT record on \(flyOwnershipRecord.name) with value: \(flyOwnershipRecord.value)")
+            }
             if let subdomain = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines),
                !subdomain.isEmpty,
                let baseRaw = Environment.get("SAAS_MCP_BASE_DOMAIN")?
@@ -631,8 +637,15 @@ struct ProjectController {
                 parts.append("Add a CNAME record on \(host) pointing to: \(subdomain).\(baseDomain)")
             }
             instructions = parts.joined(separator: "\n")
-        } else if verified, certificate?.status != .issued, let message = certificate?.message, !message.isEmpty {
-            instructions = message
+        } else if verified, certificate?.status != .issued {
+            var parts: [String] = []
+            if let message = certificate?.message, !message.isEmpty {
+                parts.append(message)
+            }
+            if let flyOwnershipRecord {
+                parts.append("Add a TXT record on \(flyOwnershipRecord.name) with value: \(flyOwnershipRecord.value)")
+            }
+            instructions = parts.isEmpty ? nil : parts.joined(separator: "\n")
         } else {
             instructions = nil
         }
@@ -641,6 +654,8 @@ struct ProjectController {
             verified: verified,
             verification_token: token,
             instructions: instructions,
+            fly_ownership_verification_record_name: flyOwnershipRecord?.name,
+            fly_ownership_verification_record_value: flyOwnershipRecord?.value,
             certificate_status: certificate?.status.rawValue,
             certificate_message: certificate?.message
         )
@@ -688,6 +703,16 @@ struct ProjectController {
         guard txtOk else {
             throw Abort(.badRequest, reason: "TXT record not found or token mismatch")
         }
+        if let flyOwnershipRecord = FlyCertificateService.ownershipTxtRecord(hostname: host) {
+            let flyOwnershipOk = try await DnsTxtVerifier.txtRecordsIncludeToken(
+                hostname: flyOwnershipRecord.name,
+                token: flyOwnershipRecord.value,
+                client: req.client
+            )
+            guard flyOwnershipOk else {
+                throw Abort(.badRequest, reason: "Fly ownership TXT record not found. Add a TXT record on \(flyOwnershipRecord.name) with value \(flyOwnershipRecord.value) and try again.")
+            }
+        }
         // Verify the CNAME points to this project's MCP subdomain so traffic actually routes here.
         if let subdomain = project.subdomain?.trimmingCharacters(in: .whitespacesAndNewlines),
            !subdomain.isEmpty,
@@ -712,6 +737,8 @@ struct ProjectController {
             verified: true,
             verification_token: nil,
             instructions: certificate.status == .issued ? nil : certificate.message,
+            fly_ownership_verification_record_name: FlyCertificateService.ownershipTxtRecord(hostname: host)?.name,
+            fly_ownership_verification_record_value: FlyCertificateService.ownershipTxtRecord(hostname: host)?.value,
             certificate_status: certificate.status.rawValue,
             certificate_message: certificate.message
         )

@@ -96,6 +96,8 @@ export interface CustomDomainStatus {
   verified: boolean;
   verification_token?: string | null;
   instructions?: string | null;
+  fly_ownership_verification_record_name?: string | null;
+  fly_ownership_verification_record_value?: string | null;
   certificate_status?: "not_configured" | "pending" | "issued" | "failed" | "unknown" | null;
   certificate_message?: string | null;
 }

@@ -690,6 +690,7 @@ struct ProcessEnvSecurityTests {
                 "FLY_APP_NAME": "",
                 "FLY_CERTIFICATE_API_BASE_URL": "https://fly-api.test/",
                 "FLY_API_BASE_URL": "",
+                "FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE": "app-12qq5w0",
             ])
             apply()
             defer { restore() }
@@ -697,6 +698,11 @@ struct ProcessEnvSecurityTests {
             #expect(config?.apiToken == "fly-token")
             #expect(config?.appName == "gateway-app")
             #expect(config?.apiBaseURL == "https://fly-api.test")
+            #expect(config?.ownershipTxtValue == "app-12qq5w0")
+
+            let record = FlyCertificateService.ownershipTxtRecord(hostname: "MCP.Example.COM.")
+            #expect(record?.name == "_fly-ownership.mcp.example.com")
+            #expect(record?.value == "app-12qq5w0")
         }
     }
 

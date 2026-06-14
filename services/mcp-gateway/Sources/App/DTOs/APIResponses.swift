@@ -37,12 +37,16 @@ struct CustomDomainResponse: Content {
     let verified: Bool
     let verification_token: String?
     let instructions: String?
+    let fly_ownership_verification_record_name: String?
+    let fly_ownership_verification_record_value: String?
     let certificate_status: String?
     let certificate_message: String?
 
     enum CodingKeys: String, CodingKey {
         case hostname, verified, instructions
         case verification_token = "verification_token"
+        case fly_ownership_verification_record_name = "fly_ownership_verification_record_name"
+        case fly_ownership_verification_record_value = "fly_ownership_verification_record_value"
         case certificate_status = "certificate_status"
         case certificate_message = "certificate_message"
     }

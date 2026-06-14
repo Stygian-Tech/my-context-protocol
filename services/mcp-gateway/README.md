@@ -94,8 +94,12 @@ For tenant custom domains, the gateway must create Fly edge certificates after D
 fly secrets set \
   FLY_API_TOKEN='FlyV1...' \
   FLY_CERTIFICATE_APP_NAME='my-context-protocol-dev-gateway' \
+  FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE='app-12qq5w0' \
   --app my-context-protocol-dev-gateway
 ```
+
+Use the value Fly shows for `TXT _fly-ownership.<hostname>` when running `fly certs setup <hostname>`.
+The dashboard includes that ownership TXT record in the tenant DNS validation flow before requesting a Fly certificate.
 
 Without these runtime secrets, a tenant CNAME can route to Fly but TLS for that custom hostname will fail before Vapor sees the request.
 
