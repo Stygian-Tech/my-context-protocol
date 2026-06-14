@@ -82,6 +82,7 @@ struct McpOAuthTests {
                     #expect(metadata.issuer == "http://any.mcp.oauth.test")
                     #expect(metadata.registration_endpoint == "http://any.mcp.oauth.test/register")
                     #expect(metadata.code_challenge_methods_supported.contains("S256"))
+                    #expect(metadata.grant_types_supported.contains("refresh_token"))
                     #expect(metadata.token_endpoint_auth_methods_supported.contains("client_secret_basic"))
                     #expect(metadata.token_endpoint_auth_methods_supported.contains("none"))
                     #expect(metadata.scopes_supported == [McpOAuthConstants.defaultScope])
