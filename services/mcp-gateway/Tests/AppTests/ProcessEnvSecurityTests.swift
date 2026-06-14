@@ -182,6 +182,45 @@ struct ProcessEnvSecurityTests {
         }
     }
 
+    @Test("MCP OAuth resume derives API origin from GitHub login callback before frontend fallback")
+    func mcpOAuthResumeDerivesAPIOriginFromGitHubLoginCallback() async throws {
+        try withIsolatedProcessEnv {
+            let (apply, restore) = temporaryEnv([
+                "FRONTEND_URL": "https://testing.mycontextprotocol.com",
+                "CORS_ORIGIN": nil,
+                "MCP_OAUTH_API_ORIGIN": nil,
+                "WEBHOOK_BASE_URL": nil,
+                "GITHUB_OAUTH_REDIRECT_URI": "https://api.testing.mycontextprotocol.com/auth/github/callback",
+            ])
+            apply()
+            defer { restore() }
+
+            let pending = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+            let returnTo = try McpOAuthResumeURL.githubReturnTo(pending: pending)
+            #expect(returnTo == "https://api.testing.mycontextprotocol.com/auth/mcp-oauth-resume?pending=11111111-1111-1111-1111-111111111111")
+
+            let start = McpOAuthResumeURL.githubMcpOauthStartLink(pending: pending)
+            #expect(start == "https://api.testing.mycontextprotocol.com/auth/github/mcp-oauth-start?pending=11111111-1111-1111-1111-111111111111")
+        }
+    }
+
+    @Test("MCP OAuth resume explicit API origin overrides derived callback origin")
+    func mcpOAuthResumeExplicitAPIOriginWins() async throws {
+        try withIsolatedProcessEnv {
+            let (apply, restore) = temporaryEnv([
+                "FRONTEND_URL": "https://testing.mycontextprotocol.com",
+                "MCP_OAUTH_API_ORIGIN": "https://api.override.test/",
+                "GITHUB_OAUTH_REDIRECT_URI": "https://api.testing.mycontextprotocol.com/auth/github/callback",
+            ])
+            apply()
+            defer { restore() }
+
+            let pending = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+            let returnTo = try McpOAuthResumeURL.githubReturnTo(pending: pending)
+            #expect(returnTo == "https://api.override.test/auth/mcp-oauth-resume?pending=22222222-2222-2222-2222-222222222222")
+        }
+    }
+
     @Test("validateReturnTo requires configuration in non-local when bases empty")
     func validateReturnToRequiresConfig() async throws {
         try await withIsolatedProcessEnv {
