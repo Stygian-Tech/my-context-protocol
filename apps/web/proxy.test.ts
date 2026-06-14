@@ -20,4 +20,14 @@ describe("proxy", () => {
     expect(loc!).toContain("token=");
     expect(loc!).toContain(encodeURIComponent("secret"));
   });
+
+  it("does not consume MCP OAuth resume handoff tokens", () => {
+    const res = proxy(
+      new NextRequest(
+        "http://localhost:3000/auth/mcp-oauth-resume?pending=pid&auth_token=secret"
+      )
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
 });

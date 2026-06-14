@@ -12,6 +12,10 @@ import type { NextRequest } from "next/server";
 export const config = { matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)" ] };
 
 export function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname === "/auth/mcp-oauth-resume") {
+    return NextResponse.next();
+  }
+
   const authToken = request.nextUrl.searchParams.get("auth_token");
   if (authToken) {
     const confirmUrl = buildAuthConfirmRedirect(request.url, authToken);

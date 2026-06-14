@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   const isRedirect = Boolean(location) && res.status >= 300 && res.status < 400;
 
   if (isRedirect && location) {
-    const response = NextResponse.redirect(location, { status: 302 });
+    const response = NextResponse.redirect(new URL(location, request.url), { status: 302 });
     forwardBackendResponseCookies(res, response, new URL(request.url));
     return response;
   }
