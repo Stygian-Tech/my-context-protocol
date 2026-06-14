@@ -31,22 +31,24 @@ enum McpOAuthResumeURL {
             return raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         }
 
-        guard let redirectURI = try? GitHubOAuthLoginConfig.redirectURI() else {
-            return nil
-        }
+        return derivedAPIOriginFromGitHubLoginCallback()
+    }
+
+    static func derivedAPIOriginFromGitHubLoginCallback() -> String? {
+        guard let redirectURI = try? GitHubOAuthLoginConfig.redirectURI() else { return nil }
+        return apiOrigin(fromGitHubLoginCallback: redirectURI)
+    }
+
+    static func apiOrigin(fromGitHubLoginCallback redirectURI: String) -> String? {
         guard let components = URLComponents(string: redirectURI),
               let scheme = components.scheme,
               let host = components.host,
               components.path == GitHubOAuthLoginConfig.callbackPath else {
             return nil
         }
-        if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-            return nil
-        }
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" { return nil }
         var origin = "\(scheme)://\(host)"
-        if let port = components.port {
-            origin += ":\(port)"
-        }
+        if let port = components.port { origin += ":\(port)" }
         return origin
     }
 }

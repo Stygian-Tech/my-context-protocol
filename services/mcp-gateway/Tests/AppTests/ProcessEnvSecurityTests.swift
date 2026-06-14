@@ -184,7 +184,7 @@ struct ProcessEnvSecurityTests {
 
     @Test("MCP OAuth resume derives API origin from GitHub login callback before frontend fallback")
     func mcpOAuthResumeDerivesAPIOriginFromGitHubLoginCallback() async throws {
-        try withIsolatedProcessEnv {
+        try await withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
                 "FRONTEND_URL": "https://testing.mycontextprotocol.com",
                 "CORS_ORIGIN": nil,
@@ -201,6 +201,21 @@ struct ProcessEnvSecurityTests {
 
             let start = McpOAuthResumeURL.githubMcpOauthStartLink(pending: pending)
             #expect(start == "https://api.testing.mycontextprotocol.com/auth/github/mcp-oauth-start?pending=11111111-1111-1111-1111-111111111111")
+
+            try await withApp { app in
+                let req = Request(
+                    application: app,
+                    method: .GET,
+                    url: URI(path: "/"),
+                    version: .http1_1,
+                    headers: [:],
+                    remoteAddress: nil,
+                    logger: app.logger,
+                    on: app.eventLoopGroup.next()
+                )
+                let validated = try AppFrontendURL.validateOAuthReturnTo(returnTo, for: req)
+                #expect(validated == returnTo)
+            }
         }
     }
 

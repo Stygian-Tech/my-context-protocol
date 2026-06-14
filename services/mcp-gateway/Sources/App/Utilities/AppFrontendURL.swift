@@ -65,6 +65,10 @@ enum AppFrontendURL {
             let b = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             if !bases.contains(b) { bases.append(b) }
         }
+        if let b = McpOAuthResumeURL.derivedAPIOriginFromGitHubLoginCallback(),
+           !bases.contains(b) {
+            bases.append(b)
+        }
         return bases
     }
 
