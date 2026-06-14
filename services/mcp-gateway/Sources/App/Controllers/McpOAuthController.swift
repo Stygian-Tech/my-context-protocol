@@ -133,7 +133,7 @@ enum McpOAuthController {
         }
 
         let requestedGrants = body.grant_types ?? ["authorization_code"]
-        let allowedGrantSet = Set(["authorization_code", "client_credentials"])
+        let allowedGrantSet = Set(["authorization_code", "client_credentials", "refresh_token"])
         for g in requestedGrants where !allowedGrantSet.contains(g) {
             logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=unsupported_grant grant=\(g) auth_method=\(authMethod)")
             throw Abort(.badRequest, reason: "Unsupported grant_type: \(g)")

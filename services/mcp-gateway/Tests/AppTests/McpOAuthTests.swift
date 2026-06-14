@@ -428,6 +428,43 @@ struct McpOAuthTests {
         }
     }
 
+    @Test("Claude DCR accepts refresh_token grant registration request")
+    func claudeRegistrationAllowsRefreshTokenGrantRequest() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_011, login: "claude-refresh-dcr", email: "claude-refresh-dcr@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Claude Refresh DCR", slug: "claude-refresh-dcr", subdomain: "clauderefresh")
+            try await project.save(on: app.db)
+
+            let body = """
+            {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"client_name":"Claude","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"client_secret_post"}
+            """
+            try await app.testing().test(
+                .POST,
+                "/register",
+                body: ByteBuffer(string: body),
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "clauderefresh.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .created, "registration status=\(res.status) body=\(res.body.string)")
+                    let registration = try JSONDecoder().decode(TestRegistrationResponse.self, from: Data(buffer: res.body))
+                    #expect(registration.token_endpoint_auth_method == "client_secret_post")
+                    #expect(registration.grant_types == ["authorization_code", "refresh_token"])
+                    #expect(registration.client_secret?.isEmpty == false)
+                }
+            )
+        }
+    }
+
     @Test("Confidential DCR supports client_secret_basic and token endpoint Basic auth")
     func confidentialClientRegistrationSupportsBasicAuth() async throws {
         try await withMcpOAuthApp(env: [
