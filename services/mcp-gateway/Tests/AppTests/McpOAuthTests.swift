@@ -411,8 +411,8 @@ struct McpOAuthTests {
         }
     }
 
-    @Test("Claude DCR rejects refresh_token grant registration request")
-    func claudeRegistrationRejectsRefreshTokenGrantRequest() async throws {
+    @Test("Claude DCR tolerates refresh_token grant for public registration")
+    func claudeRegistrationToleratesRefreshTokenGrantRequest() async throws {
         try await withMcpOAuthApp(env: [
             "USE_SQLITE": "1",
             "MCP_OAUTH_ENABLED": "1",
@@ -427,7 +427,7 @@ struct McpOAuthTests {
             try await project.save(on: app.db)
 
             let body = """
-            {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"client_name":"Claude","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"client_secret_post"}
+            {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"client_name":"Claude","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}
             """
             try await app.testing().test(
                 .POST,
@@ -438,7 +438,11 @@ struct McpOAuthTests {
                     req.headers.replaceOrAdd(name: .contentType, value: "application/json")
                 },
                 afterResponse: { res in
-                    #expect(res.status == .badRequest, "registration status=\(res.status) body=\(res.body.string)")
+                    #expect(res.status == .created, "registration status=\(res.status) body=\(res.body.string)")
+                    let registration = try JSONDecoder().decode(TestRegistrationResponse.self, from: Data(buffer: res.body))
+                    #expect(!registration.client_id.isEmpty)
+                    #expect(registration.client_secret == nil)
+                    #expect(registration.grant_types == ["authorization_code", "refresh_token"])
                 }
             )
         }

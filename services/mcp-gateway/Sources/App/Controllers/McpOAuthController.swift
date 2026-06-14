@@ -132,7 +132,11 @@ enum McpOAuthController {
         }
 
         let requestedGrants = body.grant_types ?? ["authorization_code"]
-        guard requestedGrants == ["authorization_code"] else {
+        let grantSet = Set(requestedGrants)
+        let toleratedPublicDCRGrants: Set<String> = ["authorization_code", "refresh_token"]
+        guard !requestedGrants.isEmpty,
+              grantSet.contains("authorization_code"),
+              grantSet.isSubset(of: toleratedPublicDCRGrants) else {
             logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=unsupported_grants grants=\(requestedGrants.joined(separator: ",")) auth_method=\(authMethod)")
             throw Abort(.badRequest, reason: "Public DCR supports only authorization_code")
         }
@@ -145,7 +149,7 @@ enum McpOAuthController {
             clientSecretHash: nil,
             isConfidential: false,
             redirectUrisJson: urisJson,
-            allowedGrants: requestedGrants.joined(separator: ","),
+            allowedGrants: "authorization_code",
             status: "active",
             projectId: project.id!
         )
