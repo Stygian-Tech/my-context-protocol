@@ -122,6 +122,89 @@ struct McpOAuthTests {
         }
     }
 
+    @Test("Tenant host resolution accepts scheme-prefixed SAAS_MCP_BASE_DOMAIN")
+    func tenantResolutionNormalizesBaseDomainScheme() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "https://mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_009, login: "scheme-base", email: "scheme-base@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Scheme Base", slug: "scheme-base", subdomain: "schemebase")
+            try await project.save(on: app.db)
+
+            try await app.testing().test(
+                .GET,
+                "/",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "schemebase.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: "https")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .unauthorized)
+                    let www = res.headers.first(name: .wwwAuthenticate) ?? ""
+                    #expect(www.contains(#"resource_metadata="https://schemebase.mcp.oauth.test/.well-known/oauth-protected-resource/mcp""#))
+                }
+            )
+
+            let body = """
+            {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"client_name":"Claude","grant_types":["authorization_code"],"response_types":["code"],"token_endpoint_auth_method":"none"}
+            """
+            try await app.testing().test(
+                .POST,
+                "/register",
+                body: ByteBuffer(string: body),
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "schemebase.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: "https")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .created, "registration status=\(res.status) body=\(res.body.string)")
+                    let registration = try JSONDecoder().decode(TestRegistrationResponse.self, from: Data(buffer: res.body))
+                    #expect(!registration.client_id.isEmpty)
+                    #expect(registration.client_secret == nil)
+                }
+            )
+        }
+    }
+
+    @Test("Authorization server metadata supports path-suffixed discovery")
+    func authorizationServerMetadataSupportsPathSuffix() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "https://mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_010, login: "auth-suffix", email: "auth-suffix@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Auth Suffix", slug: "auth-suffix", subdomain: "authsuffix")
+            try await project.save(on: app.db)
+
+            try await app.testing().test(
+                .GET,
+                "/.well-known/oauth-authorization-server/mcp",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "authsuffix.mcp.oauth.test")
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: "https")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .ok)
+                    let metadata = try res.content.decode(OAuthAuthorizationServerMetadata.self)
+                    #expect(metadata.issuer == "https://authsuffix.mcp.oauth.test")
+                    #expect(metadata.registration_endpoint == "https://authsuffix.mcp.oauth.test/register")
+                }
+            )
+        }
+    }
+
     @Test("App root remains plain text on non-MCP host")
     func appRootRemainsPlainText() async throws {
         try await withMcpOAuthApp(env: [

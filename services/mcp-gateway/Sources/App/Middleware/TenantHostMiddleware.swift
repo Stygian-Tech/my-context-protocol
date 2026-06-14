@@ -42,7 +42,7 @@ struct TenantHostMiddleware: AsyncMiddleware {
         guard let base = Environment.get("SAAS_MCP_BASE_DOMAIN"), !base.isEmpty else {
             return .unresolved("tenant_host no_saas_base host=\(host) path=\(request.url.path)")
         }
-        let baseLower = base.lowercased()
+        let baseLower = McpUrlBuilder.normalizedBaseDomain(base)
         guard host.hasSuffix("." + baseLower), host.count > baseLower.count + 1 else {
             return .unresolved("tenant_host not_subdomain_of base=\(baseLower) host=\(host)")
         }
