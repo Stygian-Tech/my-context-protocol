@@ -1,0 +1,15 @@
+{
+  "name": "@mycontext/api-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./backend-api": "./BACKEND_API_CONTRACT.md"
+  },
+  "scripts": {
+    "build": "echo \"No build for @mycontext/api-contract\"",
+    "lint": "echo \"No lint for @mycontext/api-contract\"",
+    "typecheck": "echo \"No typecheck for @mycontext/api-contract\"",
+    "test": "echo \"No tests for @mycontext/api-contract\""
+  }
+}

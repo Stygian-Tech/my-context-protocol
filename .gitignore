@@ -1,5 +1,5 @@
-# Monorepo-level ignores. Service-specific patterns live in
-# services/backend/.gitignore and services/frontend/.gitignore.
+# Monorepo-level ignores. App/service-specific patterns live alongside each
+# workspace under apps/ and services/.
 
 .DS_Store
 *.swp
@@ -12,3 +12,7 @@
 .codex/
 .cursor/
 .worktrees/
+
+# Workspace tooling
+node_modules/
+.turbo/
