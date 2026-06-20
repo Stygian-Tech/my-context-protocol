@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCwIcon } from "lucide-react";
 import {
   fetchCustomDomain,
   setProjectCustomDomain,
   verifyProjectCustomDomain,
 } from "@/lib/projects-api";
+import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,6 +109,18 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
   }
 
   const tlsLabel = certificateStatusLabel(data.certificate_status);
+  const canRefreshChecks =
+    Boolean(data.hostname) &&
+    (!data.verified ||
+      data.certificate_status === "failed" ||
+      data.certificate_status === "not_configured" ||
+      data.certificate_status === "unknown");
+  const verifyError =
+    verifyMutation.error instanceof ApiError
+      ? formatApiErrorDetail(verifyMutation.error.body) || verifyMutation.error.message
+      : verifyMutation.error
+        ? "Could not refresh DNS and TLS checks."
+        : null;
 
   return (
     <section
@@ -165,6 +179,9 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
             {data.instructions}
           </p>
         )}
+        {verifyError && (
+          <p className="text-sm text-destructive">{verifyError}</p>
+        )}
         <div className={cn(INSET_SURFACE, "space-y-2 p-3")}>
           <Label htmlFor="custom-host">Hostname</Label>
           <Input
@@ -188,7 +205,7 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
                 ? "Update Hostname"
                 : "Save Hostname"}
           </Button>
-          {!data.verified && data.hostname && (
+          {canRefreshChecks && (
             <Button
               type="button"
               size="sm"
@@ -196,7 +213,14 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
               onClick={() => verifyMutation.mutate()}
               disabled={verifyMutation.isPending}
             >
-              {verifyMutation.isPending ? "Checking…" : "Verify DNS"}
+              <RefreshCwIcon
+                className={verifyMutation.isPending ? "animate-spin" : undefined}
+              />
+              {verifyMutation.isPending
+                ? "Checking…"
+                : data.verified
+                  ? "Refresh DNS/TLS"
+                  : "Verify DNS"}
             </Button>
           )}
         </div>
