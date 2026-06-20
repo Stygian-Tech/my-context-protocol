@@ -695,13 +695,17 @@ struct ProjectController {
             throw Abort(.paymentRequired, reason: "Custom domain requires Pro")
         }
         let project = try await requireProject(req, accountId: account.id!)
-        guard let host = project.customDomain, !host.isEmpty,
-              let token = project.customDomainVerificationToken, !token.isEmpty else {
+        guard let host = project.customDomain, !host.isEmpty else {
             throw Abort(.badRequest, reason: "Set a custom domain first")
         }
-        let txtOk = try await DnsTxtVerifier.txtRecordsIncludeToken(hostname: host, token: token, client: req.client)
-        guard txtOk else {
-            throw Abort(.badRequest, reason: "TXT record not found or token mismatch")
+        if project.customDomainVerifiedAt == nil {
+            guard let token = project.customDomainVerificationToken, !token.isEmpty else {
+                throw Abort(.badRequest, reason: "Set a custom domain first")
+            }
+            let txtOk = try await DnsTxtVerifier.txtRecordsIncludeToken(hostname: host, token: token, client: req.client)
+            guard txtOk else {
+                throw Abort(.badRequest, reason: "TXT record not found or token mismatch")
+            }
         }
         if let flyOwnershipRecord = FlyCertificateService.ownershipTxtRecord(hostname: host) {
             let flyOwnershipOk = try await DnsTxtVerifier.txtRecordsIncludeToken(
@@ -724,9 +728,11 @@ struct ProjectController {
                 throw Abort(.badRequest, reason: "CNAME record not found or does not point to \(expectedCname). Add a CNAME record on \(host) pointing to \(expectedCname) and try again.")
             }
         }
-        project.customDomainVerifiedAt = Date()
-        project.customDomainVerificationToken = nil
-        try await project.save(on: req.db)
+        if project.customDomainVerifiedAt == nil || project.customDomainVerificationToken != nil {
+            project.customDomainVerifiedAt = project.customDomainVerifiedAt ?? Date()
+            project.customDomainVerificationToken = nil
+            try await project.save(on: req.db)
+        }
         let certificate = await FlyCertificateService.ensureCertificate(
             hostname: host,
             client: req.client,
