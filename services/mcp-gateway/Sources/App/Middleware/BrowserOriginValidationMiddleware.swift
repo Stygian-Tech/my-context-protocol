@@ -1,0 +1,88 @@
+import Vapor
+
+/// Validates `Origin` / `Referer` for browser-initiated mutating requests (CSRF defense in depth for cookie auth).
+struct BrowserOriginValidationMiddleware: AsyncMiddleware {
+    func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
+        // MCP tenant subdomains are machine-to-machine (MCP clients, not browsers).
+        // Origin validation does not apply; the MCP handler enforces its own auth.
+        if Self.isMcpTenantHost(request.headers.first(name: .host)) {
+            return try await next.respond(to: request)
+        }
+        if Self.shouldSkip(path: request.url.path, method: request.method) {
+            request.logger.devTrace("origin_check skipped path=\(request.url.path) method=\(request.method)")
+            return try await next.respond(to: request)
+        }
+        guard [.POST, .PUT, .PATCH, .DELETE].contains(request.method) else {
+            return try await next.respond(to: request)
+        }
+
+        let bases = AppFrontendURL.allowedOriginBases()
+        if bases.isEmpty, AppEnvironment.deployKind() == .local {
+            request.logger.devTrace("origin_check bypass local_no_frontend_url path=\(request.url.path)")
+            return try await next.respond(to: request)
+        }
+        guard !bases.isEmpty else {
+            request.logger.warning("Origin check: FRONTEND_URL / CORS_ORIGIN not set; rejecting state-changing request")
+            return jsonError(status: .forbidden, message: "Server configuration error")
+        }
+
+        if let origin = request.headers.first(name: .origin), Self.originMatches(origin, bases: bases) {
+            request.logger.devTrace("origin_check ok via Origin path=\(request.url.path)")
+            return try await next.respond(to: request)
+        }
+        if let referer = request.headers.first(name: .referer), Self.refererMatches(referer, bases: bases) {
+            request.logger.devTrace("origin_check ok via Referer path=\(request.url.path)")
+            return try await next.respond(to: request)
+        }
+
+        request.logger.warning("Origin validation failed for \(request.method) \(request.url.path)")
+        return jsonError(status: .forbidden, message: "Invalid origin")
+    }
+
+    /// Returns `true` when the `Host` header is a subdomain of `SAAS_MCP_BASE_DOMAIN`.
+    /// MCP client traffic is machine-to-machine and has no browser `Origin` to validate.
+    private static func isMcpTenantHost(_ host: String?) -> Bool {
+        guard let host = host?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              var base = Environment.get("SAAS_MCP_BASE_DOMAIN")?
+                  .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !base.isEmpty else { return false }
+        // Strip scheme / trailing slash if accidentally included in the env var.
+        if base.hasPrefix("https://") { base = String(base.dropFirst(8)) }
+        if base.hasPrefix("http://") { base = String(base.dropFirst(7)) }
+        while base.hasSuffix("/") { base.removeLast() }
+        // Strip port from host before comparing (nginx forwards Host without port on standard ports).
+        let hostWithoutPort = host.components(separatedBy: ":").first ?? host
+        return hostWithoutPort.hasSuffix("." + base)
+    }
+
+    private static func shouldSkip(path: String, method: HTTPMethod) -> Bool {
+        if path.hasPrefix("/webhooks/") { return true }
+        let mcpPath = "/" + McpRoutePath.pathComponents().joined(separator: "/")
+        if path == mcpPath { return true }
+        if path == mcpPath + "/ping" { return true }
+        if path.hasPrefix("/auth/github") { return true }
+        if path == "/auth/github/callback" || path == "/auth/github/app/callback" { return true }
+        if path == "/auth/confirm" { return true }
+        // OAuth 2.0 token endpoint (tenant host): non-browser clients often omit Origin.
+        if path == "/token" { return true }
+        // RFC 7591 dynamic client registration: machine-to-machine call from MCP clients, no browser Origin.
+        if path == "/register" { return true }
+        // OAuth 2.0 consent form: served from the tenant MCP subdomain, not the app frontend origin.
+        if path == "/oauth/consent" { return true }
+        return false
+    }
+
+    private static func originMatches(_ origin: String, bases: [String]) -> Bool {
+        let o = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+        return bases.contains { b in
+            o.caseInsensitiveCompare(b) == .orderedSame
+        }
+    }
+
+    private static func refererMatches(_ referer: String, bases: [String]) -> Bool {
+        let r = referer.trimmingCharacters(in: .whitespacesAndNewlines)
+        return bases.contains { b in
+            r.hasPrefix(b + "/") || r.hasPrefix(b + "?") || r.caseInsensitiveCompare(b) == .orderedSame
+        }
+    }
+}

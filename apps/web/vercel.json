@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "cd ../.. && bun install --frozen-lockfile",
+  "buildCommand": "bun run typecheck && bun run test:ci && bun run build",
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://api.testing.mycontextprotocol.dev"
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Strict-Transport-Security", "value": "max-age=300" }
+      ]
+    }
+  ]
+}

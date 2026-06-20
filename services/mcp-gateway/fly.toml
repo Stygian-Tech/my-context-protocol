@@ -1,0 +1,40 @@
+# fly.toml app configuration file generated for my-context-protocol-dev-gateway on 2026-05-30T19:40:37Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'my-context-protocol-dev-gateway'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  wait_timeout = '10m0s'
+
+[env]
+  APP_ENV = 'dev'
+  HOST = '0.0.0.0'
+  PORT = '8080'
+  # Supabase / managed Postgres from Linux containers often fail default TLS verify (CERTIFICATE_VERIFY_FAILED).
+  DATABASE_INSECURE_TLS = '1'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '10s'
+    grace_period = '1m0s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
