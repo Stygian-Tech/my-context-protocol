@@ -36,6 +36,7 @@ struct CustomDomainResponse: Content {
     let hostname: String?
     let verified: Bool
     let verification_token: String?
+    let verification_record_name: String?
     let instructions: String?
     let fly_ownership_verification_record_name: String?
     let fly_ownership_verification_record_value: String?
@@ -48,6 +49,7 @@ struct CustomDomainResponse: Content {
     enum CodingKeys: String, CodingKey {
         case hostname, verified, instructions
         case verification_token = "verification_token"
+        case verification_record_name = "verification_record_name"
         case fly_ownership_verification_record_name = "fly_ownership_verification_record_name"
         case fly_ownership_verification_record_value = "fly_ownership_verification_record_value"
         case fly_a_record_values = "fly_a_record_values"

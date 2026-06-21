@@ -95,6 +95,7 @@ export interface CustomDomainStatus {
   hostname: string | null;
   verified: boolean;
   verification_token?: string | null;
+  verification_record_name?: string | null;
   instructions?: string | null;
   fly_ownership_verification_record_name?: string | null;
   fly_ownership_verification_record_value?: string | null;

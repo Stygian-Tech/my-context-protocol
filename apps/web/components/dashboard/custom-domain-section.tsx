@@ -6,6 +6,7 @@ import {
   AlertTriangleIcon,
   CheckCircle2Icon,
   CircleDashedIcon,
+  CopyIcon,
   RefreshCwIcon,
 } from "lucide-react";
 import {
@@ -15,6 +16,7 @@ import {
   verifyProjectCustomDomain,
 } from "@/lib/projects-api";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +30,8 @@ const SECTION_SHELL =
 /** Matches MCP catalog monospace / URL inset panels. */
 const INSET_SURFACE =
   "rounded-lg border border-border/80 bg-muted/35 dark:bg-muted/20";
+
+type RoutingChoice = "address" | "cname";
 
 function certificateStatusLabel(
   status: "not_configured" | "pending" | "issued" | "failed" | "unknown" | null | undefined,
@@ -62,19 +66,21 @@ function hasText(value: string | null | undefined) {
   return Boolean(value?.trim());
 }
 
-function dnsRecordRows(data: CustomDomainStatus) {
+function dnsRecordGroups(data: CustomDomainStatus) {
   const hostname = data.hostname?.trim();
-  const rows: Array<{ type: string; name: string; value: string }> = [];
+  const verification: Array<{ type: string; name: string; value: string }> = [];
+  const addressRouting: Array<{ type: string; name: string; value: string }> = [];
+  const cnameRouting: Array<{ type: string; name: string; value: string }> = [];
 
   if (hostname && hasText(data.verification_token)) {
-    rows.push({
+    verification.push({
       type: "TXT",
-      name: hostname,
+      name: data.verification_record_name?.trim() || `_mcp-verify.${hostname}`,
       value: data.verification_token!.trim(),
     });
   }
   if (hasText(data.fly_ownership_verification_record_name) && hasText(data.fly_ownership_verification_record_value)) {
-    rows.push({
+    verification.push({
       type: "TXT",
       name: data.fly_ownership_verification_record_name!.trim(),
       value: data.fly_ownership_verification_record_value!.trim(),
@@ -83,16 +89,16 @@ function dnsRecordRows(data: CustomDomainStatus) {
   if (hostname) {
     for (const value of data.fly_a_record_values ?? []) {
       if (hasText(value)) {
-        rows.push({ type: "A", name: hostname, value: value.trim() });
+        addressRouting.push({ type: "A", name: hostname, value: value.trim() });
       }
     }
     for (const value of data.fly_aaaa_record_values ?? []) {
       if (hasText(value)) {
-        rows.push({ type: "AAAA", name: hostname, value: value.trim() });
+        addressRouting.push({ type: "AAAA", name: hostname, value: value.trim() });
       }
     }
     if (hasText(data.fly_cname_record_value)) {
-      rows.push({
+      cnameRouting.push({
         type: "CNAME",
         name: hostname,
         value: data.fly_cname_record_value!.trim(),
@@ -100,7 +106,7 @@ function dnsRecordRows(data: CustomDomainStatus) {
     }
   }
 
-  return rows;
+  return { verification, addressRouting, cnameRouting };
 }
 
 function visibleInstructions(data: CustomDomainStatus) {
@@ -119,6 +125,12 @@ function visibleInstructions(data: CustomDomainStatus) {
     .map((line) => line.trim())
     .filter((line) => line && line !== message);
   return lines.length > 0 ? lines.join("\n") : null;
+}
+
+function formatDnsRecordsForCopy(records: Array<{ type: string; name: string; value: string }>) {
+  return records
+    .map((record) => `${record.type}\t${record.name}\t${record.value}`)
+    .join("\n");
 }
 
 function TlsStatusIcon({
@@ -140,6 +152,59 @@ function TlsStatusIcon({
   return <CircleDashedIcon className="size-4" />;
 }
 
+function DnsRecordList({
+  title,
+  records,
+  action,
+  disabled,
+}: {
+  title: string;
+  records: Array<{ type: string; name: string; value: string }>;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "overflow-hidden rounded-md border border-border/70",
+        disabled && "opacity-50",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-muted/25 px-2.5 py-1.5">
+        <span className="text-xs font-medium text-foreground">{title}</span>
+        {action && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={action.onClick}
+            disabled={disabled}
+            className="h-7 px-2 text-xs"
+          >
+            <CopyIcon className="size-3.5" />
+            {action.label}
+          </Button>
+        )}
+      </div>
+      <div className="divide-y divide-border/70">
+        {records.map((record, index) => (
+          <div
+            key={`${record.type}-${record.name}-${record.value}-${index}`}
+            className="grid gap-1 px-2.5 py-2 text-xs sm:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-3"
+          >
+            <span className="font-medium text-foreground">{record.type}</span>
+            <span className="break-all font-mono text-muted-foreground">{record.name}</span>
+            <span className="break-all font-mono text-foreground">{record.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 interface CustomDomainSectionProps {
   projectId: string;
   isPro?: boolean;
@@ -148,6 +213,7 @@ interface CustomDomainSectionProps {
 export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSectionProps) {
   // Hooks must be called unconditionally before any early returns.
   const [hostname, setHostname] = useState("");
+  const [routingChoice, setRoutingChoice] = useState<RoutingChoice | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -162,6 +228,7 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
       queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       setHostname("");
+      setRoutingChoice(null);
     },
   });
 
@@ -230,8 +297,25 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
       visibleData.verified ||
       hasText(visibleData.certificate_message) ||
       hasText(visibleData.fly_ownership_verification_record_name));
-  const recordRows = dnsRecordRows(visibleData);
+  const recordGroups = dnsRecordGroups(visibleData);
+  const hasRoutingOptions =
+    recordGroups.addressRouting.length > 0 || recordGroups.cnameRouting.length > 0;
+  const hasDnsRecords = recordGroups.verification.length > 0 || hasRoutingOptions;
+  const addressDisabled = routingChoice === "cname";
+  const cnameDisabled = routingChoice === "address";
   const instructions = visibleInstructions(visibleData);
+
+  function copyRoutingRecords(choice: RoutingChoice) {
+    const records =
+      choice === "address" ? recordGroups.addressRouting : recordGroups.cnameRouting;
+    setRoutingChoice(choice);
+    void copyTextToClipboard(formatDnsRecordsForCopy(records), {
+      success: choice === "address"
+        ? "A/AAAA records copied to clipboard"
+        : "CNAME record copied to clipboard",
+      error: "Could not copy DNS records",
+    });
+  }
 
   return (
     <section
@@ -273,23 +357,65 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
             )}
           </div>
         )}
-        {recordRows.length > 0 && (
-          <div className={cn(INSET_SURFACE, "overflow-hidden")}>
+        {hasDnsRecords && (
+          <div className={cn(INSET_SURFACE, "space-y-3 p-3")}>
             <div className="border-b border-border/80 px-3 py-2 text-sm font-medium text-foreground">
-              Required DNS records
+              DNS records
             </div>
-            <div className="divide-y divide-border/70">
-              {recordRows.map((record, index) => (
-                <div
-                  key={`${record.type}-${record.name}-${record.value}-${index}`}
-                  className="grid gap-1 px-3 py-2 text-xs sm:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-3"
-                >
-                  <span className="font-medium text-foreground">{record.type}</span>
-                  <span className="break-all font-mono text-muted-foreground">{record.name}</span>
-                  <span className="break-all font-mono text-foreground">{record.value}</span>
+            {recordGroups.verification.length > 0 && (
+              <DnsRecordList
+                title="Required verification records"
+                records={recordGroups.verification}
+              />
+            )}
+            {hasRoutingOptions && (
+              <div className="space-y-2">
+                <div>
+                  <p className="text-xs font-medium text-foreground">Routing options</p>
+                  <p className="text-xs text-muted-foreground">
+                    Choose one option for the hostname. Copying one option disables the other to avoid invalid DNS records.
+                  </p>
                 </div>
-              ))}
-            </div>
+                {routingChoice && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>
+                      Selected: {routingChoice === "address" ? "A/AAAA records" : "CNAME record"}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setRoutingChoice(null)}
+                      className="h-7 px-2 text-xs"
+                    >
+                      Restart DNS flow
+                    </Button>
+                  </div>
+                )}
+                {recordGroups.addressRouting.length > 0 && (
+                  <DnsRecordList
+                    title="Option 1: A/AAAA records"
+                    records={recordGroups.addressRouting}
+                    disabled={addressDisabled}
+                    action={{
+                      label: routingChoice === "address" ? "Copy again" : "Copy A/AAAA",
+                      onClick: () => copyRoutingRecords("address"),
+                    }}
+                  />
+                )}
+                {recordGroups.cnameRouting.length > 0 && (
+                  <DnsRecordList
+                    title="Option 2: CNAME record"
+                    records={recordGroups.cnameRouting}
+                    disabled={cnameDisabled}
+                    action={{
+                      label: routingChoice === "cname" ? "Copy again" : "Copy CNAME",
+                      onClick: () => copyRoutingRecords("cname"),
+                    }}
+                  />
+                )}
+              </div>
+            )}
           </div>
         )}
         {showCheckDetails && (
@@ -320,9 +446,9 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
                 </li>
               )}
               <li>
-                CNAME routing:{" "}
+                Fly routing:{" "}
                 <span className={visibleData.verified ? "text-green-600 dark:text-green-500" : undefined}>
-                  {visibleData.verified ? "matched" : isChecking ? "checking" : "waiting"}
+                  {visibleData.verified ? "verified" : isChecking ? "checking" : "waiting"}
                 </span>
               </li>
               <li>
