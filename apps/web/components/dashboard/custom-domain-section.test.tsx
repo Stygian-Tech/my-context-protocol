@@ -287,7 +287,7 @@ describe("CustomDomainSection", () => {
     });
 
     expect(copyTextToClipboard).toHaveBeenCalledWith(
-      "A\tmcp.example.com\t66.241.125.232\nAAAA\tmcp.example.com\t2a09:8280:1::1",
+      "66.241.125.232\n2a09:8280:1::1",
       {
         success: "A/AAAA records copied to clipboard",
         error: "Could not copy DNS records",

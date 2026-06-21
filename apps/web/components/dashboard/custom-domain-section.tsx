@@ -129,7 +129,7 @@ function visibleInstructions(data: CustomDomainStatus) {
 
 function formatDnsRecordsForCopy(records: Array<{ type: string; name: string; value: string }>) {
   return records
-    .map((record) => `${record.type}\t${record.name}\t${record.value}`)
+    .map((record) => record.value)
     .join("\n");
 }
 
