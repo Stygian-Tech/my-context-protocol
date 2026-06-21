@@ -697,7 +697,7 @@ struct ProcessEnvSecurityTests {
             let config = FlyCertificateService.currentConfig()
             #expect(config?.apiToken == "fly-token")
             #expect(config?.appName == "gateway-app")
-            #expect(config?.apiBaseURL == "https://fly-api.test")
+            #expect(config?.apiBaseURL == "https://fly-api.test/v1")
             #expect(config?.ownershipTxtValue == "app-12qq5w0")
 
             let record = FlyCertificateService.ownershipTxtRecord(hostname: "MCP.Example.COM.")

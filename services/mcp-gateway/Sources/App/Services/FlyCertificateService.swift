@@ -34,7 +34,7 @@ enum FlyCertificateService {
                 return nil
             }
             let apiBaseURL = firstNonEmptyEnv(["FLY_CERTIFICATE_API_BASE_URL", "FLY_API_BASE_URL"])
-                ?? "https://api.machines.dev"
+                ?? "https://api.machines.dev/v1"
             guard let normalizedBaseURL = normalizeAPIBaseURL(apiBaseURL),
                   isValidFlyAppName(appName) else {
                 return nil
@@ -243,6 +243,12 @@ enum FlyCertificateService {
         components.password = nil
         components.query = nil
         components.fragment = nil
+        let pathParts = components.path
+            .split(separator: "/")
+            .map(String.init)
+        if pathParts.last != "v1" {
+            components.path = "/" + (pathParts + ["v1"]).joined(separator: "/")
+        }
         return components.string?.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
