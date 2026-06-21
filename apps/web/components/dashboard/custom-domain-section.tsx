@@ -2,8 +2,14 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCwIcon } from "lucide-react";
 import {
+  AlertTriangleIcon,
+  CheckCircle2Icon,
+  CircleDashedIcon,
+  RefreshCwIcon,
+} from "lucide-react";
+import {
+  type CustomDomainStatus,
   fetchCustomDomain,
   setProjectCustomDomain,
   verifyProjectCustomDomain,
@@ -42,6 +48,39 @@ function certificateStatusLabel(
   }
 }
 
+function certificateStatusTone(status: CustomDomainStatus["certificate_status"]) {
+  if (status === "issued") {
+    return "text-green-600 dark:text-green-500";
+  }
+  if (status === "failed" || status === "not_configured") {
+    return "text-destructive";
+  }
+  return "text-muted-foreground";
+}
+
+function hasText(value: string | null | undefined) {
+  return Boolean(value?.trim());
+}
+
+function TlsStatusIcon({
+  status,
+  isPending,
+}: {
+  status: CustomDomainStatus["certificate_status"];
+  isPending: boolean;
+}) {
+  if (isPending || status === "pending") {
+    return <CircleDashedIcon className={cn("size-4", isPending && "animate-spin")} />;
+  }
+  if (status === "issued") {
+    return <CheckCircle2Icon className="size-4" />;
+  }
+  if (status === "failed" || status === "not_configured" || status === "unknown") {
+    return <AlertTriangleIcon className="size-4" />;
+  }
+  return <CircleDashedIcon className="size-4" />;
+}
+
 interface CustomDomainSectionProps {
   projectId: string;
   isPro?: boolean;
@@ -59,7 +98,8 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
 
   const setMutation = useMutation({
     mutationFn: () => setProjectCustomDomain(projectId, hostname.trim()),
-    onSuccess: () => {
+    onSuccess: (next) => {
+      queryClient.setQueryData(["custom-domain", projectId], next);
       queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       setHostname("");
@@ -68,7 +108,8 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
 
   const verifyMutation = useMutation({
     mutationFn: () => verifyProjectCustomDomain(projectId),
-    onSuccess: () => {
+    onSuccess: (next) => {
+      queryClient.setQueryData(["custom-domain", projectId], next);
       queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     },
@@ -108,19 +149,28 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
     return <Skeleton className="h-40 w-full" />;
   }
 
-  const tlsLabel = certificateStatusLabel(data.certificate_status);
+  const visibleData = verifyMutation.data ?? setMutation.data ?? data;
+  const tlsLabel = certificateStatusLabel(visibleData.certificate_status);
   const canRefreshChecks =
-    Boolean(data.hostname) &&
-    (!data.verified ||
-      data.certificate_status === "failed" ||
-      data.certificate_status === "not_configured" ||
-      data.certificate_status === "unknown");
+    Boolean(visibleData.hostname) &&
+    (!visibleData.verified ||
+      visibleData.certificate_status === "pending" ||
+      visibleData.certificate_status === "failed" ||
+      visibleData.certificate_status === "not_configured" ||
+      visibleData.certificate_status === "unknown");
   const verifyError =
     verifyMutation.error instanceof ApiError
       ? formatApiErrorDetail(verifyMutation.error.body) || verifyMutation.error.message
       : verifyMutation.error
         ? "Could not refresh DNS and TLS checks."
         : null;
+  const isChecking = verifyMutation.isPending;
+  const showCheckDetails =
+    Boolean(visibleData.hostname) &&
+    (isChecking ||
+      visibleData.verified ||
+      hasText(visibleData.certificate_message) ||
+      hasText(visibleData.fly_ownership_verification_record_name));
 
   return (
     <section
@@ -140,11 +190,11 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
         </p>
       </div>
       <div className="space-y-4">
-        {data.hostname && (
+        {visibleData.hostname && (
           <div>
             <span className="text-muted-foreground">Hostname: </span>
-            <span className="font-medium">{data.hostname}</span>
-            {data.verified ? (
+            <span className="font-medium">{visibleData.hostname}</span>
+            {visibleData.verified ? (
               <span className="ml-2 text-green-600 dark:text-green-500">
                 Verified
               </span>
@@ -155,21 +205,63 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
             )}
             {tlsLabel && (
               <span
-                className={cn(
-                  "ml-2",
-                  data.certificate_status === "issued"
-                    ? "text-green-600 dark:text-green-500"
-                    : data.certificate_status === "failed" || data.certificate_status === "not_configured"
-                      ? "text-destructive"
-                      : "text-muted-foreground",
-                )}
+                className={cn("ml-2", certificateStatusTone(visibleData.certificate_status))}
               >
                 {tlsLabel}
               </span>
             )}
           </div>
         )}
-        {data.instructions && (
+        {showCheckDetails && (
+          <div
+            className={cn(INSET_SURFACE, "space-y-2 p-3")}
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <TlsStatusIcon
+                status={visibleData.certificate_status}
+                isPending={isChecking}
+              />
+              {isChecking ? "Checking DNS and TLS" : "Latest DNS/TLS check"}
+            </div>
+            <ul className="space-y-1.5 text-xs text-muted-foreground">
+              <li>
+                DNS TXT verification:{" "}
+                <span className={visibleData.verified ? "text-green-600 dark:text-green-500" : undefined}>
+                  {visibleData.verified ? "verified" : isChecking ? "checking" : "waiting"}
+                </span>
+              </li>
+              {hasText(visibleData.fly_ownership_verification_record_name) && (
+                <li>
+                  Fly ownership TXT:{" "}
+                  <span className={visibleData.verified ? "text-green-600 dark:text-green-500" : undefined}>
+                    {visibleData.verified ? "verified" : isChecking ? "checking" : "waiting"}
+                  </span>
+                </li>
+              )}
+              <li>
+                CNAME routing:{" "}
+                <span className={visibleData.verified ? "text-green-600 dark:text-green-500" : undefined}>
+                  {visibleData.verified ? "matched" : isChecking ? "checking" : "waiting"}
+                </span>
+              </li>
+              <li>
+                Fly TLS certificate:{" "}
+                <span className={certificateStatusTone(visibleData.certificate_status)}>
+                  {isChecking
+                    ? "requesting status"
+                    : tlsLabel?.replace(/^TLS /, "").toLowerCase() ?? "not checked"}
+                </span>
+              </li>
+            </ul>
+            {hasText(visibleData.certificate_message) && (
+              <p className="text-xs text-muted-foreground">
+                {visibleData.certificate_message}
+              </p>
+            )}
+          </div>
+        )}
+        {visibleData.instructions && (
           <p
             className={cn(
               INSET_SURFACE,
@@ -218,7 +310,7 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
               />
               {verifyMutation.isPending
                 ? "Checking…"
-                : data.verified
+                : visibleData.verified
                   ? "Refresh DNS/TLS"
                   : "Verify DNS"}
             </Button>
