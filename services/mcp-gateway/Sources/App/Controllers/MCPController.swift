@@ -396,7 +396,9 @@ struct MCPController {
         guard let sid = mcpResourceSubscriberId(req: req) else {
             return try await serveRpcError(id: id, code: -32603, message: "Missing subscriber context", req: req)
         }
-        req.application.mcpResourceSubscriptions.subscribe(subscriberId: sid, uri: uri)
+        guard req.application.mcpResourceSubscriptions.subscribe(subscriberId: sid, uri: uri) else {
+            return try await serveRpcError(id: id, code: -32000, message: "Resource subscription limit exceeded", req: req)
+        }
         let uriLog = uri.count > 80 ? String(uri.prefix(80)) + "…" : uri
         req.logger.mcpTrace("mcp resources/subscribe uri=\(uriLog)")
         return try await serveSuccess(

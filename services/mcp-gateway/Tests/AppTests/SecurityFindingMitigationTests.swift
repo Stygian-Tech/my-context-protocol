@@ -252,6 +252,212 @@ struct SecurityFindingMitigationTests {
         #expect(String(describing: error) == "HTTP 400")
         #expect(!String(describing: error).contains("secret-token-in-body"))
     }
+
+    @Test("Internal TLS ask requires secret and allocated project subdomain")
+    func internalTlsAskRequiresSecretAndAllocatedProjectSubdomain() async throws {
+        try await withHardeningApp(appEnv: "prod", env: [
+            "USE_SQLITE": "1",
+            "USE_MEMORY_SESSIONS": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.test",
+            "INTERNAL_TLS_ASK_SECRET": "tls-ask-secret",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            try await app.testing().test(
+                .GET,
+                "/internal/custom-domain/verify-for-tls?domain=unknown.mcp.test",
+                afterResponse: { res in
+                    #expect(res.status == .unauthorized)
+                }
+            )
+
+            try await app.testing().test(
+                .GET,
+                "/internal/custom-domain/verify-for-tls?domain=unknown.mcp.test",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: "X-Internal-TLS-Ask-Secret", value: "tls-ask-secret")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .unprocessableEntity)
+                }
+            )
+
+            let account = Account(githubId: 910_006, login: "tls-ask", email: "tls-ask@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "TLS Ask", slug: "tls-ask", subdomain: "known")
+            try await project.save(on: app.db)
+
+            try await app.testing().test(
+                .GET,
+                "/internal/custom-domain/verify-for-tls?domain=known.mcp.test",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: "X-Internal-TLS-Ask-Secret", value: "tls-ask-secret")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .ok)
+                }
+            )
+
+            project.suspendedAt = Date()
+            try await project.save(on: app.db)
+            try await app.testing().test(
+                .GET,
+                "/internal/custom-domain/verify-for-tls?domain=known.mcp.test",
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: "X-Internal-TLS-Ask-Secret", value: "tls-ask-secret")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .unprocessableEntity)
+                }
+            )
+        }
+    }
+
+    @Test("GitHub webhook dispatch binds to hook id before signature verification")
+    func githubWebhookDispatchBindsToHookIdBeforeSignatureVerification() async throws {
+        try await withHardeningApp(appEnv: "prod", env: [
+            "USE_SQLITE": "1",
+            "USE_MEMORY_SESSIONS": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.test",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 910_007, login: "hook-bind", email: "hook-bind@example.com")
+            try await account.save(on: app.db)
+            let firstProject = Project(accountId: account.id!, name: "Hook First", slug: "hook-first", subdomain: "hookfirst")
+            let secondProject = Project(accountId: account.id!, name: "Hook Second", slug: "hook-second", subdomain: "hooksecond")
+            try await firstProject.save(on: app.db)
+            try await secondProject.save(on: app.db)
+
+            let first = RepoConnection(
+                projectId: firstProject.id!,
+                provider: "github",
+                repoOwner: "Stygian-Tech",
+                repoName: "shared-repo",
+                defaultBranch: "main",
+                webhookId: "hook-one",
+                webhookSecret: "secret-one"
+            )
+            let second = RepoConnection(
+                projectId: secondProject.id!,
+                provider: "github",
+                repoOwner: "Stygian-Tech",
+                repoName: "shared-repo",
+                defaultBranch: "main",
+                webhookId: "hook-two",
+                webhookSecret: "secret-two"
+            )
+            try await first.save(on: app.db)
+            try await second.save(on: app.db)
+
+            let payload = #"{"ref":"refs/heads/feature","repository":{"full_name":"Stygian-Tech/shared-repo","default_branch":"main"}}"#
+            try await app.testing().test(
+                .POST,
+                "/webhooks/github",
+                body: ByteBuffer(string: payload),
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: "X-GitHub-Hook-ID", value: "hook-two")
+                    req.headers.replaceOrAdd(name: "X-Hub-Signature-256", value: githubSignatureHeader(payload: payload, secret: "secret-two"))
+                    req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .ok, "github webhook status=\(res.status) body=\(res.body.string)")
+                    #expect(res.body.string.contains(#""skipped":"not_default_branch""#))
+                }
+            )
+        }
+    }
+
+    @Test("MCP resource subscriptions enforce per-subscriber caps")
+    func mcpResourceSubscriptionsEnforcePerSubscriberCaps() {
+        let subscriptions = McpResourceSubscriptions()
+        let subscriber = UUID()
+        for i in 0 ..< McpResourceSubscriptions.maxSubscriptionsPerSubscriber {
+            #expect(subscriptions.subscribe(subscriberId: subscriber, uri: "resource://\(i)"))
+        }
+        #expect(subscriptions.subscribe(subscriberId: subscriber, uri: "resource://0"))
+        #expect(!subscriptions.subscribe(subscriberId: subscriber, uri: "resource://overflow"))
+        #expect(!subscriptions.subscribe(subscriberId: UUID(), uri: String(repeating: "a", count: McpResourceSubscriptions.maxUriLength + 1)))
+    }
+
+    @Test("RepoFetcher validates GitHub path segments")
+    func repoFetcherValidatesGitHubPathSegments() {
+        #expect(RepoFetcher.isValidGitHubOwnerOrRepo("Stygian-Tech"))
+        #expect(RepoFetcher.isValidGitHubOwnerOrRepo("repo.name"))
+        #expect(!RepoFetcher.isValidGitHubOwnerOrRepo("../owner"))
+        #expect(!RepoFetcher.isValidGitHubOwnerOrRepo("owner/repo"))
+        #expect(!RepoFetcher.isValidGitHubOwnerOrRepo(String(repeating: "a", count: 101)))
+
+        #expect(RepoFetcher.isValidGitHubRef("feature/harden-oauth"))
+        #expect(RepoFetcher.isValidGitHubRef("release-2026.06"))
+        #expect(!RepoFetcher.isValidGitHubRef("../main"))
+        #expect(!RepoFetcher.isValidGitHubRef("main?token=x"))
+        #expect(!RepoFetcher.isValidGitHubRef(String(repeating: "a", count: 256)))
+        #expect(RepoFetcher.pathSegmentEscape("feature/harden-oauth") == "feature%2Fharden-oauth")
+    }
+
+    @Test("RepoFetcher rejects archive symlink escapes and excessive entries")
+    func repoFetcherRejectsArchiveAbuse() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("repo-archive-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("repo-outside-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try "secret".write(to: outside, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("escape"),
+            withDestinationURL: outside
+        )
+
+        do {
+            try RepoFetcher.validateExtractedArchive(root: root)
+            Issue.record("Expected archive escape to be rejected")
+        } catch RepoFetcherError.extractEscaped {
+        } catch {
+            Issue.record("Unexpected archive validation error: \(error)")
+        }
+
+        try FileManager.default.removeItem(at: root)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let (apply, restore) = hardeningTemporaryEnv(["REPO_EXTRACT_MAX_ENTRIES": "1"])
+        apply()
+        defer { restore() }
+        for i in 0 ... 100 {
+            try "x".write(to: root.appendingPathComponent("file-\(i).txt"), atomically: true, encoding: .utf8)
+        }
+        do {
+            try RepoFetcher.validateExtractedArchive(root: root)
+            Issue.record("Expected excessive archive entries to be rejected")
+        } catch RepoFetcherError.extractedArchiveTooManyEntries {
+        } catch {
+            Issue.record("Unexpected archive validation error: \(error)")
+        }
+    }
+
+    @Test("OAuth handoff tokens are single use")
+    func oauthHandoffTokensAreSingleUse() async throws {
+        try await withHardeningApp(appEnv: "prod", env: [
+            "USE_SQLITE": "1",
+            "USE_MEMORY_SESSIONS": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.test",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 910_008, login: "handoff-single-use", email: "handoff-single-use@example.com")
+            try await account.save(on: app.db)
+            let token = try await OAuthHandoffService.issue(accountId: account.id!, on: app.db)
+
+            let consumed = try await OAuthHandoffService.consume(token, on: app.db)
+            #expect(consumed == account.id)
+
+            let replay = try await OAuthHandoffService.consume(token, on: app.db)
+            #expect(replay == nil)
+        }
+    }
 }
 
 private func withHardeningApp(
@@ -309,6 +515,13 @@ private func stripeSignatureHeader(payload: String, secret: String) -> String {
     let mac = HMAC<SHA256>.authenticationCode(for: signed, using: SymmetricKey(data: key))
     let hex = mac.map { String(format: "%02x", $0) }.joined()
     return "t=\(ts),v1=\(hex)"
+}
+
+private func githubSignatureHeader(payload: String, secret: String) -> String {
+    let key = SymmetricKey(data: Data(secret.utf8))
+    let mac = HMAC<SHA256>.authenticationCode(for: Data(payload.utf8), using: key)
+    let hex = mac.map { String(format: "%02x", $0) }.joined()
+    return "sha256=\(hex)"
 }
 
 private func hardeningTemporaryEnv(_ overrides: [String: String?]) -> (() -> Void, () -> Void) {

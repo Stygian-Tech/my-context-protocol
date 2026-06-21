@@ -21,7 +21,16 @@ struct ParsedSkill {
 }
 
 struct SkillParser {
+    private static let maxReadableSkillBytes = 1024 * 1024
+
     static func parse(fileURL: URL, basePath: String) throws -> ParsedSkill {
+        let values = try fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true else {
+            throw SkillParserError.notRegularFile
+        }
+        if let size = values.fileSize, size > maxReadableSkillBytes {
+            throw SkillParserError.fileTooLarge
+        }
         let content = try String(contentsOf: fileURL, encoding: .utf8)
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SkillParserError.emptyFile
@@ -148,6 +157,8 @@ enum SkillParserError: Error, LocalizedError {
     case missingName
     case unclosedFrontmatter
     case cannotInferNameWithoutFrontmatter
+    case notRegularFile
+    case fileTooLarge
 
     var errorDescription: String? {
         switch self {
@@ -159,6 +170,10 @@ enum SkillParserError: Error, LocalizedError {
             return "SKILL.md frontmatter is missing closing --- delimiter"
         case .cannotInferNameWithoutFrontmatter:
             return "SKILL.md has no YAML front matter: place the file in a directory whose name is a valid skill slug (e.g. my-skill/SKILL.md), or add a \"name\" field under leading --- front matter"
+        case .notRegularFile:
+            return "SKILL.md must be a regular file inside the repository"
+        case .fileTooLarge:
+            return "SKILL.md exceeds size limit"
         }
     }
 }

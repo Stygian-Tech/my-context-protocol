@@ -32,7 +32,7 @@ func routes(_ app: Application) throws {
     }
 
     // Called by Caddy's on_demand_tls `ask` hook before issuing a TLS cert for a hostname.
-    // Returns 200 to allow, 422 to deny. No auth — Caddy calls from localhost only.
+    // Returns 200 to allow, 422 to deny. Set INTERNAL_TLS_ASK_SECRET when this endpoint is reachable beyond localhost.
     app.get("internal", "custom-domain", "verify-for-tls") { req in
         try await InternalController.verifyForTls(req: req)
     }

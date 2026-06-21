@@ -16,6 +16,8 @@ enum DatabaseBootstrapError: Error, Equatable, CustomStringConvertible, Localize
     case missingRemotePostgresConfiguration
     /// `APP_ENV` is `dev` or `prod` but Postgres host resolves to loopback (common bad copy-paste into containers).
     case loopbackPostgresHostInDeployedAppEnv(host: String)
+    /// `APP_ENV` is `prod` but certificate verification has been explicitly disabled.
+    case insecurePostgresTLSInProduction
 
     var description: String {
         switch self {
@@ -40,6 +42,13 @@ enum DatabaseBootstrapError: Error, Equatable, CustomStringConvertible, Localize
 
             If you intentionally use loopback (rare), set DATABASE_ALLOW_LOOPBACK=1.
             """
+        case .insecurePostgresTLSInProduction:
+            """
+            DATABASE_INSECURE_TLS is not allowed when APP_ENV=prod.
+
+            Production database connections must use TLS with certificate verification enabled.
+            Fix the production CA trust chain or use a verified managed-Postgres connection string instead of disabling certificate verification.
+            """
         }
     }
 
@@ -57,6 +66,15 @@ enum DatabaseBootstrap {
     static func assertPostgresConnectionURLHostAllowedIfResolvable(_ urlString: String) throws {
         guard let host = hostnameForPostgresConnectionURL(urlString) else { return }
         try assertPostgresHostAllowedForDeployedAppEnv(host)
+    }
+
+    /// Rejects explicit TLS verification bypass in production.
+    static func assertInsecurePostgresTLSAllowed(
+        _ enabled: Bool,
+        deployKind: DeployAppEnv = AppEnvironment.deployKind()
+    ) throws {
+        guard enabled, deployKind == .prod else { return }
+        throw DatabaseBootstrapError.insecurePostgresTLSInProduction
     }
 
     static func assertPostgresHostAllowedForDeployedAppEnv(_ hostname: String) throws {

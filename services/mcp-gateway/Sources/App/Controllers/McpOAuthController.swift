@@ -1,5 +1,6 @@
 import Fluent
 import Foundation
+import SQLKit
 import Vapor
 
 // MARK: - Metadata DTOs
@@ -119,7 +120,7 @@ enum McpOAuthController {
             throw Abort(.badRequest, reason: "redirect_uris must be non-empty")
         }
         for uriString in body.redirect_uris {
-            guard URL(string: uriString) != nil else {
+            guard isAllowedRedirectUri(uriString) else {
                 logOAuth(req, phase: "dynamic_client_registration_rejected", details: "reason=invalid_redirect_uri")
                 throw Abort(.badRequest, reason: "Invalid redirect_uri: \(uriString)")
             }
@@ -193,6 +194,26 @@ enum McpOAuthController {
             throw Abort(.badRequest, reason: "Missing response_type")
         }
         let state = req.query[String.self, at: "state"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let scope = req.query[String.self, at: "scope"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? McpOAuthConstants.defaultScope
+        let resource = req.query[String.self, at: "resource"]
+
+        guard !state.isEmpty else {
+            throw Abort(.badRequest, reason: "state is required")
+        }
+
+        guard let clientRow = try await McpOAuthClient.query(on: req.db)
+            .filter(\.$publicClientId == clientId)
+            .first(),
+            clientRow.isActive else {
+            throw Abort(.badRequest, reason: "Unknown client_id")
+        }
+        guard let clientProjectId = clientRow.$project.id, clientProjectId == project.id! else {
+            throw Abort(.badRequest, reason: "Unknown client_id")
+        }
+        let uris = try clientRow.parsedRedirectUris()
+        guard uris.contains(redirectUri) else {
+            throw Abort(.badRequest, reason: "redirect_uri is not registered for this client")
+        }
         guard let codeChallenge = req.query[String.self, at: "code_challenge"]?
             .trimmingCharacters(in: .whitespacesAndNewlines), !codeChallenge.isEmpty else {
             return try redirectOAuthError(
@@ -207,22 +228,6 @@ enum McpOAuthController {
             .trimmingCharacters(in: .whitespacesAndNewlines), !codeChallengeMethod.isEmpty else {
             throw Abort(.badRequest, reason: "Missing code_challenge_method")
         }
-        let scope = req.query[String.self, at: "scope"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? McpOAuthConstants.defaultScope
-        let resource = req.query[String.self, at: "resource"]
-
-        guard !state.isEmpty else {
-            throw Abort(.badRequest, reason: "state is required")
-        }
-
-        guard let clientRow = try await McpOAuthClient.query(on: req.db)
-            .filter(\.$publicClientId == clientId)
-            .first(),
-            clientRow.isActive else {
-            throw Abort(.badRequest, reason: "Unknown client_id")
-        }
-        if let clientProjectId = clientRow.$project.id, clientProjectId != project.id! {
-            throw Abort(.badRequest, reason: "Unknown client_id")
-        }
         guard clientRow.allowsGrant("authorization_code") else {
             return try redirectOAuthError(
                 req: req,
@@ -231,10 +236,6 @@ enum McpOAuthController {
                 error: "unauthorized_client",
                 description: "Client cannot use authorization_code"
             )
-        }
-        let uris = try clientRow.parsedRedirectUris()
-        guard uris.contains(redirectUri) else {
-            throw Abort(.badRequest, reason: "redirect_uri is not registered for this client")
         }
         guard responseType == "code" else {
             return try redirectOAuthError(
@@ -609,6 +610,10 @@ enum McpOAuthController {
             clientRow.isActive else {
             return try await oauthTokenErrorResponse(req: req, status: .badRequest, error: "invalid_client", description: "Unknown client")
         }
+        let project = try requireResolvedProject(req)
+        guard let clientProjectId = clientRow.$project.id, clientProjectId == project.id! else {
+            return try await oauthTokenErrorResponse(req: req, status: .badRequest, error: "invalid_client", description: "Unknown client")
+        }
 
         if clientRow.isConfidential {
             guard let secret = trimmedNonEmpty(form.client_secret) ?? basic?.clientSecret,
@@ -643,13 +648,18 @@ enum McpOAuthController {
             return try await oauthTokenErrorResponse(req: req, status: .badRequest, error: "invalid_grant", description: "PKCE verification failed")
         }
 
-        let project = try requireResolvedProject(req)
         guard row.$project.id == project.id! else {
             return try await oauthTokenErrorResponse(req: req, status: .badRequest, error: "invalid_grant", description: "Code does not match host")
         }
 
-        row.consumedAt = Date()
-        try await row.save(on: req.db)
+        guard try await consumeAuthorizationCode(row.id!, on: req.db) else {
+            return try await oauthTokenErrorResponse(
+                req: req,
+                status: .badRequest,
+                error: "invalid_grant",
+                description: "Invalid or expired code"
+            )
+        }
 
         let rawToken = McpOAuthCrypto.randomToken(prefix: McpOAuthConstants.accessTokenPrefix)
         let tokenHash = McpOAuthCrypto.sha256Hex(rawToken)
@@ -672,6 +682,28 @@ enum McpOAuthController {
         )
         logOAuth(req, phase: "token_issued", details: "grant=authorization_code client_id=\(clientId) scope=\(row.scope)")
         return try await body.encodeResponse(status: .ok, for: req)
+    }
+
+    private static func consumeAuthorizationCode(_ id: UUID, on db: Database) async throws -> Bool {
+        if let sql = db as? any SQLDatabase {
+            let row = try await sql.update(McpOAuthAuthorizationCode.schema)
+                .set(SQLColumn("consumed_at"), to: SQLBind(Date()))
+                .where(SQLColumn("id"), .equal, SQLBind(id))
+                .where(SQLColumn("consumed_at"), .is, SQLLiteral.null)
+                .where(SQLColumn("expires_at"), .greaterThan, SQLBind(Date()))
+                .returning(SQLColumn("id"))
+                .first()
+            return row != nil
+        }
+
+        guard let row = try await McpOAuthAuthorizationCode.find(id, on: db),
+              row.consumedAt == nil,
+              row.expiresAt > Date() else {
+            return false
+        }
+        row.consumedAt = Date()
+        try await row.save(on: db)
+        return true
     }
 
     // MARK: Helpers
@@ -841,5 +873,27 @@ enum McpOAuthController {
 
     private static func redirectHost(_ uri: String) -> String? {
         URL(string: uri)?.host
+    }
+
+    private static func isAllowedRedirectUri(_ uri: String) -> Bool {
+        guard var components = URLComponents(string: uri),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = components.host?.lowercased(),
+              !host.isEmpty,
+              components.fragment == nil else {
+            return false
+        }
+        components.scheme = scheme
+        components.host = host
+
+        if scheme == "https" {
+            return components.url != nil
+        }
+        return isLoopbackHost(host) && components.url != nil
+    }
+
+    private static func isLoopbackHost(_ host: String) -> Bool {
+        host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasPrefix("127.")
     }
 }

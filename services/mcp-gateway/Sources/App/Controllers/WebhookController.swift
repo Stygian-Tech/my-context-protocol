@@ -40,9 +40,16 @@ struct WebhookController {
         let owner = String(parts[0])
         let repo = String(parts[1])
 
-        let connection = try await RepoConnection.query(on: req.db)
+        let hookId = req.headers.first(name: "X-GitHub-Hook-ID")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var query = RepoConnection.query(on: req.db)
             .filter(\.$repoOwner == owner)
             .filter(\.$repoName == repo)
+        if let hookId, !hookId.isEmpty {
+            query = query.filter(\.$webhookId == hookId)
+        }
+        let connection = try await query
             .with(\.$project)
             .first()
 

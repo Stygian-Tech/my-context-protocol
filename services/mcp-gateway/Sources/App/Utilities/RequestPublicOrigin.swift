@@ -11,7 +11,7 @@ enum RequestPublicOrigin {
 
     /// Best-effort public origin for the request (`X-Forwarded-Proto`, optional `X-Forwarded-Host` when trusted).
     static func origin(for req: Request) -> String? {
-        let scheme = forwardedProto(for: req) ?? req.url.scheme ?? "http"
+        let scheme = forwardedProto(for: req) ?? normalizedScheme(req.url.scheme) ?? "http"
         guard let hostRaw = publicHostField(for: req)?.trimmingCharacters(in: .whitespacesAndNewlines), !hostRaw.isEmpty else {
             return nil
         }
@@ -54,7 +54,15 @@ enum RequestPublicOrigin {
         let p = raw.split(separator: ",").first.map(String.init)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let p, !p.isEmpty else { return nil }
-        return p
+        return normalizedScheme(p)
+    }
+
+    private static func normalizedScheme(_ raw: String?) -> String? {
+        guard let scheme = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              scheme == "http" || scheme == "https" else {
+            return nil
+        }
+        return scheme
     }
 
     /// Drops `:443` / `:80` from host[:port] for canonical issuer URLs (not for bracketed IPv6).

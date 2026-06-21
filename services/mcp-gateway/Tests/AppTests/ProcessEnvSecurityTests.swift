@@ -1,4 +1,5 @@
 import Foundation
+import NIOCore
 import Testing
 import Vapor
 import VaporTesting
@@ -447,6 +448,33 @@ struct ProcessEnvSecurityTests {
         }
     }
 
+    @Test("BrowserOriginValidationMiddleware does not skip dashboard routes on tenant host")
+    func browserOriginRejectsTenantHostDashboardPost() async throws {
+        try await withIsolatedProcessEnv {
+            let (apply, restore) = temporaryEnv([
+                "FRONTEND_URL": "https://app.example.com",
+                "SAAS_MCP_BASE_DOMAIN": "mcp.example.com",
+            ])
+            apply()
+            defer { restore() }
+
+            try await withApp { app in
+                let g = app.grouped(BrowserOriginValidationMiddleware())
+                g.post("projects", "123", "sync") { _ in "done" }
+                try await app.testing().test(
+                    .POST,
+                    "/projects/123/sync",
+                    beforeRequest: { req in
+                        req.headers.replaceOrAdd(name: .host, value: "tenant.mcp.example.com")
+                    },
+                    afterResponse: { res in
+                        #expect(res.status == .forbidden)
+                    }
+                )
+            }
+        }
+    }
+
     // MARK: - Internal Pro bypass, crypto, MCP URL (env-dependent)
 
     @Test("InternalProBypass matches login case-insensitively")
@@ -738,42 +766,65 @@ struct ProcessEnvSecurityTests {
             AppEnvironment._testOverrideAppEnv = "prod"
 
             try await withApp { app in
-            let limiter = McpIpRateLimitMiddleware(limit: 1, windowSeconds: 120)
-            let g = app.grouped(limiter)
-            g.post("rpc") { _ in "ok" }
-            try await app.testing().test(
-                .POST,
-                "/rpc",
-                beforeRequest: { req in
-                    req.headers.replaceOrAdd(name: "X-Forwarded-For", value: "198.51.100.10, 10.0.0.1")
-                },
-                afterResponse: { res in
-                    #expect(res.status == .ok)
-                }
-            )
-            try await app.testing().test(
-                .POST,
-                "/rpc",
-                beforeRequest: { req in
-                    req.headers.replaceOrAdd(name: "X-Forwarded-For", value: "198.51.100.10, 10.0.0.1")
-                },
-                afterResponse: { res in
-                    #expect(res.status == .tooManyRequests)
-                }
-            )
-            try await app.testing().test(
-                .POST,
-                "/rpc",
-                beforeRequest: { req in
-                    req.headers.replaceOrAdd(name: "X-Forwarded-For", value: "198.51.100.11, 10.0.0.1")
-                },
-                afterResponse: { res in
-                    #expect(res.status == .ok)
-                }
-            )
+                let limiter = McpIpRateLimitMiddleware(limit: 1, windowSeconds: 120)
+                let responder = TestOKResponder()
+                let trustedPeer = try SocketAddress(ipAddress: "10.0.0.1", port: 443)
+                let untrustedPeer = try SocketAddress(ipAddress: "203.0.113.5", port: 443)
+
+                let firstTrusted = try await limiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.10, 10.0.0.1", peer: trustedPeer),
+                    chainingTo: responder
+                )
+                #expect(firstTrusted.status == .ok)
+
+                let repeatedTrusted = try await limiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.10, 10.0.0.1", peer: trustedPeer),
+                    chainingTo: responder
+                )
+                #expect(repeatedTrusted.status == .tooManyRequests)
+
+                let otherForwardedClient = try await limiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.11, 10.0.0.1", peer: trustedPeer),
+                    chainingTo: responder
+                )
+                #expect(otherForwardedClient.status == .ok)
+
+                let untrustedLimiter = McpIpRateLimitMiddleware(limit: 1, windowSeconds: 120)
+                let firstUntrusted = try await untrustedLimiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.20", peer: untrustedPeer),
+                    chainingTo: responder
+                )
+                #expect(firstUntrusted.status == .ok)
+
+                let spoofedSecondUntrusted = try await untrustedLimiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.21", peer: untrustedPeer),
+                    chainingTo: responder
+                )
+                #expect(spoofedSecondUntrusted.status == .tooManyRequests)
             }
         }
     }
+}
+
+private struct TestOKResponder: AsyncResponder {
+    func respond(to request: Request) async throws -> Response {
+        Response(status: .ok)
+    }
+}
+
+private func makeRateLimitRequest(app: Application, xff: String, peer: SocketAddress) -> Request {
+    var headers = HTTPHeaders()
+    headers.replaceOrAdd(name: "X-Forwarded-For", value: xff)
+    return Request(
+        application: app,
+        method: .POST,
+        url: URI(path: "/rpc"),
+        version: .http1_1,
+        headers: headers,
+        remoteAddress: peer,
+        logger: app.logger,
+        on: app.eventLoopGroup.next()
+    )
 }
 
 private func temporaryEnv(_ overrides: [String: String?]) -> (() -> Void, () -> Void) {
