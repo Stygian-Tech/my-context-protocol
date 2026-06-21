@@ -2,6 +2,7 @@
   "name": "@mycontext/api-contract",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./backend-api": "./BACKEND_API_CONTRACT.md"
