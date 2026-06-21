@@ -14,6 +14,19 @@ enum FlyCertificateService {
     struct Result {
         let status: Status
         let message: String?
+        let dnsRequirements: DNSRequirements?
+    }
+
+    struct DNSRequirements: Equatable {
+        let a: [String]
+        let aaaa: [String]
+        let cname: String?
+        let ownership: OwnershipRequirement?
+    }
+
+    struct OwnershipRequirement: Equatable {
+        let name: String
+        let value: String
     }
 
     struct Config: Equatable {
@@ -67,7 +80,8 @@ enum FlyCertificateService {
     static func missingConfigurationResult() -> Result {
         Result(
             status: .notConfigured,
-            message: "Fly certificate provisioning is not configured. Set FLY_API_TOKEN and FLY_CERTIFICATE_APP_NAME or FLY_APP_NAME on the MCP gateway."
+            message: "Fly certificate provisioning is not configured. Set FLY_API_TOKEN and FLY_CERTIFICATE_APP_NAME or FLY_APP_NAME on the MCP gateway.",
+            dnsRequirements: nil
         )
     }
 
@@ -115,7 +129,7 @@ enum FlyCertificateService {
             return await checkExistingCertificate(hostname: hostname, config: config, client: client, logger: logger)
         } catch {
             logger.warning("Fly certificate provisioning failed for custom domain host=\(hostname) reason=\(String(describing: error))")
-            return Result(status: .failed, message: "Fly certificate provisioning failed. Check gateway logs and Fly certificate state for this hostname.")
+            return Result(status: .failed, message: "Fly certificate provisioning failed. Check gateway logs and Fly certificate state for this hostname.", dnsRequirements: nil)
         }
     }
 
@@ -127,36 +141,38 @@ enum FlyCertificateService {
             let body = try await getCertificate(hostname: hostname, config: config, client: client)
             return parseResult(from: body)
         } catch FlyCertificateError.http(let status, _) where status == .notFound {
-            return Result(status: .pending, message: "No Fly certificate exists yet. Verify DNS again to start provisioning.")
+            return Result(status: .pending, message: "No Fly certificate exists yet. Verify DNS again to start provisioning.", dnsRequirements: nil)
         } catch {
             logger.warning("Fly certificate status check failed for custom domain host=\(hostname) reason=\(String(describing: error))")
-            return Result(status: .unknown, message: "Could not read Fly certificate status.")
+            return Result(status: .unknown, message: "Could not read Fly certificate status.", dnsRequirements: nil)
         }
     }
 
     static func parseResult(from data: Data) -> Result {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return Result(status: .unknown, message: nil)
+            return Result(status: .unknown, message: nil, dnsRequirements: nil)
         }
         let certificate = (object["certificate"] as? [String: Any]) ?? object
         let configured = certificate["configured"] as? Bool ?? false
         let clientStatus = firstString(certificate, keys: ["client_status", "clientStatus"])
+            ?? firstString(certificate, keys: ["status"])
         let issuedNodes = ((certificate["issued"] as? [String: Any])?["nodes"] as? [Any]) ?? []
         let validationErrors = certificate["validation_errors"] as? [[String: Any]]
             ?? certificate["validationErrors"] as? [[String: Any]]
             ?? []
+        let dnsRequirements = parseDNSRequirements(from: certificate)
 
         if configured || !issuedNodes.isEmpty || statusLooksIssued(clientStatus) {
-            return Result(status: .issued, message: "Fly edge TLS certificate is issued.")
+            return Result(status: .issued, message: "Fly edge TLS certificate is issued.", dnsRequirements: dnsRequirements)
         }
         if let firstError = validationErrors.first {
             let message = firstString(firstError, keys: ["message", "remediation", "error_code", "errorCode"])
-            return Result(status: .failed, message: message ?? "Fly certificate validation failed.")
+            return Result(status: .failed, message: message ?? "Fly certificate validation failed.", dnsRequirements: dnsRequirements)
         }
         if let clientStatus, !clientStatus.isEmpty {
-            return Result(status: .pending, message: "Fly certificate status: \(clientStatus).")
+            return Result(status: .pending, message: "Fly certificate status: \(clientStatus).", dnsRequirements: dnsRequirements)
         }
-        return Result(status: .pending, message: "Fly certificate provisioning is pending.")
+        return Result(status: .pending, message: "Fly certificate provisioning is pending.", dnsRequirements: dnsRequirements)
     }
 
     private static func checkExistingCertificate(hostname: String, config: Config, client: Client, logger: Logger) async -> Result {
@@ -167,7 +183,7 @@ enum FlyCertificateService {
             return result
         } catch {
             logger.warning("Fly certificate check failed for existing custom domain host=\(hostname) reason=\(String(describing: error))")
-            return Result(status: .unknown, message: "Fly certificate exists but status could not be refreshed.")
+            return Result(status: .unknown, message: "Fly certificate exists but status could not be refreshed.", dnsRequirements: nil)
         }
     }
 
@@ -283,6 +299,43 @@ enum FlyCertificateService {
             }
         }
         return nil
+    }
+
+    private static func stringArray(_ object: [String: Any], key: String) -> [String] {
+        guard let raw = object[key] as? [Any] else { return [] }
+        return raw.compactMap { value in
+            (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+    }
+
+    private static func parseDNSRequirements(from certificate: [String: Any]) -> DNSRequirements? {
+        guard let raw = certificate["dns_requirements"] as? [String: Any]
+            ?? certificate["dnsRequirements"] as? [String: Any] else {
+            return nil
+        }
+
+        let ownership: OwnershipRequirement?
+        if let rawOwnership = raw["ownership"] as? [String: Any],
+           let name = firstString(rawOwnership, keys: ["name"]),
+           let value = firstString(rawOwnership, keys: ["app_value", "appValue", "org_value", "orgValue"]) {
+            ownership = OwnershipRequirement(name: name, value: value)
+        } else {
+            ownership = nil
+        }
+
+        let requirements = DNSRequirements(
+            a: stringArray(raw, key: "a"),
+            aaaa: stringArray(raw, key: "aaaa"),
+            cname: firstString(raw, keys: ["cname"]),
+            ownership: ownership
+        )
+        guard !requirements.a.isEmpty ||
+            !requirements.aaaa.isEmpty ||
+            requirements.cname != nil ||
+            requirements.ownership != nil else {
+            return nil
+        }
+        return requirements
     }
 
     private static func statusLooksIssued(_ status: String?) -> Bool {

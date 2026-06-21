@@ -98,6 +98,9 @@ export interface CustomDomainStatus {
   instructions?: string | null;
   fly_ownership_verification_record_name?: string | null;
   fly_ownership_verification_record_value?: string | null;
+  fly_a_record_values?: string[] | null;
+  fly_aaaa_record_values?: string[] | null;
+  fly_cname_record_value?: string | null;
   certificate_status?: "not_configured" | "pending" | "issued" | "failed" | "unknown" | null;
   certificate_message?: string | null;
 }

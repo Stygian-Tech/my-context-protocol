@@ -23,6 +23,9 @@ const initialStatus = {
   instructions: null,
   fly_ownership_verification_record_name: "_fly-ownership.mcp.example.com",
   fly_ownership_verification_record_value: "fly-token",
+  fly_a_record_values: null,
+  fly_aaaa_record_values: null,
+  fly_cname_record_value: null,
   certificate_status: "pending" as const,
   certificate_message: "Fly certificate provisioning is pending.",
 };
@@ -31,6 +34,19 @@ const issuedStatus = {
   ...initialStatus,
   certificate_status: "issued" as const,
   certificate_message: "Fly edge TLS certificate is issued.",
+};
+
+const dnsRequiredStatus = {
+  ...initialStatus,
+  instructions: [
+    "Add an A record on mcp.example.com pointing to: 66.241.125.232",
+    "Add an AAAA record on mcp.example.com pointing to: 2a09:8280:1::1",
+    "Add a CNAME record on mcp.example.com pointing to: gateway.fly.dev",
+  ].join("\n"),
+  fly_a_record_values: ["66.241.125.232"],
+  fly_aaaa_record_values: ["2a09:8280:1::1"],
+  fly_cname_record_value: "gateway.fly.dev",
+  certificate_message: "Fly certificate validation is waiting on DNS records.",
 };
 
 function deferred<T>() {
@@ -152,5 +168,82 @@ describe("CustomDomainSection", () => {
       expect(host.textContent).toContain("TLS issued");
       expect(host.textContent).toContain("Fly edge TLS certificate is issued.");
     });
+  });
+
+  it("renders Fly DNS requirements returned by the TLS check", async () => {
+    vi.mocked(verifyProjectCustomDomain).mockResolvedValue(dnsRequiredStatus);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CustomDomainSection projectId="project-1" />
+        </QueryClientProvider>,
+      );
+    });
+
+    await waitFor(() => {
+      expect(host.textContent).toContain("Refresh DNS/TLS");
+    });
+
+    const button = Array.from(host.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("Refresh DNS/TLS"),
+    );
+
+    await act(async () => {
+      button?.click();
+    });
+
+    await waitFor(() => {
+      expect(host.textContent).toContain("Required DNS records");
+      expect(host.textContent).toContain("TXT");
+      expect(host.textContent).toContain("_fly-ownership.mcp.example.com");
+      expect(host.textContent).toContain("fly-token");
+      expect(host.textContent).toContain("A");
+      expect(host.textContent).toContain("66.241.125.232");
+      expect(host.textContent).toContain("AAAA");
+      expect(host.textContent).toContain("2a09:8280:1::1");
+      expect(host.textContent).toContain("CNAME");
+      expect(host.textContent).toContain("gateway.fly.dev");
+      expect(host.textContent).toContain("Add an A record on mcp.example.com pointing to: 66.241.125.232");
+    });
+  });
+
+  it("does not repeat the certificate message in the instructions", async () => {
+    vi.mocked(verifyProjectCustomDomain).mockResolvedValue({
+      ...dnsRequiredStatus,
+      instructions: [
+        "Fly certificate validation is waiting on DNS records.",
+        "Add an A record on mcp.example.com pointing to: 66.241.125.232",
+      ].join("\n"),
+      certificate_message: "Fly certificate validation is waiting on DNS records.",
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CustomDomainSection projectId="project-1" />
+        </QueryClientProvider>,
+      );
+    });
+
+    await waitFor(() => {
+      expect(host.textContent).toContain("Refresh DNS/TLS");
+    });
+
+    const button = Array.from(host.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("Refresh DNS/TLS"),
+    );
+
+    await act(async () => {
+      button?.click();
+    });
+
+    await waitFor(() => {
+      expect(host.textContent).toContain("Add an A record on mcp.example.com pointing to: 66.241.125.232");
+    });
+
+    const messageMatches =
+      host.textContent?.match(/Fly certificate validation is waiting on DNS records\./g) ?? [];
+    expect(messageMatches).toHaveLength(1);
   });
 });

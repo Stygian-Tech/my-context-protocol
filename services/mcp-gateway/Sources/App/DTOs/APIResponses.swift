@@ -39,6 +39,9 @@ struct CustomDomainResponse: Content {
     let instructions: String?
     let fly_ownership_verification_record_name: String?
     let fly_ownership_verification_record_value: String?
+    let fly_a_record_values: [String]?
+    let fly_aaaa_record_values: [String]?
+    let fly_cname_record_value: String?
     let certificate_status: String?
     let certificate_message: String?
 
@@ -47,6 +50,9 @@ struct CustomDomainResponse: Content {
         case verification_token = "verification_token"
         case fly_ownership_verification_record_name = "fly_ownership_verification_record_name"
         case fly_ownership_verification_record_value = "fly_ownership_verification_record_value"
+        case fly_a_record_values = "fly_a_record_values"
+        case fly_aaaa_record_values = "fly_aaaa_record_values"
+        case fly_cname_record_value = "fly_cname_record_value"
         case certificate_status = "certificate_status"
         case certificate_message = "certificate_message"
     }

@@ -708,9 +708,14 @@ struct ProcessEnvSecurityTests {
 
     @Test("FlyCertificateService parses issued and failed certificate responses")
     func flyCertificateResponseParsing() throws {
-        let issued = Data(#"{"certificate":{"configured":true,"client_status":"Ready","issued":{"nodes":[{"type":"rsa"}]}}}"#.utf8)
+        let issued = Data(#"{"certificate":{"configured":true,"client_status":"Ready","issued":{"nodes":[{"type":"rsa"}]},"dns_requirements":{"a":["66.241.125.232"],"aaaa":["2a09:8280:1::1"],"cname":"gateway.fly.dev","ownership":{"name":"_fly-ownership.mcp.example.com","app_value":"app-token"}}}}"#.utf8)
         let issuedResult = FlyCertificateService.parseResult(from: issued)
         #expect(issuedResult.status == .issued)
+        #expect(issuedResult.dnsRequirements?.a == ["66.241.125.232"])
+        #expect(issuedResult.dnsRequirements?.aaaa == ["2a09:8280:1::1"])
+        #expect(issuedResult.dnsRequirements?.cname == "gateway.fly.dev")
+        #expect(issuedResult.dnsRequirements?.ownership?.name == "_fly-ownership.mcp.example.com")
+        #expect(issuedResult.dnsRequirements?.ownership?.value == "app-token")
 
         let failed = Data(#"{"certificate":{"configured":false,"validation_errors":[{"message":"CNAME does not point to app"}]}}"#.utf8)
         let failedResult = FlyCertificateService.parseResult(from: failed)

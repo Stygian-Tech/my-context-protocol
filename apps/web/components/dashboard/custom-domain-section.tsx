@@ -62,6 +62,65 @@ function hasText(value: string | null | undefined) {
   return Boolean(value?.trim());
 }
 
+function dnsRecordRows(data: CustomDomainStatus) {
+  const hostname = data.hostname?.trim();
+  const rows: Array<{ type: string; name: string; value: string }> = [];
+
+  if (hostname && hasText(data.verification_token)) {
+    rows.push({
+      type: "TXT",
+      name: hostname,
+      value: data.verification_token!.trim(),
+    });
+  }
+  if (hasText(data.fly_ownership_verification_record_name) && hasText(data.fly_ownership_verification_record_value)) {
+    rows.push({
+      type: "TXT",
+      name: data.fly_ownership_verification_record_name!.trim(),
+      value: data.fly_ownership_verification_record_value!.trim(),
+    });
+  }
+  if (hostname) {
+    for (const value of data.fly_a_record_values ?? []) {
+      if (hasText(value)) {
+        rows.push({ type: "A", name: hostname, value: value.trim() });
+      }
+    }
+    for (const value of data.fly_aaaa_record_values ?? []) {
+      if (hasText(value)) {
+        rows.push({ type: "AAAA", name: hostname, value: value.trim() });
+      }
+    }
+    if (hasText(data.fly_cname_record_value)) {
+      rows.push({
+        type: "CNAME",
+        name: hostname,
+        value: data.fly_cname_record_value!.trim(),
+      });
+    }
+  }
+
+  return rows;
+}
+
+function visibleInstructions(data: CustomDomainStatus) {
+  const instructions = data.instructions?.trim();
+  if (!instructions) {
+    return null;
+  }
+
+  const message = data.certificate_message?.trim();
+  if (!message) {
+    return instructions;
+  }
+
+  const lines = instructions
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && line !== message);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
 function TlsStatusIcon({
   status,
   isPending,
@@ -171,6 +230,8 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
       visibleData.verified ||
       hasText(visibleData.certificate_message) ||
       hasText(visibleData.fly_ownership_verification_record_name));
+  const recordRows = dnsRecordRows(visibleData);
+  const instructions = visibleInstructions(visibleData);
 
   return (
     <section
@@ -210,6 +271,25 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
                 {tlsLabel}
               </span>
             )}
+          </div>
+        )}
+        {recordRows.length > 0 && (
+          <div className={cn(INSET_SURFACE, "overflow-hidden")}>
+            <div className="border-b border-border/80 px-3 py-2 text-sm font-medium text-foreground">
+              Required DNS records
+            </div>
+            <div className="divide-y divide-border/70">
+              {recordRows.map((record, index) => (
+                <div
+                  key={`${record.type}-${record.name}-${record.value}-${index}`}
+                  className="grid gap-1 px-3 py-2 text-xs sm:grid-cols-[4.5rem_minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-3"
+                >
+                  <span className="font-medium text-foreground">{record.type}</span>
+                  <span className="break-all font-mono text-muted-foreground">{record.name}</span>
+                  <span className="break-all font-mono text-foreground">{record.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {showCheckDetails && (
@@ -261,14 +341,14 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
             )}
           </div>
         )}
-        {visibleData.instructions && (
+        {instructions && (
           <p
             className={cn(
               INSET_SURFACE,
               "whitespace-pre-wrap p-3 font-mono text-xs break-all",
             )}
           >
-            {data.instructions}
+            {instructions}
           </p>
         )}
         {verifyError && (
