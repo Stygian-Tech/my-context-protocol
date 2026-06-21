@@ -61,3 +61,7 @@ The workflow detects changes with `scripts/ci-detect-changes.sh`, runs the Bun/T
 ## History
 
 The backend retains the original repo history. The frontend was merged in via `git subtree` from `Stygian-Tech/my-context-protocol-frontend@dev`; that repo is archival after cutover.
+
+## License
+
+This repository is released under the [MIT License](LICENSE).

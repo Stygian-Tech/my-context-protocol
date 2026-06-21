@@ -14,7 +14,7 @@ Dashboard for **MyContextProtocol**—a hosted MCP endpoint that syncs SKILL.md 
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (v1.3.6; see repo-root `.bun-version`). Install from the repository root so Bun workspaces use the root `bun.lock`.
+- [Bun](https://bun.sh) (v1.3.7; see repo-root `.bun-version`). Install from the repository root so Bun workspaces use the root `bun.lock`.
 
 ## Getting Started
 
@@ -114,3 +114,7 @@ For the backend API contract, see [`../../packages/mycontext-api-contract/BACKEN
 | `bun run start`| Start production server  |
 | `bun run lint` | Run ESLint               |
 | `bun run typecheck` | TypeScript check   |
+
+## License
+
+This workspace is part of MyContextProtocol and is released under the repository [MIT License](../../LICENSE).

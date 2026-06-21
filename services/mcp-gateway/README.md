@@ -101,7 +101,13 @@ fly secrets set \
 Use the value Fly shows for `TXT _fly-ownership.<hostname>` when running `fly certs setup <hostname>`.
 The dashboard includes that ownership TXT record in the tenant DNS validation flow before requesting a Fly certificate.
 
-Without these runtime secrets, a tenant CNAME can route to Fly but TLS for that custom hostname will fail before Vapor sees the request.
+Tenant DNS setup uses two TXT records plus one routing option:
+
+- `TXT _mcp-verify.<hostname>` proves project ownership to MyContextProtocol.
+- `TXT _fly-ownership.<hostname>` proves hostname ownership to Fly so the gateway can provision an edge certificate.
+- Routing can use either Fly-provided A/AAAA records or the Fly-provided CNAME target. Do not configure A/AAAA and CNAME records for the same hostname; DNS providers reject that combination.
+
+Without these runtime secrets, tenant DNS can route to Fly, but TLS for that custom hostname will fail before Vapor sees the request.
 
 Verified custom domains remain stored when an account loses Pro, but runtime routing requires current Pro entitlement. Routing resumes automatically after the account regains Pro access.
 
@@ -140,3 +146,7 @@ Common startup failures:
 ## Internal Docs Boundary
 
 Product specs and the MCP agent guide live in the team’s internal workspace. Do not add Notion URLs or the internal MCP agent guide to this open-source repo without an explicit request.
+
+## License
+
+This service is part of MyContextProtocol and is released under the repository [MIT License](../../LICENSE).
