@@ -4,6 +4,12 @@ import Vapor
 
 /// Minimal Stripe REST client (Checkout + Customers). No extra SDK dependency.
 enum StripeClient {
+    private static let formAllowedCharacters: CharacterSet = {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+")
+        return allowed
+    }()
+
     private static func secretKey(req: Request) throws -> String {
         guard let key = Environment.get("STRIPE_SECRET_KEY"), !key.isEmpty else {
             throw Abort(.serviceUnavailable, reason: "Stripe is not configured")
@@ -17,17 +23,25 @@ enum StripeClient {
         return buf
     }
 
+    private static func formPair(_ name: String, _ value: String) -> String {
+        "\(formEncode(name))=\(formEncode(value))"
+    }
+
+    static func formEncode(_ raw: String) -> String {
+        raw.addingPercentEncoding(withAllowedCharacters: formAllowedCharacters) ?? ""
+    }
+
     static func createCustomer(account: Account, client: Client, req: Request) async throws -> String {
         if let existing = account.stripeCustomerId, !existing.isEmpty {
             return existing
         }
         let key = try secretKey(req: req)
-        var form = "metadata[account_id]=\(account.id!.uuidString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+        var form = formPair("metadata[account_id]", account.id!.uuidString)
         if !account.login.isEmpty {
-            form += "&name=\(account.login.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+            form += "&" + formPair("name", account.login)
         }
         if let email = account.email, !email.isEmpty {
-            form += "&email=\(email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+            form += "&" + formPair("email", email)
         }
         let response = try await client.post(URI(string: "https://api.stripe.com/v1/customers")) { out in
             out.headers.add(name: "Authorization", value: "Bearer \(key)")
@@ -59,14 +73,14 @@ enum StripeClient {
         let key = try secretKey(req: req)
         let parts: [String] = [
             "mode=subscription",
-            "customer=\(customerId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? customerId)",
-            "line_items[0][price]=\(priceId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? priceId)",
+            formPair("customer", customerId),
+            formPair("line_items[0][price]", priceId),
             "line_items[0][quantity]=1",
-            "success_url=\(successURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? successURL)",
-            "cancel_url=\(cancelURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cancelURL)",
-            "client_reference_id=\(accountId.uuidString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")",
-            "metadata[account_id]=\(accountId.uuidString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")",
-            "subscription_data[metadata][account_id]=\(accountId.uuidString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")",
+            formPair("success_url", successURL),
+            formPair("cancel_url", cancelURL),
+            formPair("client_reference_id", accountId.uuidString),
+            formPair("metadata[account_id]", accountId.uuidString),
+            formPair("subscription_data[metadata][account_id]", accountId.uuidString),
         ]
         let body = parts.joined(separator: "&")
         let response = try await client.post(URI(string: "https://api.stripe.com/v1/checkout/sessions")) { out in
@@ -91,8 +105,8 @@ enum StripeClient {
     ) async throws -> String {
         let key = try secretKey(req: req)
         let form = [
-            "customer=\(customerId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? customerId)",
-            "return_url=\(returnURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? returnURL)",
+            formPair("customer", customerId),
+            formPair("return_url", returnURL),
         ].joined(separator: "&")
         let response = try await client.post(URI(string: "https://api.stripe.com/v1/billing_portal/sessions")) { out in
             out.headers.add(name: "Authorization", value: "Bearer \(key)")

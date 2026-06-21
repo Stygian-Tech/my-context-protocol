@@ -19,8 +19,19 @@ final class GitHubTarballRedirectDelegate: NSObject, URLSessionTaskDelegate {
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
+        guard let url = request.url,
+              url.scheme?.lowercased() == "https",
+              Self.allowedRedirectHosts.contains(url.host?.lowercased() ?? "") else {
+            completionHandler(nil)
+            return
+        }
         var req = request
         req.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         completionHandler(req)
     }
+
+    private static let allowedRedirectHosts: Set<String> = [
+        "api.github.com",
+        "codeload.github.com",
+    ]
 }

@@ -1,5 +1,6 @@
 import Fluent
 import Foundation
+import SQLKit
 import Vapor
 
 enum OAuthHandoffService {
@@ -27,6 +28,15 @@ enum OAuthHandoffService {
 
     /// Returns account id if token was valid (and deletes the row).
     static func consume(_ token: String, on db: Database) async throws -> UUID? {
+        if let sql = db as? any SQLDatabase {
+            let row = try await sql.delete(from: OAuthHandoffToken.schema)
+                .where(SQLColumn("token"), .equal, SQLBind(token))
+                .where(SQLColumn("expires_at"), .greaterThan, SQLBind(Date()))
+                .returning(SQLColumn("account_id"))
+                .first()
+            return try row?.decode(column: "account_id", as: UUID.self)
+        }
+
         guard let row = try await OAuthHandoffToken.query(on: db).filter(\.$token == token).first() else {
             return nil
         }

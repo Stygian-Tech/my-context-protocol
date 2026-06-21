@@ -411,6 +411,45 @@ struct McpOAuthTests {
         }
     }
 
+    @Test("Dynamic client registration rejects unsafe redirect URIs")
+    func dynamicClientRegistrationRejectsUnsafeRedirectUris() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_014, login: "unsafe-dcr", email: "unsafe-dcr@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Unsafe DCR", slug: "unsafe-dcr", subdomain: "unsafedcr")
+            try await project.save(on: app.db)
+
+            for redirectUri in [
+                "myapp://callback",
+                "http://evil.example/callback",
+                "https://claude.ai/api/mcp/auth_callback#fragment",
+            ] {
+                let body = """
+                {"redirect_uris":["\(redirectUri)"],"client_name":"Claude","grant_types":["authorization_code"],"response_types":["code"],"token_endpoint_auth_method":"none"}
+                """
+                try await app.testing().test(
+                    .POST,
+                    "/register",
+                    body: ByteBuffer(string: body),
+                    beforeRequest: { req in
+                        req.headers.replaceOrAdd(name: .host, value: "unsafedcr.mcp.oauth.test")
+                        req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+                    },
+                    afterResponse: { res in
+                        #expect(res.status == .badRequest, "redirect_uri \(redirectUri) status=\(res.status) body=\(res.body.string)")
+                    }
+                )
+            }
+        }
+    }
+
     @Test("Claude DCR tolerates refresh_token grant for public registration")
     func claudeRegistrationToleratesRefreshTokenGrantRequest() async throws {
         try await withMcpOAuthApp(env: [
@@ -610,6 +649,50 @@ struct McpOAuthTests {
             )
         }
     }
+
+    @Test("Authorize rejects legacy global OAuth clients on tenant hosts")
+    func authorizeRejectsLegacyGlobalOAuthClients() async throws {
+        try await withMcpOAuthApp(env: [
+            "USE_SQLITE": "1",
+            "MCP_OAUTH_ENABLED": "1",
+            "SAAS_MCP_BASE_DOMAIN": "mcp.oauth.test",
+            "FRONTEND_URL": "http://localhost:3000",
+            "DATABASE_URL": nil,
+            "SUPABASE_DB_URL": nil,
+        ]) { app in
+            let account = Account(githubId: 900_015, login: "global-client", email: "global-client@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Global Client", slug: "global-client", subdomain: "globalclient")
+            try await project.save(on: app.db)
+
+            let redirectUri = "http://localhost:49155/callback"
+            let client = McpOAuthClient(
+                publicClientId: "legacy-global-client",
+                isConfidential: false,
+                redirectUrisJson: String(data: try JSONEncoder().encode([redirectUri]), encoding: .utf8)!,
+                allowedGrants: "authorization_code",
+                status: "active",
+                projectId: nil
+            )
+            try await client.save(on: app.db)
+
+            let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+            let challenge = pkceChallenge(verifier)
+            let authorizePath = "/authorize?response_type=code&client_id=\(urlEncode(client.publicClientId))&redirect_uri=\(urlEncode(redirectUri))&state=state-global&scope=\(urlEncode(McpOAuthConstants.defaultScope))&code_challenge=\(urlEncode(challenge))&code_challenge_method=S256"
+
+            try await app.testing().test(
+                .GET,
+                authorizePath,
+                beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: .host, value: "globalclient.mcp.oauth.test")
+                },
+                afterResponse: { res in
+                    #expect(res.status == .badRequest)
+                    #expect(res.headers.first(name: .location) == nil)
+                }
+            )
+        }
+    }
 }
 
 private struct TestRegistrationResponse: Decodable {
@@ -757,6 +840,24 @@ private func runClaudeAuthorizationCodeFlow(
                 accessToken = token.access_token
                 #expect(token.token_type == "Bearer")
                 #expect(token.scope == McpOAuthConstants.defaultScope)
+            }
+        )
+
+        try await app.testing().test(
+            .POST,
+            "/token",
+            body: ByteBuffer(string: tokenForm),
+            beforeRequest: { req in
+                req.headers.replaceOrAdd(name: .host, value: host)
+                req.headers.replaceOrAdd(name: .contentType, value: "application/x-www-form-urlencoded")
+                if let forwardedProto {
+                    req.headers.replaceOrAdd(name: "X-Forwarded-Proto", value: forwardedProto)
+                }
+            },
+            afterResponse: { res in
+                #expect(res.status == .badRequest, "code reuse status=\(res.status) body=\(res.body.string)")
+                let error = try res.content.decode(OAuthTokenError.self)
+                #expect(error.error == "invalid_grant")
             }
         )
 

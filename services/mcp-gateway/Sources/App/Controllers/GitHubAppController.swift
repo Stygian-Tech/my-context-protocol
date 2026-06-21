@@ -345,6 +345,17 @@ enum GitHubAppController {
         guard let installationId = installationIdOpt else {
             return try redirectError("missing_installation_id")
         }
+        guard try await installationBelongsToSessionAccount(
+            installationId: installationId,
+            account: account,
+            req: req
+        ) else {
+            req.logger.warning("GitHub App install rejected: installation_id does not belong to session GitHub account")
+            if let intent = dbIntentToFinalize {
+                try await intent.delete(on: req.db)
+            }
+            return try redirectError("installation_account_mismatch")
+        }
 
         guard let project = try await Project.query(on: req.db)
             .filter(\.$id == projectId)
@@ -386,6 +397,20 @@ enum GitHubAppController {
         clearInstallSessionKeys(req)
 
         return req.redirect(to: success, redirectType: .normal)
+    }
+
+    private static func installationBelongsToSessionAccount(
+        installationId: Int64,
+        account: Account,
+        req: Request
+    ) async throws -> Bool {
+        let gh = try await GitHubAppInstallationTokenService.fetchInstallation(
+            installationId: installationId,
+            client: req.client,
+            logger: req.logger,
+            db: req.db
+        )
+        return gh.accountType == "User" && gh.accountId == account.githubId
     }
 
     /// `code` from GitHub App user OAuth (install with authorization), if present.

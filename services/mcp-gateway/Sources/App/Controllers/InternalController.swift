@@ -8,12 +8,20 @@ struct InternalController {
     ///
     /// Returns 200 if Caddy should provision a TLS certificate for `domain`, 422 otherwise.
     /// Two classes of domain are allowed:
-    ///   1. Any subdomain of `SAAS_MCP_BASE_DOMAIN` (e.g. `abc123.mcp.example.dev`)
+    ///   1. Allocated, non-suspended project subdomains of `SAAS_MCP_BASE_DOMAIN`
     ///   2. A verified custom domain stored in the `projects` table
     ///
-    /// Caddy calls this from localhost before completing a TLS handshake, so no auth is required.
-    /// The endpoint returns no sensitive data — only a status code.
+    /// Caddy normally calls this from localhost before completing a TLS handshake. Configure
+    /// `INTERNAL_TLS_ASK_SECRET` if this route can be reached by anything else.
     static func verifyForTls(req: Request) async throws -> Response {
+        if let expected = Environment.get("INTERNAL_TLS_ASK_SECRET")?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !expected.isEmpty {
+            let actual = req.headers.first(name: "X-Internal-TLS-Ask-Secret")?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard actual == expected else {
+                return Response(status: .unauthorized)
+            }
+        }
         guard let domain = req.query[String.self, at: "domain"],
               !domain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return Response(status: .unprocessableEntity)
@@ -22,10 +30,17 @@ struct InternalController {
             return Response(status: .unprocessableEntity)
         }
 
-        // Allow any subdomain of the MCP base domain.
+        // Allow allocated project subdomains of the MCP base domain.
         if let rawBase = Environment.get("SAAS_MCP_BASE_DOMAIN")?
             .trimmingCharacters(in: .whitespacesAndNewlines), !rawBase.isEmpty {
-            if host.hasSuffix("." + McpUrlBuilder.normalizedBaseDomain(rawBase)) {
+            let base = McpUrlBuilder.normalizedBaseDomain(rawBase)
+            if host.hasSuffix("." + base) {
+                let prefix = String(host.dropLast(base.count + 1))
+                guard !prefix.isEmpty,
+                      let project = try await Project.query(on: req.db).filter(\.$subdomain == prefix).first(),
+                      project.suspendedAt == nil else {
+                    return Response(status: .unprocessableEntity)
+                }
                 return Response(status: .ok)
             }
         }

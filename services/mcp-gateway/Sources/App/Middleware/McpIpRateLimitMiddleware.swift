@@ -56,13 +56,36 @@ final class McpIpRateLimitMiddleware: AsyncMiddleware, @unchecked Sendable {
 
     private func clientKey(for request: Request) -> String {
         if trustXForwardedFor,
+           Self.isTrustedForwardingPeer(request.remoteAddress?.ipAddress),
            let xff = request.headers.first(name: "X-Forwarded-For"),
            let first = xff.split(separator: ",").first {
             return String(first).trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        if let ip = request.peerAddress?.ipAddress {
+        if let ip = request.remoteAddress?.ipAddress {
             return ip
         }
-        return request.peerAddress?.description ?? "unknown"
+        return request.remoteAddress?.description ?? "unknown"
+    }
+
+    private static func isTrustedForwardingPeer(_ ip: String?) -> Bool {
+        guard let ip = ip?.trimmingCharacters(in: .whitespacesAndNewlines), !ip.isEmpty else {
+            return false
+        }
+        if ip == "::1" || ip == "127.0.0.1" || ip.hasPrefix("127.") {
+            return true
+        }
+        if ip.hasPrefix("10.") || ip.hasPrefix("192.168.") {
+            return true
+        }
+        if ip.hasPrefix("172.") {
+            let parts = ip.split(separator: ".")
+            if parts.count >= 2, let second = Int(parts[1]), (16...31).contains(second) {
+                return true
+            }
+        }
+        if ip.hasPrefix("fc") || ip.hasPrefix("fd") || ip.hasPrefix("fe80:") {
+            return true
+        }
+        return false
     }
 }

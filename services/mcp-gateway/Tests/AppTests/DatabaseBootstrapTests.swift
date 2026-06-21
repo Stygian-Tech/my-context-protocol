@@ -129,6 +129,31 @@ struct DatabaseBootstrapTests {
         #expect(p.hostname == "explicit.host")
         }
     }
+
+    @Test("production rejects disabled Postgres certificate verification")
+    func prodRejectsInsecurePostgresTLS() throws {
+        #expect(throws: DatabaseBootstrapError.insecurePostgresTLSInProduction) {
+            try DatabaseBootstrap.assertInsecurePostgresTLSAllowed(true, deployKind: .prod)
+        }
+
+        try DatabaseBootstrap.assertInsecurePostgresTLSAllowed(false, deployKind: .prod)
+        try DatabaseBootstrap.assertInsecurePostgresTLSAllowed(true, deployKind: .dev)
+        try DatabaseBootstrap.assertInsecurePostgresTLSAllowed(true, deployKind: .local)
+    }
+
+    @Test("production rejects loopback Postgres URL hosts")
+    func prodRejectsLoopbackPostgresURLHosts() throws {
+        try TestProcessEnvGate.runSync {
+        let previous = AppEnvironment._testOverrideAppEnv
+        AppEnvironment._testOverrideAppEnv = "prod"
+        defer { AppEnvironment._testOverrideAppEnv = previous }
+
+        #expect(throws: DatabaseBootstrapError.loopbackPostgresHostInDeployedAppEnv(host: "127.0.0.1")) {
+            try DatabaseBootstrap.assertPostgresConnectionURLHostAllowedIfResolvable("postgres://u:p@127.0.0.1:5432/db")
+        }
+        try DatabaseBootstrap.assertPostgresConnectionURLHostAllowedIfResolvable("postgres://u:p@db.example.com:5432/db")
+        }
+    }
 }
 
 private func temporaryEnv(_ overrides: [String: String?]) -> (() -> Void, () -> Void) {

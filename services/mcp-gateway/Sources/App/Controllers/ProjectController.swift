@@ -451,6 +451,11 @@ struct ProjectController {
         }
         let body = try req.content.decode(ConnectBody.self)
         let branch = body.branch ?? "main"
+        guard RepoFetcher.isValidGitHubOwnerOrRepo(body.owner),
+              RepoFetcher.isValidGitHubOwnerOrRepo(body.repo),
+              RepoFetcher.isValidGitHubRef(branch) else {
+            throw Abort(.badRequest, reason: "Invalid GitHub repository owner, name, or branch")
+        }
 
         guard let encrypted = account.githubTokenEncrypted,
               let token = try? TokenEncryption.decrypt(encrypted), !token.isEmpty else {

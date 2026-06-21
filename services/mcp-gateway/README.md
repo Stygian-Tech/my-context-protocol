@@ -67,6 +67,8 @@ fly secrets set \
   --app my-context-protocol-dev-mcp-gateway
 ```
 
+`DATABASE_INSECURE_TLS=1` is for dev only. Production rejects disabled Postgres certificate verification.
+
 `GITHUB_OAUTH_REDIRECT_URI` is **only** for dashboard GitHub login (`/auth/github/callback`). Do not point it at `/auth/github/app/callback` — that path is for GitHub App installation and uses `GITHUB_APP_SETUP_CALLBACK_URL` instead. If login OAuth is sent to the app callback, users return to the frontend with `github_app_error=invalid_state` and `/auth/me` stays 401.
 
 Include GitHub App, Stripe, SaaS MCP host, and admin/pro bypass secrets as needed from `.env.example`.
@@ -136,7 +138,7 @@ fly logs -a my-context-protocol-dev-gateway
 
 Common startup failures:
 
-- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — set `DATABASE_INSECURE_TLS=1` (already in `fly.toml` `[env]` for dev; can also set as a secret). Use proper CA trust for production instead of skipping verification.
+- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — for dev only, deploys can set `DATABASE_INSECURE_TLS=1`. Production rejects disabled certificate verification; use proper CA trust or a verified managed-Postgres connection string.
 - **Missing database config** — `APP_ENV=dev` requires `DATABASE_URL` or `SUPABASE_DB_URL` (or all discrete `DATABASE_*` fields). `USE_SQLITE=1` is for local file SQLite only, not Fly.
 
 ## Docker / Compose
