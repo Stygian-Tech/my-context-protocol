@@ -1,4 +1,5 @@
 import Foundation
+import NIOSSL
 import Testing
 @testable import App
 
@@ -141,6 +142,82 @@ struct DatabaseBootstrapTests {
         try DatabaseBootstrap.assertInsecurePostgresTLSAllowed(true, deployKind: .local)
     }
 
+    @Test("verified Postgres TLS accepts PEM CA from env")
+    func verifiedPostgresTLSAcceptsPEMCAFromEnv() throws {
+        try TestProcessEnvGate.runSync {
+        let escapedPEM = postgresTestCertificatePEM.replacingOccurrences(of: "\n", with: "\\n")
+        let (apply, restore) = temporaryEnv([
+            "DATABASE_SSLROOTCERT": nil,
+            "DATABASE_SSLROOTCERT_PEM": escapedPEM,
+            "DATABASE_SSLROOTCERT_BASE64": nil,
+        ])
+        apply()
+        defer { restore() }
+
+        let roots = try DatabaseBootstrap.postgresAdditionalTrustRoots()
+        #expect(roots.count == 1)
+        _ = try DatabaseBootstrap.verifiedPostgresSSLContext()
+        }
+    }
+
+    @Test("verified Postgres TLS accepts base64 PEM CA from env")
+    func verifiedPostgresTLSAcceptsBase64PEMCAFromEnv() throws {
+        try TestProcessEnvGate.runSync {
+        let encodedPEM = Data(postgresTestCertificatePEM.utf8).base64EncodedString()
+        let (apply, restore) = temporaryEnv([
+            "DATABASE_SSLROOTCERT": nil,
+            "DATABASE_SSLROOTCERT_PEM": nil,
+            "DATABASE_SSLROOTCERT_BASE64": encodedPEM,
+        ])
+        apply()
+        defer { restore() }
+
+        let roots = try DatabaseBootstrap.postgresAdditionalTrustRoots()
+        #expect(roots.count == 1)
+        _ = try DatabaseBootstrap.verifiedPostgresSSLContext()
+        }
+    }
+
+    @Test("verified Postgres TLS accepts sslrootcert from URL")
+    func verifiedPostgresTLSAcceptsSSLRootCertURLParameter() throws {
+        try TestProcessEnvGate.runSync {
+        let (apply, restore) = temporaryEnv([
+            "DATABASE_SSLROOTCERT": nil,
+            "DATABASE_SSLROOTCERT_PEM": nil,
+            "DATABASE_SSLROOTCERT_BASE64": nil,
+        ])
+        apply()
+        defer { restore() }
+
+        let roots = try DatabaseBootstrap.postgresAdditionalTrustRoots(
+            connectionURL: "postgres://user:pass@db.example.com:5432/postgres?sslmode=require&sslrootcert=/etc/ssl/certs/supabase-ca.pem"
+        )
+        #expect(roots.count == 1)
+        if case .file(let path) = roots[0] {
+            #expect(path == "/etc/ssl/certs/supabase-ca.pem")
+        } else {
+            Issue.record("Expected sslrootcert to load as a file trust root")
+        }
+        }
+    }
+
+    @Test("verified Postgres TLS rejects invalid base64 CA env")
+    func verifiedPostgresTLSRejectsInvalidBase64CAFromEnv() throws {
+        TestProcessEnvGate.runSync {
+        let (apply, restore) = temporaryEnv([
+            "DATABASE_SSLROOTCERT": nil,
+            "DATABASE_SSLROOTCERT_PEM": nil,
+            "DATABASE_SSLROOTCERT_BASE64": "not base64",
+        ])
+        apply()
+        defer { restore() }
+
+        #expect(throws: DatabaseBootstrapError.invalidPostgresTLSRoot(reason: "DATABASE_SSLROOTCERT_BASE64 is not valid base64")) {
+            try DatabaseBootstrap.postgresAdditionalTrustRoots()
+        }
+        }
+    }
+
     @Test("production rejects loopback Postgres URL hosts")
     func prodRejectsLoopbackPostgresURLHosts() throws {
         try TestProcessEnvGate.runSync {
@@ -181,3 +258,25 @@ private func temporaryEnv(_ overrides: [String: String?]) -> (() -> Void, () -> 
     }
     return (apply, restore)
 }
+
+private let postgresTestCertificatePEM = """
+-----BEGIN CERTIFICATE-----
+MIIDEzCCAfugAwIBAgIURiMaUmhI1Xr0mZ4p+JmI0XjZTaIwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTE3MTAzMDEyMDUwMFoXDTQwMDEw
+MTAwMDAwMFowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEA26DcKAxqdWivhS/J3Klf+cEnrT2cDzLhmVRCHuQZXiIr
+tqr5401KDbRTVOg8v2qIyd8x4+YbpE47JP3fBrcMey70UK/Er8nu28RY3z7gZLLi
+Yf+obHdDFCK5JaCGmM61I0c0vp7aMXsyv7h3vjEzTuBMlKR8p37ftaXSUAe3Qk/D
+/fzA3k02E2e3ap0Sapd/wUu/0n/MFyy9HkkeykivAzLaaFhhvp3hATdFYC4FLld8
+OMB60bC2S13CAljpMlpjU/XLLOUbaPgnNUqE1nFqFBoTl6kV6+ii8Dd5ENVvE7pE
+SoNoyGLDUkDRJJMNUHAo0zbxyhd7WOtyZ7B4YBbPswIDAQABo10wWzBLBgNVHREE
+RDBCgglsb2NhbGhvc3SCC2V4YW1wbGUuY29tgRB1c2VyQGV4YW1wbGUuY29thwTA
+qAABhxAgAQ24AAAAAAAAAAAAAAABMAwGA1UdEwEB/wQCMAAwDQYJKoZIhvcNAQEL
+BQADggEBACYBArIoL9ZzVX3M+WmTD5epmGEffrH7diRJZsfpVXi86brBPrbvpTBx
+Fa+ZKxBAchPnWn4rxoWVJmTm4WYqZljek7oQKzidu88rMTbsxHA+/qyVPVlQ898I
+hgnW4h3FFapKOFqq5Hj2gKKItFIcGoVY2oLTBFkyfAx0ofromGQp3fh58KlPhC0W
+GX1nFCea74mGyq60X86aEWiyecYYj5AEcaDrTnGg3HLGTsD3mh8SUZPAda13rO4+
+RGtGsA1C9Yovlu9a6pWLgephYJ73XYPmRIGgM64fkUbSuvXNJMYbWnzpoCdW6hka
+IEaDUul/WnIkn/JZx8n+wgoWtyQa4EA=
+-----END CERTIFICATE-----
+"""

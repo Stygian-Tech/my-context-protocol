@@ -12,13 +12,6 @@ private func isTruthyEnv(_ key: String) -> Bool {
     return v == "1" || v == "true" || v == "yes"
 }
 
-private func postgresConfigurationWithVerifiedTLS(url: String) throws -> SQLPostgresConfiguration {
-    var config = try SQLPostgresConfiguration(url: url)
-    let tlsConfig = TLSConfiguration.makeClientConfiguration()
-    config.coreConfiguration.tls = .require(try NIOSSLContext(configuration: tlsConfig))
-    return config
-}
-
 public func configure(_ app: Application) async throws {
     // Non-production: default root log level to `.debug` so MCP handler traces (`mcpTrace`) are visible unless LOG_LEVEL is set.
     if AppEnvironment.isNonProduction {
@@ -142,8 +135,10 @@ public func configure(_ app: Application) async throws {
             config.coreConfiguration.tls = .require(try NIOSSLContext(configuration: tlsConfig))
             app.databases.use(.postgres(configuration: config, sqlLogLevel: sqlPostgresLevel), as: .psql)
         } else if deploy == .prod {
+            var config = try SQLPostgresConfiguration(url: databaseURL)
+            config.coreConfiguration.tls = .require(try DatabaseBootstrap.verifiedPostgresSSLContext(connectionURL: databaseURL))
             app.databases.use(
-                .postgres(configuration: try postgresConfigurationWithVerifiedTLS(url: databaseURL), sqlLogLevel: sqlPostgresLevel),
+                .postgres(configuration: config, sqlLogLevel: sqlPostgresLevel),
                 as: .psql
             )
         } else {
@@ -152,8 +147,10 @@ public func configure(_ app: Application) async throws {
     } else if let url = Environment.get("SUPABASE_DB_URL"), !url.isEmpty {
         try DatabaseBootstrap.assertPostgresConnectionURLHostAllowedIfResolvable(url)
         if deploy == .prod {
+            var config = try SQLPostgresConfiguration(url: url)
+            config.coreConfiguration.tls = .require(try DatabaseBootstrap.verifiedPostgresSSLContext(connectionURL: url))
             app.databases.use(
-                .postgres(configuration: try postgresConfigurationWithVerifiedTLS(url: url), sqlLogLevel: sqlPostgresLevel),
+                .postgres(configuration: config, sqlLogLevel: sqlPostgresLevel),
                 as: .psql
             )
         } else {
@@ -172,14 +169,13 @@ public func configure(_ app: Application) async throws {
         }
         let pgConfig: SQLPostgresConfiguration
         if deploy == .prod {
-            let tlsConfig = TLSConfiguration.makeClientConfiguration()
             pgConfig = SQLPostgresConfiguration(
                 hostname: params.hostname,
                 port: params.port,
                 username: params.username,
                 password: params.password,
                 database: params.database,
-                tls: .require(try NIOSSLContext(configuration: tlsConfig))
+                tls: .require(try DatabaseBootstrap.verifiedPostgresSSLContext())
             )
         } else {
             pgConfig = SQLPostgresConfiguration(

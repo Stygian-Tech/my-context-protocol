@@ -138,7 +138,7 @@ fly logs -a my-context-protocol-dev-gateway
 
 Common startup failures:
 
-- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — for dev only, deploys can set `DATABASE_INSECURE_TLS=1`. Production rejects disabled certificate verification; use proper CA trust or a verified managed-Postgres connection string.
+- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — for dev only, deploys can set `DATABASE_INSECURE_TLS=1`. Production rejects disabled certificate verification. For Supabase or another managed Postgres provider whose CA is not in the container OS trust store, download the provider database CA bundle and set it as a secret using one of `DATABASE_SSLROOTCERT_PEM`, `DATABASE_SSLROOTCERT_BASE64`, or a file path in `DATABASE_SSLROOTCERT` / URL `sslrootcert=/path`; verification and hostname checks stay enabled.
 - **Missing database config** — `APP_ENV=dev` requires `DATABASE_URL` or `SUPABASE_DB_URL` (or all discrete `DATABASE_*` fields). `USE_SQLITE=1` is for local file SQLite only, not Fly.
 
 ## Docker / Compose
