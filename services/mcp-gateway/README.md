@@ -128,6 +128,14 @@ bash scripts/fly-deploy-mcp-gateway.sh dev
 
 GitHub Actions uses the root script and expects `FLY_API_TOKEN`, plus optional `FLY_MCP_GATEWAY_APP_DEV`, `FLY_MCP_GATEWAY_APP_PROD`, and `FLY_ORG` secrets.
 
+For production Supabase deploys, add a GitHub Actions secret named `SUPABASE_CA_PEM_BASE64` containing the base64-encoded Supabase server root certificate:
+
+```bash
+base64 -i supabase-ca.pem | tr -d '\n'
+```
+
+On `main` deploys, CI stages that value into Fly as the runtime secret `DATABASE_SSLROOTCERT_BASE64` before `fly deploy`; the app decodes it in memory and keeps Postgres certificate and hostname verification enabled.
+
 ### Troubleshooting
 
 If Fly reports the app is not listening on `0.0.0.0:8080`, check machine logs:

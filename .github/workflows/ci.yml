@@ -77,4 +77,5 @@ jobs:
           FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_MCP_GATEWAY_APP_DEV: ${{ secrets.FLY_MCP_GATEWAY_APP_DEV }}
           FLY_MCP_GATEWAY_APP_PROD: ${{ secrets.FLY_MCP_GATEWAY_APP_PROD }}
+          SUPABASE_CA_PEM_BASE64: ${{ secrets.SUPABASE_CA_PEM_BASE64 }}
         run: bash scripts/fly-deploy-mcp-gateway.sh "${{ github.ref_name }}"
