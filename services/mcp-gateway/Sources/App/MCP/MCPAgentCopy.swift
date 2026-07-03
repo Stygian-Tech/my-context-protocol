@@ -34,7 +34,8 @@ enum MCPAgentCopy {
     static func initializeInstructions(projectName: String, projectDashboardURL: String?) -> String {
         var lines: [String] = [
             "You are connected to MyContextProtocol project \"\(projectName)\".",
-            "Discovery: call tool `\(MCPConstants.catalogToolName)` first for a markdown overview of tools, resources, and prompts.",
+            "Discovery: before choosing project-specific skills, call tool `\(MCPConstants.catalogToolName)` with the current user task (`mode=route`, `task=...`) to rank relevant skills across tools, resources, and prompts.",
+            "To load any full SKILL.md body through the tool path, call `\(MCPConstants.catalogToolName)` with `mode=skill` and `skill=<slug-or-uri>`.",
             "Compiled tools and prompts use the SKILL.md package slug as the MCP name (no `skill:` prefix).",
             "Prefer tools for callable procedures; use resources for long markdown context (`resources/read` with `ctx://skill/...` URIs); prompts expose reusable guidance templates.",
         ]

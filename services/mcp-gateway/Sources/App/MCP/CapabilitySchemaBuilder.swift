@@ -45,6 +45,37 @@ enum CapabilitySchemaBuilder {
         return #"{"type":"object","properties":{}}"#
     }
 
+    static func catalogToolInputSchemaJson() -> String {
+        let payload = ToolSchemaPayload(
+            type: "object",
+            properties: [
+                "mode": .init(
+                    type: "string",
+                    description: "Optional catalog mode: overview, route, or skill. Defaults to overview; task implies route and skill implies skill."
+                ),
+                "task": .init(
+                    type: "string",
+                    description: "Current user task. In route mode, the catalog ranks relevant skills and returns exact next MCP actions."
+                ),
+                "skill": .init(
+                    type: "string",
+                    description: "Skill slug, capability name, path, or ctx://skill/... URI. In skill mode, returns the full SKILL.md body."
+                ),
+                "limit": .init(
+                    type: "string",
+                    description: "Maximum route results to return. Defaults to 5."
+                )
+            ],
+            additionalProperties: false
+        )
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        if let data = try? enc.encode(payload), let s = String(data: data, encoding: .utf8) {
+            return s
+        }
+        return #"{"type":"object","properties":{}}"#
+    }
+
     private struct ToolSchemaPayload: Encodable {
         let type: String
         let properties: [String: Prop]

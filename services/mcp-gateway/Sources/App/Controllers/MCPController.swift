@@ -211,13 +211,10 @@ struct MCPController {
     }
 
     private static func syntheticCatalogTool() -> MCPTool {
-        let schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
-            description: "Returns a markdown overview of tools, resources, and prompts for this project.",
-            summary: nil
-        )
+        let schemaJson = CapabilitySchemaBuilder.catalogToolInputSchemaJson()
         return MCPTool(
             name: MCPConstants.catalogToolName,
-            description: "Overview of this project’s MCP catalog—call first when unsure which skill to use.",
+            description: "Primary skill discovery and routing tool. Call first with the current task before choosing project-specific skills; use mode=route to rank skills or mode=skill to load a full SKILL.md body.",
             inputSchema: InputSchema.fromCapabilitySchemaJson(schemaJson)
         )
     }

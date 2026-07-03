@@ -238,9 +238,198 @@ struct McpToolNamingTests {
         }
     }
 
+    @Test("mycontext_catalog routes across tools resources and prompts and can load full skill bodies")
+    func catalogRouteAndSkillModes() async throws {
+        try await withMcpToolNamingApp { app in
+            let account = Account(githubId: 920_003, login: "mcp-name-3", email: "m3@example.com")
+            try await account.save(on: app.db)
+            let project = Project(
+                accountId: account.id!,
+                name: "MCP Catalog Proj",
+                slug: "mcp-catalog-proj",
+                subdomain: "mcpcatsub"
+            )
+            try await project.save(on: app.db)
+
+            let rawKey = "mcp_testcatalogkey00000000000000"
+            let hashString = Self.sha256Hex(rawKey)
+            let keyRow = ApiKey(
+                projectId: project.id!,
+                name: "integration",
+                keyPrefix: String(rawKey.prefix(12)),
+                keyHash: hashString,
+                status: "active"
+            )
+            try await keyRow.save(on: app.db)
+
+            let release = Release(projectId: project.id!, commitSha: "catalog", status: "ready")
+            try await release.save(on: app.db)
+
+            try await Self.insertCatalogSkill(
+                release: release,
+                name: "frontend-debugging",
+                type: "tool",
+                summary: "Debug rendered frontend behavior",
+                body: "# Frontend Debugging\nUse browser screenshots and DOM inspection.",
+                useWhen: ["debugging frontend rendering problems"],
+                on: app.db
+            )
+            try await Self.insertCatalogSkill(
+                release: release,
+                name: "architecture-context",
+                type: "resource",
+                summary: "Architecture context for backend planning",
+                body: "# Architecture Context\nBackend architecture details live here.",
+                useWhen: ["planning backend architecture changes"],
+                on: app.db
+            )
+            try await Self.insertCatalogSkill(
+                release: release,
+                name: "review-guidance",
+                type: "prompt",
+                summary: "Review guidance for code changes",
+                body: "# Review Guidance\nPrioritize bugs and regressions.",
+                useWhen: ["reviewing code changes"],
+                on: app.db
+            )
+
+            project.activeReleaseId = release.id
+            try await project.save(on: app.db)
+
+            let overview = try await Self.postCatalogCall(argumentsJson: "{}", rawKey: rawKey, app: app)
+            #expect(overview.contains("# MCP catalog"))
+            #expect(overview.contains("frontend-debugging"))
+            #expect(overview.contains("architecture-context"))
+            #expect(overview.contains("review-guidance"))
+
+            let route = try await Self.postCatalogCall(
+                argumentsJson: #"{"mode":"route","task":"I need to plan backend architecture changes","limit":"3"}"#,
+                rawKey: rawKey,
+                app: app
+            )
+            #expect(route.contains("# MCP catalog route"))
+            #expect(route.contains("Architecture context"))
+            #expect(route.contains("resources/read ctx://skill/architecture-context"))
+            #expect(route.contains("tools/call mycontext_catalog"))
+            #expect(route.contains("prompts/get review-guidance"))
+            #expect(route.contains("tools/call frontend-debugging"))
+
+            let resourceSkill = try await Self.postCatalogCall(
+                argumentsJson: #"{"mode":"skill","skill":"ctx://skill/architecture-context"}"#,
+                rawKey: rawKey,
+                app: app
+            )
+            #expect(resourceSkill.contains("# Architecture Context"))
+            #expect(resourceSkill.contains("Exposure: resource"))
+            #expect(resourceSkill.contains("Backend architecture details live here."))
+
+            let promptSkill = try await Self.postCatalogCall(
+                argumentsJson: #"{"mode":"skill","skill":"review-guidance"}"#,
+                rawKey: rawKey,
+                app: app
+            )
+            #expect(promptSkill.contains("# Review Guidance"))
+            #expect(promptSkill.contains("Exposure: prompt"))
+            #expect(promptSkill.contains("Prioritize bugs and regressions."))
+
+            let catalogCalls = try await RequestLog.query(on: app.db)
+                .filter(\.$project.$id == project.id!)
+                .filter(\.$mcpCapabilityKind == "tool")
+                .filter(\.$mcpCapabilityKey == MCPConstants.catalogToolName)
+                .count()
+            #expect(catalogCalls >= 4)
+        }
+    }
+
     private static func sha256Hex(_ raw: String) -> String {
         let hash = SHA256.hash(data: Data(raw.utf8))
         return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func insertCatalogSkill(
+        release: Release,
+        name: String,
+        type: String,
+        summary: String,
+        body: String,
+        useWhen: [String],
+        on db: Database
+    ) async throws {
+        let pkg = SkillPackage(
+            releaseId: release.id!,
+            path: "skills/\(name)/SKILL.md",
+            name: name,
+            validationStatus: "valid"
+        )
+        try await pkg.save(on: db)
+        let compiled = CompiledSkill(
+            releaseId: release.id!,
+            skillPackageId: pkg.id!,
+            path: pkg.path,
+            name: name,
+            summary: summary,
+            skillBody: body,
+            exposureType: type,
+            riskLevel: "low",
+            repoSpecific: false,
+            status: "ready"
+        )
+        try await compiled.save(on: db)
+        let rule = RoutingRule(
+            compiledSkillId: compiled.id!,
+            useWhenJson: String(data: try JSONEncoder().encode(useWhen), encoding: .utf8),
+            avoidWhenJson: nil,
+            failureModesJson: nil,
+            invokeFirst: type == "resource"
+        )
+        try await rule.save(on: db)
+        let schemaJson: String
+        switch type {
+        case "resource":
+            schemaJson = CapabilitySchemaBuilder.resourceMetaJson(
+                skillName: name,
+                useWhen: useWhen,
+                avoidWhen: nil,
+                failureModes: nil,
+                invokeFirst: type == "resource"
+            )
+        case "prompt":
+            schemaJson = CapabilitySchemaBuilder.promptMetaJson()
+        default:
+            schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(description: summary, summary: summary)
+        }
+        let cap = CapabilityDef(
+            compiledSkillId: compiled.id!,
+            capabilityName: name,
+            type: type,
+            schemaJson: schemaJson,
+            sideEffectLevel: "read"
+        )
+        try await cap.save(on: db)
+    }
+
+    private static func postCatalogCall(
+        argumentsJson: String,
+        rawKey: String,
+        app: Application
+    ) async throws -> String {
+        let body =
+            #"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"mycontext_catalog","arguments":\#(argumentsJson)}}"#
+        var text = ""
+        try await app.testing().test(
+            .POST,
+            "/mcp",
+            body: ByteBuffer(string: body),
+            beforeRequest: { req in
+                req.headers.replaceOrAdd(name: "X-API-Key", value: rawKey)
+                req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+            },
+            afterResponse: { res in
+                #expect(res.status == .ok)
+                text = res.body.string
+            }
+        )
+        return text.replacingOccurrences(of: "\\/", with: "/")
     }
 }
 

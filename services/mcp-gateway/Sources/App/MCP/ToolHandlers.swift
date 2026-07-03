@@ -4,7 +4,7 @@ import Vapor
 struct ToolHandlers {
     static func handle(name: String, arguments: [String: String], db: Database, projectId: UUID) async throws -> String {
         if name == MCPConstants.catalogToolName {
-            return try await McpCatalogMarkdown.build(db: db, projectId: projectId)
+            return try await McpCatalogRouter.route(arguments: arguments, db: db, projectId: projectId)
         }
         // Legacy colon-prefixed names are no longer accepted on the wire.
         if name.contains(":") {
