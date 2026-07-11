@@ -341,9 +341,74 @@ struct McpToolNamingTests {
         }
     }
 
+    @Test("portable runtime tools resolve, retrieve, bind capabilities, discover events, and draft feedback")
+    func portableRuntimeTools() async throws {
+        try await withMcpToolNamingApp { app in
+            let account = Account(githubId: 920_004, login: "runtime", email: "runtime@example.com")
+            try await account.save(on: app.db)
+            let project = Project(accountId: account.id!, name: "Runtime", slug: "runtime", subdomain: "runtime")
+            try await project.save(on: app.db)
+            let rawKey = "mcp_testruntimekey000000000000000"
+            let key = ApiKey(projectId: project.id!, name: "runtime", keyPrefix: String(rawKey.prefix(12)), keyHash: Self.sha256Hex(rawKey), status: "active")
+            try await key.save(on: app.db)
+            let release = Release(projectId: project.id!, commitSha: "runtime-sha", status: "ready")
+            try await release.save(on: app.db)
+            let pkg = SkillPackage(releaseId: release.id!, path: "incidental/SKILL.md", name: "incidental-issues", validationStatus: "valid")
+            try await pkg.save(on: app.db)
+            let compiled = CompiledSkill(releaseId: release.id!, skillPackageId: pkg.id!, path: pkg.path, name: pkg.name,
+                summary: "Preserve follow-up issues", skillBody: "# Preserve issues", exposureType: "resource", riskLevel: "low", repoSpecific: false, status: "ready")
+            let document = CompiledSkillDocument(
+                schemaVersion: 1, id: pkg.name, name: pkg.name, description: "Preserve follow-up issues", kind: .operating,
+                scope: .workspace, activation: .init(mode: .event, intents: ["follow-up issue"], events: ["non_blocking_issue_discovered"], tags: [], examples: []),
+                enforcement: .required, priority: 80,
+                requires: [.init(capability: "issue.create", required: true, onMissing: .returnDraft)], conflictsWith: [],
+                instructions: "# Preserve issues", source: .init(repository: "stygian/skills", path: pkg.path, revision: "runtime-sha", checksum: "abc"),
+                version: "1.0.0", lifecycle: nil, validation: .init(clarificationRequired: false, missingFields: [], warnings: [])
+            )
+            compiled.skillId = document.id; compiled.kind = document.kind.rawValue; compiled.scope = document.scope.rawValue
+            compiled.activationMode = document.activation.mode.rawValue; compiled.enforcement = document.enforcement.rawValue
+            compiled.priority = document.priority; compiled.version = document.version; compiled.sourceChecksum = document.source.checksum
+            compiled.canonicalJson = SkillRuntimeJSON.encode(document); compiled.clarificationJson = "[]"; compiled.clarificationRequired = false
+            try await compiled.save(on: app.db)
+            project.activeReleaseId = release.id; try await project.save(on: app.db)
+
+            let inventory = #"[{"server":"linear","name":"create_issue","description":"Create issue","provider":"linear"}]"#
+            let resolved = try await Self.postRuntimeCall(name: "resolve_context", arguments: ["request": "preserve follow-up issue", "available_tools": inventory], rawKey: rawKey, app: app)
+            #expect(resolved.contains("incidental-issues"))
+            #expect(resolved.contains("create_issue"))
+            #expect(resolved.contains("capabilityBindings"))
+            let discovered = try await Self.postRuntimeCall(name: "discover_skills", arguments: ["query": "found unrelated bug", "event": "non_blocking_issue_discovered"], rawKey: rawKey, app: app)
+            #expect(discovered.contains("eventCanonical"))
+            #expect(discovered.contains("incidental-issues"))
+            let fetched = try await Self.postRuntimeCall(name: "get_skill", arguments: ["skill_id": "incidental-issues", "version": "1.0.0"], rawKey: rawKey, app: app)
+            #expect(fetched.contains("# Preserve issues"))
+            let capabilities = try await Self.postRuntimeCall(name: "list_capabilities", arguments: ["skill_id": "incidental-issues", "available_tools": inventory], rawKey: rawKey, app: app)
+            #expect(capabilities.contains("issue.create"))
+            let feedback = try await Self.postRuntimeCall(name: "report_skill_feedback", arguments: ["skill_id": "incidental-issues", "version": "1.0.0", "category": "missing_guidance", "summary": "Explain duplicate search"], rawKey: rawKey, app: app)
+            #expect(feedback.contains("effectStatus"))
+            #expect(feedback.contains("draft"))
+            #expect(try await SkillFeedbackRecord.query(on: app.db).count() == 1)
+        }
+    }
+
     private static func sha256Hex(_ raw: String) -> String {
         let hash = SHA256.hash(data: Data(raw.utf8))
         return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func postRuntimeCall(name: String, arguments: [String: String], rawKey: String, app: Application) async throws -> String {
+        let argumentsData = try JSONEncoder().encode(arguments)
+        let argumentsJson = String(data: argumentsData, encoding: .utf8)!
+        let body = #"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"\#(name)","arguments":\#(argumentsJson)}}"#
+        var result = ""
+        try await app.testing().test(.POST, "/mcp", body: ByteBuffer(string: body), beforeRequest: { req in
+            req.headers.replaceOrAdd(name: "X-API-Key", value: rawKey)
+            req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+        }, afterResponse: { response in
+            #expect(response.status == .ok)
+            result = response.body.string
+        })
+        return result
     }
 
     private static func insertCatalogSkill(

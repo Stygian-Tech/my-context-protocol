@@ -219,6 +219,23 @@ struct MCPController {
         )
     }
 
+    private static func runtimeTools() -> [MCPTool] {
+        let descriptions = [
+            "resolve_context": "Task bootstrap: returns ordered active and suggested skills, conflicts, provenance, capability bindings, and a resolution trace.",
+            "discover_skills": "Mid-task discovery for a new intent or event while preserving currently active skills.",
+            "get_skill": "Returns the complete versioned compiled skill document, including original Markdown and provenance.",
+            "list_capabilities": "Resolves abstract skill requirements against a provider-neutral JSON tool inventory.",
+            "report_skill_feedback": "Stores version-specific skill feedback and returns an issue draft; never implies an external side effect occurred."
+        ]
+        return MCPConstants.runtimeToolNames.map { name in
+            MCPTool(
+                name: name,
+                description: descriptions[name],
+                inputSchema: InputSchema.fromCapabilitySchemaJson(CapabilitySchemaBuilder.runtimeToolInputSchemaJson(name: name))
+            )
+        }
+    }
+
     private static func handleToolsList(req: Request, project: Project, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct ToolsListPayload: Content {
             let jsonrpc: String
@@ -226,13 +243,13 @@ struct MCPController {
             let result: ToolsListResult
         }
 
-        let catalogTool = syntheticCatalogTool()
+        let syntheticTools = [syntheticCatalogTool()] + runtimeTools()
 
         // activeReleaseId is already populated from storage — no DB round-trip needed.
         guard let releaseId = project.activeReleaseId else {
             req.logger.mcpTrace("mcp tools/list result=catalog_only reason=no_active_release")
             return try await serveSuccess(
-                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [catalogTool])),
+                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: syntheticTools)),
                 req: req
             )
         }
@@ -241,7 +258,7 @@ struct MCPController {
         guard !compiledSkillIds.isEmpty else {
             req.logger.mcpTrace("mcp tools/list result=catalog_only reason=no_ready_skills releaseId=\(releaseId.uuidString)")
             return try await serveSuccess(
-                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [catalogTool])),
+                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: syntheticTools)),
                 req: req
             )
         }
@@ -265,7 +282,7 @@ struct MCPController {
             )
         }
 
-        let listResult = ToolsListResult(tools: [catalogTool] + rest)
+        let listResult = ToolsListResult(tools: syntheticTools + rest)
         return try await serveSuccess(ToolsListPayload(jsonrpc: "2.0", id: id, result: listResult), req: req)
     }
 

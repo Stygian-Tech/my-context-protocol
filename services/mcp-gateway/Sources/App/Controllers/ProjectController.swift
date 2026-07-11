@@ -135,6 +135,18 @@ struct ProjectController {
             risk_level: cs.riskLevel,
             repo_specific: cs.repoSpecific,
             status: cs.status,
+            canonical_schema_version: cs.canonicalSchemaVersion,
+            skill_id: cs.skillId,
+            kind: cs.kind,
+            scope: cs.scope,
+            activation_mode: cs.activationMode,
+            enforcement: cs.enforcement,
+            priority: cs.priority,
+            version: cs.version,
+            source_checksum: cs.sourceChecksum,
+            canonical_json: cs.canonicalJson,
+            clarification_required: cs.clarificationRequired,
+            clarification_questions: SkillRuntimeJSON.decode([SkillClarificationQuestion].self, from: cs.clarificationJson) ?? [],
             use_when: h.useWhen ?? [],
             avoid_when: h.avoidWhen ?? [],
             failure_modes: h.failureModes ?? [],
@@ -212,7 +224,7 @@ struct ProjectController {
         let mcpUrl = McpUrlBuilder.publicMcpUrl(for: project)
         let catalogGenerated = try await McpCatalogMarkdown.buildGenerated(db: req.db, projectId: project.id!)
         let catalogMarkdown = try await McpCatalogMarkdown.build(db: req.db, projectId: project.id!)
-        let syntheticCatalogTool = Self.dashboardSyntheticCatalogTool()
+        let syntheticTools = Self.dashboardRuntimeTools()
 
         guard let releaseId = project.activeReleaseId else {
             return ProjectCatalogResponse(
@@ -223,7 +235,7 @@ struct ProjectController {
                 catalog_markdown: catalogMarkdown,
                 catalog_markdown_generated: catalogGenerated,
                 catalog_markdown_override: project.mcpCatalogMarkdownOverride,
-                tools: [syntheticCatalogTool],
+                tools: syntheticTools,
                 resources: [],
                 prompts: []
             )
@@ -285,7 +297,7 @@ struct ProjectController {
             catalog_markdown: catalogMarkdown,
             catalog_markdown_generated: catalogGenerated,
             catalog_markdown_override: project.mcpCatalogMarkdownOverride,
-            tools: [syntheticCatalogTool] + skillTools,
+            tools: syntheticTools + skillTools,
             resources: resources,
             prompts: prompts
         )
@@ -329,6 +341,18 @@ struct ProjectController {
             description: "Overview of this project’s MCP catalog—call first when unsure which skill to use.",
             input_schema_json: schemaJson
         )
+    }
+
+    private static func dashboardRuntimeTools() -> [ProjectCatalogTool] {
+        let catalog = dashboardSyntheticCatalogTool()
+        let runtime = MCPConstants.runtimeToolNames.map { name in
+            ProjectCatalogTool(
+                name: name,
+                description: "Portable skill runtime operation: \(name.replacingOccurrences(of: "_", with: " ")).",
+                input_schema_json: CapabilitySchemaBuilder.runtimeToolInputSchemaJson(name: name)
+            )
+        }
+        return [catalog] + runtime
     }
 
     static func create(req: Request) async throws -> ProjectResponse {
@@ -932,6 +956,7 @@ struct ProjectController {
             let replace_schema: Bool?
             /// Replaces `capability_defs.schema_json` when `replace_schema` is true (must be valid JSON unless empty).
             let schema_json: String?
+            let runtime: SkillRuntimeOverridePatch?
         }
         let body = try req.content.decode(UpdateBody.self)
         let hadBodyDiff = compiled.bodyDiffUnified != nil
@@ -956,6 +981,39 @@ struct ProjectController {
         if bodyTextChanged {
             compiled.bodyDiffUnified = nil
             compiled.bodyDiffPriorReleaseId = nil
+        }
+        if let runtime = body.runtime,
+           var document = SkillRuntimeJSON.decode(CompiledSkillDocument.self, from: compiled.canonicalJson) {
+            if let value = runtime.kind { document.kind = value }
+            if let value = runtime.scope { document.scope = value }
+            if let value = runtime.activation { document.activation = value }
+            if let value = runtime.enforcement { document.enforcement = value }
+            if let value = runtime.priority { document.priority = min(100, max(0, value)) }
+            if let value = runtime.requires { document.requires = value }
+            if let value = runtime.conflictsWith { document.conflictsWith = value }
+            if let value = runtime.version { document.version = value }
+            if let value = runtime.lifecycle { document.lifecycle = value }
+            var remaining = Set(document.validation.missingFields)
+            if runtime.kind != nil { remaining.remove("kind") }
+            if runtime.scope != nil { remaining.remove("scope") }
+            if runtime.activation != nil { remaining.remove("activation") }
+            if runtime.enforcement != nil { remaining.remove("enforcement") }
+            if runtime.version != nil { remaining.remove("version") }
+            document.validation.missingFields = remaining.sorted()
+            document.validation.clarificationRequired = !remaining.isEmpty
+            compiled.kind = document.kind.rawValue; compiled.scope = document.scope.rawValue
+            compiled.activationMode = document.activation.mode.rawValue; compiled.enforcement = document.enforcement.rawValue
+            compiled.priority = document.priority; compiled.version = document.version
+            compiled.canonicalJson = SkillRuntimeJSON.encode(document)
+            compiled.clarificationRequired = document.validation.clarificationRequired
+            compiled.clarificationJson = SkillRuntimeJSON.encode(SkillCanonicalCompiler.questionsForRuntime(fields: remaining.sorted()))
+
+            let existingOverride = try await SkillRuntimeOverride.query(on: req.db)
+                .filter(\.$project.$id == project.id!).filter(\.$skillId == document.id).filter(\.$scope == document.scope.rawValue).first()
+            let overrideRow = existingOverride ?? SkillRuntimeOverride()
+            if existingOverride == nil { overrideRow.$project.id = project.id!; overrideRow.skillId = document.id; overrideRow.scope = document.scope.rawValue }
+            overrideRow.metadataJson = SkillRuntimeJSON.encode(runtime); overrideRow.sourceChecksum = document.source.checksum
+            try await overrideRow.save(on: req.db)
         }
         try await compiled.save(on: req.db)
         if bodyTextChanged, hadBodyDiff {
@@ -1036,6 +1094,94 @@ struct ProjectController {
             req.application.mcpCatalogNotifications.bumpCatalog(for: pid)
         }
         return Self.compiledSkillResponse(compiled, schemaJson: newSchema, routingRule: routingRule)
+    }
+
+    static func writeBackCompiledSkillMetadata(req: Request) async throws -> SkillMetadataWritebackService.Result {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        guard let releaseId = req.parameters.get("releaseId", as: UUID.self),
+              let compiledSkillId = req.parameters.get("compiledSkillId", as: UUID.self),
+              let compiled = try await CompiledSkill.query(on: req.db).filter(\.$id == compiledSkillId)
+                .filter(\.$release.$id == releaseId).first() else { throw Abort(.notFound, reason: "Compiled skill not found") }
+        return try await SkillMetadataWritebackService.createDraftPullRequest(compiled: compiled, project: project, app: req.application, db: req.db)
+    }
+
+    struct RuntimeSettingsResponse: Content {
+        let telemetry_enabled: Bool
+        let telemetry_retention_days: Int
+        let semantic_enabled: Bool
+        let embedding_provider: String?
+        let embedding_model: String?
+        let feedback_issue_creation_enabled: Bool
+        let provider_preferences_json: String?
+        let assignments: [SkillAssignment]
+        let recent_events: [SkillRuntimeEvent]
+    }
+
+    static func runtimeSettings(req: Request) async throws -> RuntimeSettingsResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        let settings = try await runtimeSettingsRow(projectId: project.id!, db: req.db)
+        async let assignments = SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$priority, .descending).all()
+        async let events = SkillRuntimeEvent.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$createdAt, .descending).limit(100).all()
+        return try await runtimeSettingsResponse(settings, assignments: assignments, events: events)
+    }
+
+    static func updateRuntimeSettings(req: Request) async throws -> RuntimeSettingsResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        struct AssignmentPatch: Content { let skill_id: String; let scope: String; let activation_mode: String; let required: Bool; let priority: Int }
+        struct Body: Content {
+            let telemetry_enabled: Bool?
+            let telemetry_retention_days: Int?
+            let semantic_enabled: Bool?
+            let embedding_provider: String?
+            let embedding_model: String?
+            let feedback_issue_creation_enabled: Bool?
+            let provider_preferences_json: String?
+            let assignments: [AssignmentPatch]?
+        }
+        let body = try req.content.decode(Body.self)
+        let settings = try await runtimeSettingsRow(projectId: project.id!, db: req.db)
+        if let value = body.telemetry_enabled { settings.telemetryEnabled = value }
+        if let value = body.telemetry_retention_days { settings.telemetryRetentionDays = min(365, max(1, value)) }
+        if let value = body.semantic_enabled { settings.semanticEnabled = value }
+        if body.embedding_provider != nil { settings.embeddingProvider = body.embedding_provider?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if body.embedding_model != nil { settings.embeddingModel = body.embedding_model?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let value = body.feedback_issue_creation_enabled { settings.feedbackIssueCreationEnabled = value }
+        if let json = body.provider_preferences_json {
+            guard json.isEmpty || (try? JSONSerialization.jsonObject(with: Data(json.utf8))) != nil else { throw Abort(.badRequest, reason: "provider_preferences_json must be valid JSON") }
+            settings.providerPreferencesJson = json.isEmpty ? nil : json
+        }
+        try await settings.save(on: req.db)
+        if let patches = body.assignments {
+            try await SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).delete()
+            for patch in patches {
+                guard SkillScope(rawValue: patch.scope) != nil, SkillActivationMode(rawValue: patch.activation_mode) != nil else { throw Abort(.badRequest, reason: "Invalid assignment scope or activation mode") }
+                let row = SkillAssignment(); row.$project.id = project.id!; row.skillId = patch.skill_id
+                row.scope = patch.scope; row.activationMode = patch.activation_mode; row.required = patch.required
+                row.priority = min(100, max(0, patch.priority)); try await row.save(on: req.db)
+            }
+        }
+        let assignments = try await SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$priority, .descending).all()
+        let events = try await SkillRuntimeEvent.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$createdAt, .descending).limit(100).all()
+        req.application.mcpCatalogNotifications.bumpCatalog(for: project.id!)
+        return runtimeSettingsResponse(settings, assignments: assignments, events: events)
+    }
+
+    private static func runtimeSettingsRow(projectId: UUID, db: Database) async throws -> ProjectRuntimeSettings {
+        if let existing = try await ProjectRuntimeSettings.query(on: db).filter(\.$project.$id == projectId).first() { return existing }
+        let settings = ProjectRuntimeSettings(); settings.$project.id = projectId
+        settings.telemetryEnabled = false; settings.telemetryRetentionDays = 30; settings.semanticEnabled = false
+        settings.feedbackIssueCreationEnabled = false
+        try await settings.save(on: db); return settings
+    }
+
+    private static func runtimeSettingsResponse(_ settings: ProjectRuntimeSettings, assignments: [SkillAssignment], events: [SkillRuntimeEvent]) -> RuntimeSettingsResponse {
+        .init(telemetry_enabled: settings.telemetryEnabled, telemetry_retention_days: settings.telemetryRetentionDays,
+              semantic_enabled: settings.semanticEnabled, embedding_provider: settings.embeddingProvider,
+              embedding_model: settings.embeddingModel, feedback_issue_creation_enabled: settings.feedbackIssueCreationEnabled,
+              provider_preferences_json: settings.providerPreferencesJson, assignments: assignments, recent_events: events)
     }
 
     private static func apiKeyResponse(_ k: ApiKey, projectId: UUID) -> ApiKeyResponse {

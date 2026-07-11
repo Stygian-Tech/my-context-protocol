@@ -171,6 +171,18 @@ export interface CompiledSkill {
   risk_level: string;
   repo_specific: boolean;
   status: string;
+  canonical_schema_version?: number;
+  skill_id?: string | null;
+  kind?: "operating" | "task" | "tool-use" | "reference" | null;
+  scope?: "global" | "organization" | "workspace" | "repository" | "task" | null;
+  activation_mode?: "always" | "intent" | "event" | "explicit" | null;
+  enforcement?: "advisory" | "required" | null;
+  priority?: number | null;
+  version?: string | null;
+  source_checksum?: string | null;
+  canonical_json?: string | null;
+  clarification_required?: boolean;
+  clarification_questions?: Array<{ field: string; question: string; options: string[]; required: boolean }>;
   /** From SKILL front matter / routing_rules; MCP resource hints when exposure is `resource`. */
   use_when?: string[];
   avoid_when?: string[];
@@ -179,6 +191,37 @@ export interface CompiledSkill {
   /** Unified line diff vs prior release when SKILL body changed since last active release. */
   body_diff_unified?: string | null;
   body_diff_prior_release_id?: string | null;
+}
+
+export interface SkillRuntimeAssignment {
+  id?: string;
+  skill_id: string;
+  scope: "global" | "organization" | "workspace" | "repository" | "task";
+  activation_mode: "always" | "intent" | "event" | "explicit";
+  required: boolean;
+  priority: number;
+}
+
+export interface SkillRuntimeEvent {
+  id?: string;
+  trace_id: string;
+  event_type: string;
+  skill_id?: string | null;
+  reason_code?: string | null;
+  score?: number | null;
+  created_at?: string | null;
+}
+
+export interface ProjectSkillRuntime {
+  telemetry_enabled: boolean;
+  telemetry_retention_days: number;
+  semantic_enabled: boolean;
+  embedding_provider?: string | null;
+  embedding_model?: string | null;
+  feedback_issue_creation_enabled: boolean;
+  provider_preferences_json?: string | null;
+  assignments: SkillRuntimeAssignment[];
+  recent_events: SkillRuntimeEvent[];
 }
 
 export interface DashboardMethodCount {

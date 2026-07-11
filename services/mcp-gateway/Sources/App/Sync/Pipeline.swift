@@ -83,6 +83,8 @@ struct SyncPipeline {
                 )
             }
             let commitSha = resolvedSha ?? "unknown"
+            release.commitSha = commitSha
+            try await release.save(on: db)
 
             let repoRoot = try fetcher.resolveRepositoryRoot(extractPath: extractPath)
             let basePath = repoRoot.path

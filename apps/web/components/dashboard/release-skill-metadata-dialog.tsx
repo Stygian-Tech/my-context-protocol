@@ -5,6 +5,7 @@ import {
   fetchCompiledSkills,
   fetchReleaseValidation,
   updateCompiledSkill,
+  writeBackCompiledSkillMetadata,
 } from "@/lib/projects-api";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import type { CompiledSkill } from "@/lib/types";
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { MarkdownPreview } from "@/components/dashboard/markdown-preview";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -186,6 +188,12 @@ function SkillEditorRow({
     multilineFromList(skill.failure_modes ?? [])
   );
   const [invokeFirst, setInvokeFirst] = useState(() => skill.invoke_first ?? false);
+  const [runtimeKind, setRuntimeKind] = useState(skill.kind ?? "reference");
+  const [runtimeScope, setRuntimeScope] = useState(skill.scope ?? "task");
+  const [runtimeActivation, setRuntimeActivation] = useState(skill.activation_mode ?? "explicit");
+  const [runtimeEnforcement, setRuntimeEnforcement] = useState(skill.enforcement ?? "advisory");
+  const [runtimePriority, setRuntimePriority] = useState(skill.priority ?? 50);
+  const [runtimeVersion, setRuntimeVersion] = useState(skill.version ?? "0.0.0");
   /** Errors returned from the API after a failed save (merged with live validation for display). */
   const [serverIssues, setServerIssues] = useState<McpMetadataIssue[]>([]);
   /** When false and body is valid non-empty, show rendered markdown; click or focus opens the editor. */
@@ -222,6 +230,12 @@ function SkillEditorRow({
     setAvoidWhenText(multilineFromList(skill.avoid_when ?? []));
     setFailureModesText(multilineFromList(skill.failure_modes ?? []));
     setInvokeFirst(skill.invoke_first ?? false);
+    setRuntimeKind(skill.kind ?? "reference");
+    setRuntimeScope(skill.scope ?? "task");
+    setRuntimeActivation(skill.activation_mode ?? "explicit");
+    setRuntimeEnforcement(skill.enforcement ?? "advisory");
+    setRuntimePriority(skill.priority ?? 50);
+    setRuntimeVersion(skill.version ?? "0.0.0");
     setServerIssues([]);
     setSkillBodyEditing(false);
   }, [skill]);
@@ -245,6 +259,20 @@ function SkillEditorRow({
           avoid_when: listFromMultiline(avoidWhenText),
           failure_modes: listFromMultiline(failureModesText),
           invoke_first: invokeFirst,
+        },
+        runtime: {
+          kind: runtimeKind,
+          scope: runtimeScope,
+          activation: {
+            mode: runtimeActivation,
+            intents: listFromMultiline(useWhenText),
+            events: [],
+            tags: [],
+            examples: [],
+          },
+          enforcement: runtimeEnforcement,
+          priority: runtimePriority,
+          version: runtimeVersion.trim() || "0.0.0",
         },
       };
       if (schemaDirty) {
@@ -275,6 +303,10 @@ function SkillEditorRow({
       const field = mapApiDetailToMcpField(detail);
       setServerIssues([{ field, message: detail }]);
     },
+  });
+  const writebackMutation = useMutation({
+    mutationFn: () => writeBackCompiledSkillMetadata(projectId, releaseId, skill.id),
+    onSuccess: ({ pull_request_url }) => window.open(pull_request_url, "_blank", "noopener,noreferrer"),
   });
 
   function clearFieldIssue(field: McpMetadataFieldId) {
@@ -409,6 +441,16 @@ function SkillEditorRow({
         ) : null}
         <Button
           type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => writebackMutation.mutate()}
+          disabled={writebackMutation.isPending || skill.clarification_required === true}
+          title={skill.clarification_required ? "Resolve and save runtime clarification before write-back" : "Open a draft GitHub pull request"}
+        >
+          {writebackMutation.isPending ? "Opening PR…" : "Write Back"}
+        </Button>
+        <Button
+          type="button"
           size="sm"
           onClick={handleSave}
           disabled={mutation.isPending || liveIssues.length > 0}
@@ -422,6 +464,7 @@ function SkillEditorRow({
   return (
     <div className="space-y-3 rounded-lg border p-4">
       {headerBar}
+      {writebackMutation.error ? <p className="text-destructive text-xs">Could not open the metadata pull request. Confirm repository write and pull-request permissions.</p> : null}
       {reviewFieldSet.size > 0 ? (
         <p
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-snug text-amber-950 dark:text-amber-100"
@@ -584,6 +627,62 @@ function SkillEditorRow({
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+      <div
+        className={cn(
+          "space-y-3 rounded-md border p-3",
+          skill.clarification_required && "border-amber-500/50 bg-amber-500/[0.06]"
+        )}
+      >
+        <div>
+          <p className="text-xs font-medium">Portable Skill Runtime</p>
+          <p className="text-muted-foreground mt-0.5 text-xs leading-snug">
+            These versioned fields control task bootstrap, scope precedence, deterministic activation, and enforcement.
+          </p>
+          {skill.clarification_required ? (
+            <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200" role="status">
+              Clarification required: {(skill.clarification_questions ?? []).map((question) => question.field).join(", ") || "runtime metadata"}.
+            </p>
+          ) : null}
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Kind</Label>
+            <Select value={runtimeKind} onValueChange={(value) => setRuntimeKind(value as typeof runtimeKind)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{["operating", "task", "tool-use", "reference"].map((value) => <SelectItem key={value} value={value}>{selectOptionTitleCase(value)}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Scope</Label>
+            <Select value={runtimeScope} onValueChange={(value) => setRuntimeScope(value as typeof runtimeScope)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{["global", "organization", "workspace", "repository", "task"].map((value) => <SelectItem key={value} value={value}>{selectOptionTitleCase(value)}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Activation</Label>
+            <Select value={runtimeActivation} onValueChange={(value) => setRuntimeActivation(value as typeof runtimeActivation)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{["always", "intent", "event", "explicit"].map((value) => <SelectItem key={value} value={value}>{selectOptionTitleCase(value)}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Enforcement</Label>
+            <Select value={runtimeEnforcement} onValueChange={(value) => setRuntimeEnforcement(value as typeof runtimeEnforcement)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{["advisory", "required"].map((value) => <SelectItem key={value} value={value}>{selectOptionTitleCase(value)}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={`runtime-priority-${skill.id}`} className="text-xs">Priority</Label>
+            <Input id={`runtime-priority-${skill.id}`} type="number" min={0} max={100} value={runtimePriority} onChange={(event) => setRuntimePriority(Math.min(100, Math.max(0, Number(event.target.value))))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={`runtime-version-${skill.id}`} className="text-xs">Version</Label>
+            <Input id={`runtime-version-${skill.id}`} value={runtimeVersion} onChange={(event) => setRuntimeVersion(event.target.value)} placeholder="1.0.0" />
+          </div>
         </div>
       </div>
       <div

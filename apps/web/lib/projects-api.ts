@@ -13,6 +13,8 @@ import type {
   CompiledSkill,
   AccountDashboardSummary,
   ProjectDashboardSummary,
+  ProjectSkillRuntime,
+  SkillRuntimeAssignment,
 } from "./types";
 import type {
   AccountDashboardTimeseries,
@@ -207,12 +209,35 @@ export async function updateCompiledSkill(
     /** When true, `schema_json` is applied (use empty string to rebuild defaults). */
     replace_schema?: boolean;
     schema_json?: string | null;
+    runtime?: {
+      kind?: "operating" | "task" | "tool-use" | "reference";
+      scope?: "global" | "organization" | "workspace" | "repository" | "task";
+      activation?: { mode: "always" | "intent" | "event" | "explicit"; intents: string[]; events: string[]; tags: string[]; examples: string[] };
+      enforcement?: "advisory" | "required";
+      priority?: number;
+      version?: string;
+    };
   }
 ): Promise<CompiledSkill> {
   return api.patch<CompiledSkill>(
     `/projects/${projectId}/releases/${releaseId}/compiled-skills/${compiledSkillId}`,
     body
   );
+}
+
+export async function writeBackCompiledSkillMetadata(projectId: string, releaseId: string, compiledSkillId: string): Promise<{ pull_request_url: string; branch: string; source_path: string }> {
+  return api.post(`/projects/${projectId}/releases/${releaseId}/compiled-skills/${compiledSkillId}/writeback`, {});
+}
+
+export async function fetchProjectSkillRuntime(projectId: string): Promise<ProjectSkillRuntime> {
+  return api.get<ProjectSkillRuntime>(`/projects/${projectId}/skill-runtime`);
+}
+
+export async function updateProjectSkillRuntime(
+  projectId: string,
+  body: Partial<Omit<ProjectSkillRuntime, "recent_events" | "assignments">> & { assignments?: SkillRuntimeAssignment[] }
+): Promise<ProjectSkillRuntime> {
+  return api.patch<ProjectSkillRuntime>(`/projects/${projectId}/skill-runtime`, body);
 }
 
 export async function fetchApiKeys(
