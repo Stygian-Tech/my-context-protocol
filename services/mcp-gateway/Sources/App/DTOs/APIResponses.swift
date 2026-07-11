@@ -293,6 +293,18 @@ struct CompiledSkillResponse: Content {
     let risk_level: String
     let repo_specific: Bool
     let status: String
+    let canonical_schema_version: Int
+    let skill_id: String?
+    let kind: String?
+    let scope: String?
+    let activation_mode: String?
+    let enforcement: String?
+    let priority: Int?
+    let version: String?
+    let source_checksum: String?
+    let canonical_json: String?
+    let clarification_required: Bool
+    let clarification_questions: [SkillClarificationQuestion]
     /// From `routing_rules` — comma lists in SKILL become arrays; surfaced on MCP resources when `exposure_type` is `resource`.
     let use_when: [String]
     let avoid_when: [String]
@@ -317,6 +329,15 @@ struct CompiledSkillResponse: Content {
         case failure_modes = "failure_modes"
         case invoke_first = "invoke_first"
         case status = "status"
+        case canonical_schema_version = "canonical_schema_version"
+        case skill_id = "skill_id"
+        case kind, scope
+        case activation_mode = "activation_mode"
+        case enforcement, priority, version
+        case source_checksum = "source_checksum"
+        case canonical_json = "canonical_json"
+        case clarification_required = "clarification_required"
+        case clarification_questions = "clarification_questions"
         case body_diff_unified = "body_diff_unified"
         case body_diff_prior_release_id = "body_diff_prior_release_id"
     }

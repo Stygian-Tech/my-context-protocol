@@ -63,4 +63,66 @@ struct SkillParserTests {
         #expect(report.warnings.count == 1)
         #expect(report.warnings[0].message.contains("No YAML front matter"))
     }
+
+    @Test func parsesPortableRuntimeFrontmatterAndCompilesDeterministically() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("portable-skill-\(UUID().uuidString)")
+        let skillDir = root.appendingPathComponent("incidental-issues")
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = skillDir.appendingPathComponent("SKILL.md")
+        try """
+        ---
+        name: incidental-issues
+        description: Preserve unrelated follow-up work.
+        kind: operating
+        scope: workspace
+        enforcement: required
+        priority: 80
+        version: 1.0.0
+        activation:
+          mode: event
+          events:
+            - non_blocking_issue_discovered
+          intents: [follow-up work]
+        requires:
+          - capability: issue.create
+            required: true
+            on_missing: return_draft
+        conflictsWith: [ignore-incidental-issues]
+        ---
+        # Incidental issues
+        Continue the original task after preserving the issue.
+        """.write(to: file, atomically: true, encoding: .utf8)
+
+        let parsed = try SkillParser.parse(fileURL: file, basePath: root.path)
+        #expect(parsed.kind == .operating)
+        #expect(parsed.scope == .workspace)
+        #expect(parsed.activation?.events == ["non_blocking_issue_discovered"])
+        #expect(parsed.requires.first?.capability == "issue.create")
+        #expect(parsed.requires.first?.onMissing == .returnDraft)
+        #expect(parsed.hash?.count == 64)
+
+        let package = SkillPackage(releaseId: UUID(), path: parsed.path, name: parsed.name, validationStatus: "valid")
+        let first = SkillCanonicalCompiler.compile(parsed: parsed, package: package, repository: "stygian/skills", revision: "abc")
+        let second = SkillCanonicalCompiler.compile(parsed: parsed, package: package, repository: "stygian/skills", revision: "abc")
+        #expect(first.document == second.document)
+        #expect(first.questions.isEmpty)
+        #expect(first.document.activation.mode == .event)
+        #expect(first.document.enforcement == .required)
+    }
+
+    @Test func legacySkillRequiresClarificationAndUsesExplicitActivation() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-skill-\(UUID().uuidString)")
+        let skillDir = root.appendingPathComponent("legacy")
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = skillDir.appendingPathComponent("SKILL.md")
+        try "Legacy markdown".write(to: file, atomically: true, encoding: .utf8)
+        let parsed = try SkillParser.parse(fileURL: file, basePath: root.path)
+        let package = SkillPackage(releaseId: UUID(), path: parsed.path, name: parsed.name, validationStatus: "valid")
+        let result = SkillCanonicalCompiler.compile(parsed: parsed, package: package, repository: nil, revision: nil)
+        #expect(result.document.activation.mode == .explicit)
+        #expect(result.document.validation.clarificationRequired)
+        #expect(Set(result.document.validation.missingFields) == Set(["kind", "scope", "activation", "enforcement", "version"]))
+    }
 }

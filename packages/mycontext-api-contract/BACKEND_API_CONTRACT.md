@@ -457,3 +457,24 @@ Dashboard-only aggregate of the active release MCP surface plus catalog markdown
 | PATCH | `/projects/:id/api-keys/:keyId` | Yes | Rename API key (active only) |
 | DELETE | `/projects/:id/api-keys/:keyId` | Yes | Revoke API key (soft) |
 | GET | `/projects/:id/request-logs` | Yes | List request logs |
+# Portable Skill Runtime (schema v1)
+
+Projects expose five stable, colon-free MCP tools in addition to `mycontext_catalog` and compiled skill capabilities:
+
+- `resolve_context` bootstraps a task with ordered active and suggested skills, provenance, conflicts, capability bindings, missing context, and a trace.
+- `discover_skills` evaluates a new intent or event while retaining current skill IDs.
+- `get_skill` retrieves one complete compiled skill by stable ID and optional version.
+- `list_capabilities` binds abstract requirements against a provider-neutral tool inventory.
+- `report_skill_feedback` persists version-specific evidence and returns an issue draft. It never reports an external side effect unless the harness performs one.
+
+Because the current shared MCP request dependency accepts string-valued tool arguments, structured `context`, `available_tools`, and `current_skill_ids` inputs are JSON encoded strings. Tool results are versioned JSON text.
+
+Runtime frontmatter supports `kind`, `scope`, `activation`, `enforcement`, `priority`, `requires`, `conflictsWith`, `version`, and `lifecycle`. Legacy skills remain retrievable but compile with `explicit` activation and structured clarification questions.
+
+Dashboard APIs:
+
+- `GET|PATCH /projects/:id/skill-runtime` reads or updates scoped assignments, semantic settings, provider preferences, feedback authorization, telemetry consent, and recent trace events.
+- `PATCH /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId` accepts a `runtime` sidecar patch alongside existing MCP metadata.
+- `POST /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId/writeback` creates a branch and draft GitHub pull request; it never pushes the default branch.
+
+Detailed runtime telemetry is disabled by default, stores hashes and coarse events rather than prompts or source code, and is pruned using the configured retention period (30 days by default).

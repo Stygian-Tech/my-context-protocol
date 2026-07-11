@@ -10,6 +10,11 @@ struct Compiler {
         releaseId: UUID,
         skills: [(parsed: ParsedSkill, package: SkillPackage)]
     ) async throws {
+        let release = try await Release.find(releaseId, on: db)
+        let projectId = release?.$project.id
+        let connection: RepoConnection? = if let projectId {
+            try await RepoConnection.query(on: db).filter(\.$project.$id == projectId).first()
+        } else { nil }
         for (parsed, package) in skills {
             let exposureType = SkillInference.inferExposureType(from: parsed)
             let sideEffectLevel = SkillInference.inferSideEffectLevel(from: parsed)
@@ -76,6 +81,32 @@ struct Compiler {
                 status: status,
                 yamlFrontmatterPresent: parsed.hadYamlFrontmatter
             )
+            let overridePatch: SkillRuntimeOverridePatch? = if let projectId,
+                let row = try await SkillRuntimeOverride.query(on: db)
+                    .filter(\.$project.$id == projectId)
+                    .filter(\.$skillId == package.name)
+                    .sort(\.$scope, .ascending)
+                    .first() {
+                SkillRuntimeJSON.decode(SkillRuntimeOverridePatch.self, from: row.metadataJson)
+            } else { nil }
+            let canonical = SkillCanonicalCompiler.compile(
+                parsed: parsed,
+                package: package,
+                repository: connection.map { "\($0.repoOwner)/\($0.repoName)" },
+                revision: release?.commitSha == "pending" ? parsed.hash : release?.commitSha,
+                override: overridePatch
+            )
+            compiledSkill.skillId = canonical.document.id
+            compiledSkill.kind = canonical.document.kind.rawValue
+            compiledSkill.scope = canonical.document.scope.rawValue
+            compiledSkill.activationMode = canonical.document.activation.mode.rawValue
+            compiledSkill.enforcement = canonical.document.enforcement.rawValue
+            compiledSkill.priority = canonical.document.priority
+            compiledSkill.version = canonical.document.version
+            compiledSkill.sourceChecksum = canonical.document.source.checksum
+            compiledSkill.canonicalJson = SkillRuntimeJSON.encode(canonical.document)
+            compiledSkill.clarificationJson = SkillRuntimeJSON.encode(canonical.questions)
+            compiledSkill.clarificationRequired = canonical.document.validation.clarificationRequired
             try await compiledSkill.save(on: db)
 
             let useWhenJson = parsed.useWhen.flatMap { (try? JSONEncoder().encode($0)).flatMap { String(data: $0, encoding: .utf8) } }

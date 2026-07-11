@@ -47,6 +47,9 @@ import {
   updateCompiledSkill,
   updateProjectCatalogMarkdown,
   verifyProjectCustomDomain,
+  fetchProjectSkillRuntime,
+  updateProjectSkillRuntime,
+  writeBackCompiledSkillMetadata,
 } from "./projects-api";
 
 afterEach(() => {
@@ -189,6 +192,26 @@ describe("projects-api", () => {
     expect(patch).toHaveBeenCalledWith(
       "/projects/pid/releases/rid/compiled-skills/csid",
       { summary: "x" }
+    );
+  });
+
+  it("portable runtime helpers use tenant-scoped endpoints", async () => {
+    get.mockResolvedValueOnce({ telemetry_enabled: false, assignments: [], recent_events: [] });
+    await fetchProjectSkillRuntime("pid");
+    expect(get).toHaveBeenCalledWith("/projects/pid/skill-runtime");
+
+    patch.mockResolvedValueOnce({ telemetry_enabled: true, assignments: [], recent_events: [] });
+    await updateProjectSkillRuntime("pid", { telemetry_enabled: true, assignments: [] });
+    expect(patch).toHaveBeenCalledWith("/projects/pid/skill-runtime", {
+      telemetry_enabled: true,
+      assignments: [],
+    });
+
+    post.mockResolvedValueOnce({ pull_request_url: "https://github.test/pr/1" });
+    await writeBackCompiledSkillMetadata("pid", "rid", "sid");
+    expect(post).toHaveBeenCalledWith(
+      "/projects/pid/releases/rid/compiled-skills/sid/writeback",
+      {}
     );
   });
 

@@ -76,6 +76,41 @@ enum CapabilitySchemaBuilder {
         return #"{"type":"object","properties":{}}"#
     }
 
+    static func runtimeToolInputSchemaJson(name: String) -> String {
+        let definitions: [String: [(String, String)]] = [
+            "resolve_context": [
+                ("request", "Current user request or task."), ("user", "Optional user identifier."),
+                ("organization", "Optional organization name."), ("workspace", "Optional workspace name."),
+                ("repository", "Optional owner/repository identifier."),
+                ("available_tools", "Optional JSON array of provider-neutral tool inventory objects.")
+            ],
+            "discover_skills": [
+                ("query", "New intent or event detail."), ("event", "Optional canonical or freeform event name."),
+                ("context", "Optional JSON runtime context object."),
+                ("current_skill_ids", "Optional JSON array of currently active skill IDs."),
+                ("available_tools", "Optional JSON array of provider-neutral tool inventory objects.")
+            ],
+            "get_skill": [("skill_id", "Stable skill ID."), ("version", "Optional exact semantic version.")],
+            "list_capabilities": [("available_tools", "Optional JSON array of provider-neutral tool inventory objects."), ("skill_id", "Optional skill ID whose requirements should be resolved.")],
+            "report_skill_feedback": [
+                ("skill_id", "Stable skill ID."), ("version", "Observed skill version."),
+                ("category", "Feedback category."), ("summary", "Concise problem summary."),
+                ("evidence", "Optional reproducible evidence."), ("suggested_change", "Optional suggested improvement."),
+                ("create_issue", "Set to true to request authorized external issue creation.")
+            ]
+        ]
+        let properties = Dictionary(uniqueKeysWithValues: (definitions[name] ?? []).map { key, description in
+            (key, ToolSchemaPayload.Prop(type: "string", description: description))
+        })
+        let payload = ToolSchemaPayload(type: "object", properties: properties, additionalProperties: false)
+        return (try? encoderString(payload)) ?? #"{"type":"object","properties":{}}"#
+    }
+
+    private static func encoderString<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return String(data: try encoder.encode(value), encoding: .utf8) ?? "{}"
+    }
+
     private struct ToolSchemaPayload: Encodable {
         let type: String
         let properties: [String: Prop]

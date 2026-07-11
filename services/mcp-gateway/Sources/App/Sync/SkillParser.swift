@@ -1,4 +1,6 @@
 import Foundation
+import Crypto
+import Yams
 
 struct ParsedSkill {
     let path: String
@@ -16,6 +18,16 @@ struct ParsedSkill {
     let riskLevel: String?
     let sideEffects: String?
     let repoSpecific: Bool?
+    let kind: SkillKind?
+    let scope: SkillScope?
+    let activation: SkillActivation?
+    let enforcement: SkillEnforcement?
+    let priority: Int?
+    let requires: [SkillRequirement]
+    let conflictsWith: [String]
+    let version: String?
+    let lifecycle: String?
+    let rawFrontmatterJson: String?
     /// True when the file began with a closed `---` YAML front matter block (see Agent Skills layout).
     let hadYamlFrontmatter: Bool
 }
@@ -30,7 +42,7 @@ struct SkillParser {
         /// Line-aware parsing so multi-line YAML frontmatter works (`split(maxSplits: 1)` previously broke this).
         let lines = content.components(separatedBy: .newlines)
 
-        var frontmatter: [String: String] = [:]
+        var frontmatter: [String: Any] = [:]
         var body = ""
         var hadYamlFrontmatter = false
 
@@ -38,6 +50,7 @@ struct SkillParser {
             hadYamlFrontmatter = true
             var i = 1
             var closed = false
+            let yamlStart = i
             while i < lines.count {
                 let line = lines[i]
                 if line.trimmingCharacters(in: .whitespaces) == "---" {
@@ -45,17 +58,16 @@ struct SkillParser {
                     closed = true
                     break
                 }
-                if let colonIndex = line.firstIndex(of: ":") {
-                    let key = String(line[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-                    let value = String(line[line.index(after: colonIndex)...])
-                        .trimmingCharacters(in: .whitespaces)
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-                    frontmatter[key] = Self.normalizeScalarString(value)
-                }
                 i += 1
             }
             guard closed else {
                 throw SkillParserError.unclosedFrontmatter
+            }
+            let yaml = lines[yamlStart..<(i - 1)].joined(separator: "\n")
+            do {
+                frontmatter = try load(yaml: yaml) as? [String: Any] ?? [:]
+            } catch {
+                throw SkillParserError.invalidFrontmatter(error.localizedDescription)
             }
             body = lines[i...].joined(separator: "\n")
         } else {
@@ -67,7 +79,7 @@ struct SkillParser {
 
         let name: String
         if hadYamlFrontmatter {
-            guard let rawName = frontmatter["name"] else {
+            guard let rawName = Self.string(frontmatter["name"]) else {
                 throw SkillParserError.missingName
             }
             let n = Self.normalizeScalarString(rawName)
@@ -80,20 +92,35 @@ struct SkillParser {
         }
 
         let description: String? = {
-            guard let d = frontmatter["description"] else { return nil }
+            guard let d = Self.string(frontmatter["description"]) else { return nil }
             let t = Self.normalizeScalarString(d)
             return t.isEmpty ? nil : t
         }()
-        let hash = content.data(using: .utf8).map { $0.base64EncodedString() }
+        let hash = content.data(using: .utf8).map { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
 
-        let exposeAs = frontmatter["expose_as"]
+        let exposeAs = Self.string(frontmatter["expose_as"])
         let useWhen = parseStringArray(frontmatter["use_when"])
         let avoidWhen = parseStringArray(frontmatter["avoid_when"])
         let failureModes = parseStringArray(frontmatter["failure_modes"])
-        let invokeFirst = frontmatter["invoke_first"].map { $0.lowercased() == "true" }
-        let riskLevel = frontmatter["risk_level"]
-        let sideEffects = frontmatter["side_effects"]
-        let repoSpecific = frontmatter["repo_specific"].map { $0.lowercased() == "true" }
+        let invokeFirst = Self.bool(frontmatter["invoke_first"])
+        let riskLevel = Self.string(frontmatter["risk_level"])
+        let sideEffects = Self.string(frontmatter["side_effects"])
+        let repoSpecific = Self.bool(frontmatter["repo_specific"])
+        let kind = Self.string(frontmatter["kind"]).flatMap(SkillKind.init(rawValue:))
+        let scope = Self.string(frontmatter["scope"]).flatMap(SkillScope.init(rawValue:))
+        let enforcement = Self.string(frontmatter["enforcement"]).flatMap(SkillEnforcement.init(rawValue:))
+        let priority = Self.int(frontmatter["priority"])
+        let activation = Self.parseActivation(frontmatter["activation"], useWhen: useWhen)
+        let requirements = Self.parseRequirements(frontmatter["requires"])
+        let conflicts = parseStringArray(frontmatter["conflictsWith"] ?? frontmatter["conflicts_with"]) ?? []
+        let version = Self.string(frontmatter["version"])
+        let lifecycle = Self.string(frontmatter["lifecycle"])
+        let rawFrontmatterJson: String? = {
+            guard hadYamlFrontmatter,
+                  JSONSerialization.isValidJSONObject(frontmatter),
+                  let data = try? JSONSerialization.data(withJSONObject: frontmatter, options: [.sortedKeys]) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }()
 
         return ParsedSkill(
             path: relativePath,
@@ -109,6 +136,16 @@ struct SkillParser {
             riskLevel: riskLevel,
             sideEffects: sideEffects,
             repoSpecific: repoSpecific,
+            kind: kind,
+            scope: scope,
+            activation: activation,
+            enforcement: enforcement,
+            priority: priority,
+            requires: requirements,
+            conflictsWith: conflicts,
+            version: version,
+            lifecycle: lifecycle,
+            rawFrontmatterJson: rawFrontmatterJson,
             hadYamlFrontmatter: hadYamlFrontmatter
         )
     }
@@ -132,14 +169,57 @@ struct SkillParser {
             .replacingOccurrences(of: "\r", with: "")
     }
 
-    private static func parseStringArray(_ raw: String?) -> [String]? {
-        guard let raw = raw, !raw.isEmpty else { return nil }
+    private static func string(_ raw: Any?) -> String? {
+        if let value = raw as? String { return normalizeScalarString(value) }
+        if let value = raw as? NSNumber { return value.stringValue }
+        return nil
+    }
+
+    private static func bool(_ raw: Any?) -> Bool? {
+        if let value = raw as? Bool { return value }
+        return string(raw).flatMap { ["true", "yes", "1"].contains($0.lowercased()) ? true : (["false", "no", "0"].contains($0.lowercased()) ? false : nil) }
+    }
+
+    private static func int(_ raw: Any?) -> Int? {
+        if let value = raw as? Int { return value }
+        if let value = raw as? NSNumber { return value.intValue }
+        return string(raw).flatMap(Int.init)
+    }
+
+    private static func parseStringArray(_ raw: Any?) -> [String]? {
+        if let values = raw as? [Any] {
+            let result = values.compactMap(string).filter { !$0.isEmpty }
+            return result.isEmpty ? nil : result
+        }
+        guard let raw = string(raw), !raw.isEmpty else { return nil }
         var s = raw.trimmingCharacters(in: .whitespaces)
         if s.hasPrefix("[") && s.hasSuffix("]") {
             s = String(s.dropFirst().dropLast())
         }
         let items = s.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         return items.isEmpty ? nil : items
+    }
+
+    private static func parseActivation(_ raw: Any?, useWhen: [String]?) -> SkillActivation? {
+        guard let object = raw as? [String: Any] else { return nil }
+        guard let modeRaw = string(object["mode"]), let mode = SkillActivationMode(rawValue: modeRaw) else { return nil }
+        return SkillActivation(
+            mode: mode,
+            intents: parseStringArray(object["intents"]) ?? useWhen ?? [],
+            events: parseStringArray(object["events"]) ?? [],
+            tags: parseStringArray(object["tags"]) ?? [],
+            examples: parseStringArray(object["examples"]) ?? []
+        )
+    }
+
+    private static func parseRequirements(_ raw: Any?) -> [SkillRequirement] {
+        guard let rows = raw as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            guard let capability = string(row["capability"]), !capability.isEmpty else { return nil }
+            let required = bool(row["required"]) ?? true
+            let fallback = string(row["on_missing"]).flatMap(MissingCapabilityFallback.init(rawValue:)) ?? (required ? .failActivation : .warn)
+            return SkillRequirement(capability: capability, required: required, onMissing: fallback)
+        }
     }
 }
 
@@ -148,6 +228,7 @@ enum SkillParserError: Error, LocalizedError {
     case missingName
     case unclosedFrontmatter
     case cannotInferNameWithoutFrontmatter
+    case invalidFrontmatter(String)
 
     var errorDescription: String? {
         switch self {
@@ -159,6 +240,8 @@ enum SkillParserError: Error, LocalizedError {
             return "SKILL.md frontmatter is missing closing --- delimiter"
         case .cannotInferNameWithoutFrontmatter:
             return "SKILL.md has no YAML front matter: place the file in a directory whose name is a valid skill slug (e.g. my-skill/SKILL.md), or add a \"name\" field under leading --- front matter"
+        case .invalidFrontmatter(let detail):
+            return "SKILL.md contains invalid YAML front matter: \(detail)"
         }
     }
 }

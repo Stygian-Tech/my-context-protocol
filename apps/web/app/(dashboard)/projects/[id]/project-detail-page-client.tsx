@@ -14,6 +14,7 @@ import { RequestLogsTable } from "@/components/dashboard/request-logs-table";
 import { CustomDomainSection } from "@/components/dashboard/custom-domain-section";
 import { McpCatalogSection } from "@/components/dashboard/mcp-catalog-section";
 import { ProjectOverviewMetrics } from "@/components/dashboard/project-overview-metrics";
+import { SkillRuntimeSection } from "@/components/dashboard/skill-runtime-section";
 import { useAuth } from "@/contexts/auth-context";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,7 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
 
   const tab = searchParams.get("tab") ?? "overview";
   const tabList = useMemo(
-    () => ["overview", "repo", "releases", "api-keys", "logs"] as const,
+    () => ["overview", "repo", "releases", "runtime", "api-keys", "logs"] as const,
     []
   );
 
@@ -132,6 +133,7 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="repo">Repo</TabsTrigger>
           <TabsTrigger value="releases">Releases</TabsTrigger>
+          <TabsTrigger value="runtime">Runtime</TabsTrigger>
           <TabsTrigger value="api-keys">API Keys</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
@@ -165,6 +167,9 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
         </TabsContent>
         <TabsContent value="releases">
           <ReleaseTable projectId={projectId} />
+        </TabsContent>
+        <TabsContent value="runtime">
+          <SkillRuntimeSection projectId={projectId} />
         </TabsContent>
         <TabsContent value="api-keys">
           <ApiKeyManager

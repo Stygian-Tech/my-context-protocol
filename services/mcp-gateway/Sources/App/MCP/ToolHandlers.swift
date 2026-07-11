@@ -6,6 +6,9 @@ struct ToolHandlers {
         if name == MCPConstants.catalogToolName {
             return try await McpCatalogRouter.route(arguments: arguments, db: db, projectId: projectId)
         }
+        if MCPConstants.runtimeToolNames.contains(name) {
+            return try await SkillRuntimeToolHandlers.handle(name: name, arguments: arguments, db: db, projectId: projectId)
+        }
         // Legacy colon-prefixed names are no longer accepted on the wire.
         if name.contains(":") {
             throw ToolHandlerError.unknownTool(name: name)
