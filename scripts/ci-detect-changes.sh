@@ -3,12 +3,19 @@
 set -euo pipefail
 
 BASE=""
-HEAD="${GITHUB_SHA:?GITHUB_SHA is required}"
+HEAD="${GITHUB_SHA:-HEAD}"
 MATCH_ALL=0
 
 case "${GITHUB_EVENT_NAME:-}" in
   pull_request)
-    BASE="${GITHUB_EVENT_PULL_REQUEST_BASE_SHA:?}"
+    BASE="${GITHUB_EVENT_PULL_REQUEST_BASE_SHA:-}"
+    if [ -z "$BASE" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+      BASE="$(git rev-parse --verify "origin/${GITHUB_BASE_REF}^{commit}" 2>/dev/null || git rev-parse --verify "${GITHUB_BASE_REF}^{commit}" 2>/dev/null || true)"
+    fi
+    if [ -z "$BASE" ]; then
+      echo "error: pull_request change detection requires GITHUB_EVENT_PULL_REQUEST_BASE_SHA or a resolvable GITHUB_BASE_REF" >&2
+      exit 1
+    fi
     ;;
   push)
     BASE="${GITHUB_EVENT_BEFORE:-}"

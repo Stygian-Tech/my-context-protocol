@@ -36,6 +36,8 @@ jobs:
 
       - name: Detect changed paths
         id: filter
+        env:
+          GITHUB_EVENT_PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: bash scripts/ci-detect-changes.sh
 
   ci:
