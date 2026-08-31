@@ -93,6 +93,7 @@ enum CapabilitySchemaBuilder {
                     "organization": stringSchema("Optional organization name."),
                     "workspace": stringSchema("Optional workspace name."),
                     "repository": stringSchema("Optional owner/repository identifier."),
+                    "task": stringSchema("Optional stable task identifier for task-scoped assignments."),
                     "current_skill_ids": InputSchema(
                         type: "array",
                         description: "Stable IDs for skills already active in the agent session.",
@@ -224,6 +225,7 @@ enum CapabilitySchemaBuilder {
                 "organization": stringSchema("Optional organization name."),
                 "workspace": stringSchema("Optional workspace name."),
                 "repository": stringSchema("Optional owner/repository identifier."),
+                "task": stringSchema("Optional stable task identifier for task-scoped assignments."),
             ],
             additionalProperties: false
         )

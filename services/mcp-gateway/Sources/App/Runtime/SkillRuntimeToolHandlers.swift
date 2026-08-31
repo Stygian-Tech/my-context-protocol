@@ -59,10 +59,6 @@ enum SkillRuntimeToolHandlers {
         guard let request = nonempty(string(arguments["request"])) else {
             throw Abort(.badRequest, reason: "request is required")
         }
-        let contextArgument = arguments["context"]
-        guard contextArgument == nil || decode(RuntimeContext.self, contextArgument) != nil else {
-            throw Abort(.badRequest, reason: "context must be an object with string identity fields")
-        }
         let currentSkillArgument = arguments["current_skill_ids"]
         guard currentSkillArgument == nil || decode([String].self, currentSkillArgument) != nil else {
             throw Abort(.badRequest, reason: "current_skill_ids must be an array of strings")
@@ -72,11 +68,7 @@ enum SkillRuntimeToolHandlers {
             throw Abort(.badRequest, reason: "available_tools must be an array of structured tool descriptions")
         }
         let event = try optionalBoundedString(arguments["event"], field: "event", max: 128)
-        var context = decode(RuntimeContext.self, contextArgument) ?? .init()
-        context.user = nonempty(string(arguments["user"])) ?? context.user
-        context.organization = nonempty(string(arguments["organization"])) ?? context.organization
-        context.workspace = nonempty(string(arguments["workspace"])) ?? context.workspace
-        context.repository = nonempty(string(arguments["repository"])) ?? context.repository
+        let context = try runtimeContext(arguments: arguments)
         let response = try await SkillRuntimeResolver.resolve(
             projectId: projectId,
             request: request,
@@ -87,6 +79,20 @@ enum SkillRuntimeToolHandlers {
             db: db
         )
         return output(response)
+    }
+
+    static func runtimeContext(arguments: [String: JSONValue]) throws -> RuntimeContext {
+        let contextArgument = arguments["context"]
+        guard contextArgument == nil || decode(RuntimeContext.self, contextArgument) != nil else {
+            throw Abort(.badRequest, reason: "context must be an object with string identity fields")
+        }
+        var context = decode(RuntimeContext.self, contextArgument) ?? .init()
+        context.user = nonempty(string(arguments["user"])) ?? context.user
+        context.organization = nonempty(string(arguments["organization"])) ?? context.organization
+        context.workspace = nonempty(string(arguments["workspace"])) ?? context.workspace
+        context.repository = nonempty(string(arguments["repository"])) ?? context.repository
+        context.task = nonempty(string(arguments["task"])) ?? context.task
+        return context
     }
 
     private static func legacyDiscover(
