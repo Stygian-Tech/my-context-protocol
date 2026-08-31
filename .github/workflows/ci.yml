@@ -7,8 +7,8 @@ on:
     branches: [main, dev]
   workflow_dispatch:
     inputs:
-      deploy_mcp_gateway:
-        description: Deploy the MCP gateway to Fly after CI checks
+      deploy_production:
+        description: Deploy changed production services to Railway after CI checks
         required: true
         type: boolean
         default: false
@@ -55,28 +55,33 @@ jobs:
       - name: Run CI script
         run: bash scripts/ci.sh
 
-  deploy-mcp-gateway:
-    name: Deploy MCP Gateway (Fly.io)
+  deploy-production:
+    name: Deploy Production (Railway)
     needs: [changes, ci]
     if: |
       always() &&
       needs.ci.result == 'success' &&
       needs.changes.result == 'success' &&
-      (needs.changes.outputs.mcp_gateway == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true') &&
+      (needs.changes.outputs.web == 'true' || needs.changes.outputs.mcp_gateway == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true') &&
       (
-        (github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'dev')) ||
-        (github.event_name == 'workflow_dispatch' && inputs.deploy_mcp_gateway)
+        (github.event_name == 'push' && github.ref_name == 'main') ||
+        (github.event_name == 'workflow_dispatch' && github.ref_name == 'main' && inputs.deploy_production)
       )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: superfly/flyctl-actions/setup-flyctl@v1
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli
 
-      - name: Deploy MCP gateway to Fly.io
+      - name: Deploy Gateway
+        if: needs.changes.outputs.mcp_gateway == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true'
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          FLY_ORG: ${{ secrets.FLY_ORG }}
-          FLY_MCP_GATEWAY_APP_DEV: ${{ secrets.FLY_MCP_GATEWAY_APP_DEV }}
-          FLY_MCP_GATEWAY_APP_PROD: ${{ secrets.FLY_MCP_GATEWAY_APP_PROD }}
-        run: bash scripts/fly-deploy-mcp-gateway.sh "${{ github.ref_name }}"
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
+        run: bash scripts/railway-deploy-production.sh main Gateway
+
+      - name: Deploy Web
+        if: needs.changes.outputs.web == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
+        run: bash scripts/railway-deploy-production.sh main Web
