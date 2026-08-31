@@ -12,6 +12,8 @@ struct RepoFetchOutcome {
 }
 
 struct RepoFetcher {
+    typealias TarballDataLoader = @Sendable (URLRequest, String?) async throws -> (Data, URLResponse)
+
     let app: Application
 
     func fetch(owner: String, repo: String, ref: String, token: String? = nil) async throws -> RepoFetchOutcome {
@@ -23,27 +25,16 @@ struct RepoFetcher {
             throw RepoFetcherError.invalidURL
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = Self.fetchTimeoutSeconds()
         let authToken = token ?? Environment.get("GITHUB_TOKEN")
-        if let authToken = authToken {
-            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
-        }
-        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
-
-        let session: URLSession
-        if let authToken = authToken {
-            let delegate = GitHubTarballRedirectDelegate(bearerToken: authToken)
-            session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-        } else {
-            session = URLSession.shared
-        }
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            throw RepoFetcherError.fetchFailed(status: code)
+        let data = try await Self.downloadTarball(url: url, authToken: authToken) { request, bearerToken in
+            let session: URLSession
+            if let bearerToken {
+                let delegate = GitHubTarballRedirectDelegate(bearerToken: bearerToken)
+                session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            } else {
+                session = URLSession.shared
+            }
+            return try await session.data(for: request)
         }
         let maxBytes = Self.maxTarballBytes()
         guard data.count <= maxBytes else {
@@ -74,6 +65,48 @@ struct RepoFetcher {
         let repoRoot = try resolveRepositoryRoot(extractPath: extractPath)
         let fromArchive = Self.parseCommitShaFromArchiveDirectoryName(repoRoot)
         return RepoFetchOutcome(extractPath: extractPath, tempRoot: tempDir, resolvedCommitSha: fromArchive)
+    }
+
+    /// Downloads a GitHub repository tarball, retrying once without credentials when GitHub rejects
+    /// an optional bearer token. This lets public repositories remain available after a user's OAuth
+    /// token expires while private repositories still fail closed on the anonymous retry.
+    static func downloadTarball(
+        url: URL,
+        authToken: String?,
+        loader: TarballDataLoader
+    ) async throws -> Data {
+        var request = tarballRequest(url: url, authToken: authToken)
+        var (data, response) = try await loader(request, authToken)
+        var status = (response as? HTTPURLResponse)?.statusCode ?? 0
+
+        if status == 401, authToken != nil {
+            request = tarballRequest(url: url, authToken: nil)
+            do {
+                (data, response) = try await loader(request, nil)
+                status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard status == 200 else {
+                    throw RepoFetcherError.fetchFailed(status: 401)
+                }
+            } catch {
+                throw RepoFetcherError.fetchFailed(status: 401)
+            }
+        }
+
+        guard status == 200 else {
+            throw RepoFetcherError.fetchFailed(status: status)
+        }
+        return data
+    }
+
+    private static func tarballRequest(url: URL, authToken: String?) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = fetchTimeoutSeconds()
+        if let authToken {
+            request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
+        return request
     }
 
     /// `GET /repos/{owner}/{repo}/commits/{ref}` — used when the archive folder name does not include a full SHA.
