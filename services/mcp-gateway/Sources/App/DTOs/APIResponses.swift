@@ -37,18 +37,41 @@ struct CustomDomainResponse: Content {
     let verified: Bool
     let verification_token: String?
     let instructions: String?
+    let ownership_verification_record_name: String?
+    let ownership_verification_record_value: String?
+    /// Deprecated Fly-specific compatibility fields; always nil on Railway.
     let fly_ownership_verification_record_name: String?
     let fly_ownership_verification_record_value: String?
+    let platform_dns_records: [CustomDomainDNSRecordResponse]?
     let certificate_status: String?
     let certificate_message: String?
 
     enum CodingKeys: String, CodingKey {
         case hostname, verified, instructions
         case verification_token = "verification_token"
+        case ownership_verification_record_name = "ownership_verification_record_name"
+        case ownership_verification_record_value = "ownership_verification_record_value"
         case fly_ownership_verification_record_name = "fly_ownership_verification_record_name"
         case fly_ownership_verification_record_value = "fly_ownership_verification_record_value"
+        case platform_dns_records = "platform_dns_records"
         case certificate_status = "certificate_status"
         case certificate_message = "certificate_message"
+    }
+}
+
+struct CustomDomainDNSRecordResponse: Content {
+    let type: String
+    let name: String
+    let value: String
+    let status: String?
+    let purpose: String?
+
+    init(_ record: RailwayDomainService.DNSRecord) {
+        type = record.type
+        name = record.name
+        value = record.value
+        status = record.status
+        purpose = record.purpose
     }
 }
 

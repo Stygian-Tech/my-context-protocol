@@ -179,65 +179,67 @@ struct SecurityFindingMitigationTests {
         }
     }
 
-    @Test("Fly certificate config validates API base URL and app name")
-    func flyCertificateConfigValidation() async throws {
+    @Test("Railway domain config validates scoped IDs, token, port, and HTTPS API URL")
+    func railwayDomainConfigValidation() async throws {
         await TestProcessEnvGate.run {
             let (apply, restore) = hardeningTemporaryEnv([
-                "FLY_API_TOKEN": "fly_secret",
-                "FLY_CERTIFICATE_APP_NAME": "valid-app-1",
-                "FLY_CERTIFICATE_API_BASE_URL": "https://api.machines.dev/",
-                "FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE": "app-12qq5w0",
+                "RAILWAY_PROJECT_TOKEN": "railway_secret",
+                "RAILWAY_PROJECT_ID": "3647f696-1766-459a-ac3f-0482e5a1f26c",
+                "RAILWAY_ENVIRONMENT_ID": "9b29a079-8db3-47d5-81e5-6a20d747ad1f",
+                "RAILWAY_SERVICE_ID": "5c1a6101-9c11-49fa-b384-7a71fee049c8",
+                "RAILWAY_DOMAIN_API_URL": "https://backboard.railway.com/graphql/v2/",
+                "RAILWAY_DOMAIN_TARGET_PORT": "8080",
             ])
             apply()
             defer { restore() }
-            #expect(FlyCertificateService.Config.fromEnvironment()?.apiBaseURL == "https://api.machines.dev")
-            #expect(FlyCertificateService.Config.fromEnvironment()?.ownershipTxtValue == "app-12qq5w0")
+            let config = RailwayDomainService.Config.fromEnvironment()
+            #expect(config?.apiURL == "https://backboard.railway.com/graphql/v2")
+            #expect(config?.targetPort == 8080)
+            #expect(config?.authentication == .projectToken("railway_secret"))
         }
 
         await TestProcessEnvGate.run {
             let (apply, restore) = hardeningTemporaryEnv([
-                "FLY_API_TOKEN": "fly_secret",
-                "FLY_CERTIFICATE_APP_NAME": "bad/app",
-                "FLY_CERTIFICATE_API_BASE_URL": "https://api.machines.dev",
+                "RAILWAY_PROJECT_TOKEN": "railway_secret",
+                "RAILWAY_PROJECT_ID": "not-a-uuid",
+                "RAILWAY_ENVIRONMENT_ID": "9b29a079-8db3-47d5-81e5-6a20d747ad1f",
+                "RAILWAY_SERVICE_ID": "5c1a6101-9c11-49fa-b384-7a71fee049c8",
             ])
             apply()
             defer { restore() }
-            #expect(FlyCertificateService.Config.fromEnvironment() == nil)
+            #expect(RailwayDomainService.Config.fromEnvironment() == nil)
         }
 
         await TestProcessEnvGate.run {
             let (apply, restore) = hardeningTemporaryEnv([
-                "FLY_API_TOKEN": "fly_secret",
-                "FLY_CERTIFICATE_APP_NAME": "valid-app-1",
-                "FLY_CERTIFICATE_API_BASE_URL": "file:///tmp/fly",
+                "RAILWAY_PROJECT_TOKEN": "railway_secret",
+                "RAILWAY_PROJECT_ID": "3647f696-1766-459a-ac3f-0482e5a1f26c",
+                "RAILWAY_ENVIRONMENT_ID": "9b29a079-8db3-47d5-81e5-6a20d747ad1f",
+                "RAILWAY_SERVICE_ID": "5c1a6101-9c11-49fa-b384-7a71fee049c8",
+                "RAILWAY_DOMAIN_API_URL": "http://backboard.railway.com/graphql/v2",
             ])
             apply()
             defer { restore() }
-            #expect(FlyCertificateService.Config.fromEnvironment() == nil)
+            #expect(RailwayDomainService.Config.fromEnvironment() == nil)
         }
 
         await TestProcessEnvGate.run {
             let (apply, restore) = hardeningTemporaryEnv([
-                "FLY_API_TOKEN": "fly_secret",
-                "FLY_CERTIFICATE_APP_NAME": "valid-app-1",
-                "FLY_CERTIFICATE_API_BASE_URL": "https://api.machines.dev",
-                "FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE": "bad token with spaces",
+                "RAILWAY_PROJECT_TOKEN": "railway_secret",
+                "RAILWAY_PROJECT_ID": "3647f696-1766-459a-ac3f-0482e5a1f26c",
+                "RAILWAY_ENVIRONMENT_ID": "9b29a079-8db3-47d5-81e5-6a20d747ad1f",
+                "RAILWAY_SERVICE_ID": "5c1a6101-9c11-49fa-b384-7a71fee049c8",
+                "RAILWAY_DOMAIN_TARGET_PORT": "70000",
             ])
             apply()
             defer { restore() }
-            #expect(FlyCertificateService.Config.fromEnvironment() == nil)
+            #expect(RailwayDomainService.Config.fromEnvironment() == nil)
         }
     }
 
-    @Test("Fly certificate path escaping is segment strict")
-    func flyCertificatePathEscapingIsSegmentStrict() {
-        #expect(FlyCertificateService.pathSegmentEscape("app/name?#") == "app%2Fname%3F%23")
-        #expect(FlyCertificateService.pathSegmentEscape("mcp.example.com") == "mcp.example.com")
-    }
-
-    @Test("Fly certificate HTTP errors redact response bodies")
-    func flyCertificateHTTPErrorDescriptionRedactsBodies() {
-        let error = FlyCertificateError.http(status: .badRequest, body: "secret-token-in-body")
+    @Test("Railway domain HTTP errors redact response bodies")
+    func railwayDomainHTTPErrorDescriptionRedactsBodies() {
+        let error = RailwayDomainError.http(status: .badRequest, body: "secret-token-in-body")
         #expect(String(describing: error) == "HTTP 400")
         #expect(!String(describing: error).contains("secret-token-in-body"))
     }
