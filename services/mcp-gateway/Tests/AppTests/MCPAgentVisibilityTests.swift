@@ -71,6 +71,8 @@ struct MCPAgentVisibilityTests {
         #expect(resolve.properties?["available_tools"]?.type == "array")
         #expect(resolve.properties?["available_tools"]?.items?.type == "object")
         #expect(resolve.properties?["context"]?.type == "object")
+        #expect(resolve.properties?["context"]?.properties?["task"]?.type == "string")
+        #expect(resolve.properties?["task"]?.type == "string")
 
         let feedback = CapabilitySchemaBuilder.runtimeToolInputSchema(name: "report_skill_feedback")
         #expect(Set(feedback.required ?? []) == ["skill_id", "version", "category", "summary", "evidence"])
@@ -83,6 +85,19 @@ struct MCPAgentVisibilityTests {
             #expect(output.type == "object")
             #expect(output.required?.isEmpty == false)
         }
+    }
+
+    @Test func runtimeContextPreservesNestedAndCompatibilityTaskIdentity() throws {
+        let nested = try SkillRuntimeToolHandlers.runtimeContext(arguments: [
+            "context": .object(["task": .string("MCP-10")]),
+        ])
+        #expect(nested.task == "MCP-10")
+
+        let compatibility = try SkillRuntimeToolHandlers.runtimeContext(arguments: [
+            "context": .object(["task": .string("nested-task")]),
+            "task": .string("compatibility-task"),
+        ])
+        #expect(compatibility.task == "compatibility-task")
     }
 
     @Test func paginationIsStableAndRejectsWrongContext() throws {
