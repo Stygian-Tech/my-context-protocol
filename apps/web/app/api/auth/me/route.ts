@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+import { getBackendOrigin } from "@/lib/backend-origin";
 
 /**
  * Proxy /api/auth/me to backend, forwarding the session cookie.
  * Ensures the cookie set by /api/auth/confirm is sent to the backend.
  */
 export async function GET(request: NextRequest) {
-  const backendUrl = `${BACKEND_URL.replace(/\/$/, "")}/auth/me`;
+  const backendUrl = `${getBackendOrigin()}/auth/me`;
   const cookie = request.headers.get("cookie") || "";
 
   let res: Response;

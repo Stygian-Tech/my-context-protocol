@@ -16,3 +16,5 @@
 # Workspace tooling
 node_modules/
 .turbo/
+.ci-logs/
+.migration-artifacts/

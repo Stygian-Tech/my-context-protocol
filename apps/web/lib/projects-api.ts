@@ -98,8 +98,18 @@ export interface CustomDomainStatus {
   verified: boolean;
   verification_token?: string | null;
   instructions?: string | null;
+  ownership_verification_record_name?: string | null;
+  ownership_verification_record_value?: string | null;
+  /** Deprecated Fly-specific compatibility fields; always null on Railway. */
   fly_ownership_verification_record_name?: string | null;
   fly_ownership_verification_record_value?: string | null;
+  platform_dns_records?: Array<{
+    type: string;
+    name: string;
+    value: string;
+    status?: string | null;
+    purpose?: string | null;
+  }> | null;
   certificate_status?: "not_configured" | "pending" | "issued" | "failed" | "unknown" | null;
   certificate_message?: string | null;
 }
