@@ -2,8 +2,8 @@
 
 MyContextProtocol is split into a Bun/Turbo application monorepo plus one external Swift package:
 
-- `apps/web` is the Next.js dashboard deployed by Vercel.
-- `services/mcp-gateway` is the Swift/Vapor API and MCP gateway deployed by Fly.io.
+- `apps/web` is the Next.js dashboard deployed to isolated Railway development and production environments.
+- `services/mcp-gateway` is the Swift/Vapor API and MCP gateway deployed to isolated Railway development and production environments.
 - `packages/mycontext-web-client` owns shared TypeScript API-facing types.
 - `packages/mycontext-api-contract` owns the human-readable backend API contract.
 - `mcp-server-kit` is the sibling SwiftPM package for reusable MCP protocol primitives.

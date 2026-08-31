@@ -7,8 +7,13 @@ on:
     branches: [main, dev]
   workflow_dispatch:
     inputs:
-      deploy_mcp_gateway:
-        description: Deploy the MCP gateway to Fly after CI checks
+      deploy_development:
+        description: Deploy the exact dev SHA to Railway Development after CI
+        required: true
+        type: boolean
+        default: false
+      deploy_production:
+        description: Deploy the exact main SHA to protected Railway Production after CI
         required: true
         type: boolean
         default: false
@@ -50,33 +55,74 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.6
+          bun-version: 1.3.7
 
       - name: Run CI script
         run: bash scripts/ci.sh
 
-  deploy-mcp-gateway:
-    name: Deploy MCP Gateway (Fly.io)
+  deploy-development:
+    name: Deploy Development (Railway)
     needs: [changes, ci]
     if: |
       always() &&
       needs.ci.result == 'success' &&
       needs.changes.result == 'success' &&
-      (needs.changes.outputs.mcp_gateway == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true') &&
+      (needs.changes.outputs.web == 'true' || needs.changes.outputs.mcp_gateway == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true') &&
       (
-        (github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'dev')) ||
-        (github.event_name == 'workflow_dispatch' && inputs.deploy_mcp_gateway)
+        (github.event_name == 'push' && github.ref_name == 'dev') ||
+        (github.event_name == 'workflow_dispatch' && github.ref_name == 'dev' && inputs.deploy_development)
       )
     runs-on: ubuntu-latest
+    environment: development
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: superfly/flyctl-actions/setup-flyctl@v1
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli
 
-      - name: Deploy MCP gateway to Fly.io
+      - name: Deploy Gateway
+        if: needs.changes.outputs.mcp_gateway == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true'
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          FLY_ORG: ${{ secrets.FLY_ORG }}
-          FLY_MCP_GATEWAY_APP_DEV: ${{ secrets.FLY_MCP_GATEWAY_APP_DEV }}
-          FLY_MCP_GATEWAY_APP_PROD: ${{ secrets.FLY_MCP_GATEWAY_APP_PROD }}
-        run: bash scripts/fly-deploy-mcp-gateway.sh "${{ github.ref_name }}"
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEVELOPMENT_TOKEN }}
+        run: bash scripts/railway-deploy-development.sh dev Gateway "${GITHUB_SHA}"
+
+      - name: Deploy Web
+        if: needs.changes.outputs.web == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEVELOPMENT_TOKEN }}
+        run: bash scripts/railway-deploy-development.sh dev Web "${GITHUB_SHA}"
+
+  deploy-production:
+    name: Deploy Production (Railway)
+    needs: [changes, ci]
+    if: |
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref_name == 'main' &&
+      inputs.deploy_production &&
+      needs.ci.result == 'success' &&
+      needs.changes.result == 'success' &&
+      (needs.changes.outputs.web == 'true' || needs.changes.outputs.mcp_gateway == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli
+
+      - name: Deploy Gateway
+        if: needs.changes.outputs.mcp_gateway == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
+        run: bash scripts/railway-deploy-production.sh main Gateway "${GITHUB_SHA}"
+
+      - name: Deploy Web
+        if: needs.changes.outputs.web == 'true' || needs.changes.outputs.packages == 'true' || needs.changes.outputs.ci == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_PRODUCTION_TOKEN }}
+        run: bash scripts/railway-deploy-production.sh main Web "${GITHUB_SHA}"

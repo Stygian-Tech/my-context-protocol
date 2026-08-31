@@ -325,6 +325,55 @@ GET /projects/:id/request-logs?limit=<n>&offset=<n>
 
 ---
 
+### Get custom domain status
+
+**Request**
+
+```
+GET /projects/:id/custom-domain
+```
+
+**Response:** `CustomDomainStatus`
+
+---
+
+### Set custom domain
+
+**Request**
+
+```
+POST /projects/:id/custom-domain
+Content-Type: application/json
+
+{
+  "hostname": "mcp.example.com"
+}
+```
+
+**Response:** `CustomDomainStatus`
+
+- Resets verification when the hostname changes.
+- The frontend should show both TXT verification records when present.
+- Routing records are alternatives: use either the A/AAAA values or the CNAME value for the same hostname, not both.
+
+---
+
+### Verify custom domain and TLS
+
+**Request**
+
+```
+POST /projects/:id/custom-domain/verify
+```
+
+**Response:** `CustomDomainStatus`
+
+- Verifies `TXT _mcp-verify.<hostname>` against `verification_token`.
+- Falls back to the legacy TXT-at-hostname check for existing domains.
+- Requests or refreshes Fly certificate provisioning after project TXT verification.
+
+---
+
 ## Type Definitions
 
 Use these shapes for request/response bodies.
@@ -359,6 +408,31 @@ Use these shapes for request/response bodies.
 ```
 
 - `mcp_oauth_enabled`: `true` when the API has `MCP_OAUTH_ENABLED` set; the tenant MCP host then exposes OAuth discovery and token endpoints alongside API-key auth.
+
+### CustomDomainStatus
+
+```json
+{
+  "hostname": "string | null | undefined",
+  "verified": "boolean",
+  "verification_token": "string | null | undefined",
+  "verification_record_name": "string | null | undefined",
+  "instructions": "string | null | undefined",
+  "fly_ownership_verification_record_name": "string | null | undefined",
+  "fly_ownership_verification_record_value": "string | null | undefined",
+  "fly_a_record_values": "string[] | null | undefined",
+  "fly_aaaa_record_values": "string[] | null | undefined",
+  "fly_cname_record_value": "string | null | undefined",
+  "certificate_status": "not_configured | pending | issued | failed | unknown | null | undefined",
+  "certificate_message": "string | null | undefined"
+}
+```
+
+- `verification_record_name`: usually `_mcp-verify.<hostname>` while project ownership is pending.
+- `fly_ownership_verification_record_name` / `fly_ownership_verification_record_value`: Fly ownership TXT record required before certificate issuance.
+- `fly_a_record_values` and `fly_aaaa_record_values`: address-record routing option for the custom hostname.
+- `fly_cname_record_value`: CNAME routing option for the custom hostname.
+- DNS routing options are mutually exclusive for a hostname: configure the A/AAAA records or configure the CNAME record, not both.
 
 ### Project catalog (`GET /projects/:id/catalog`)
 

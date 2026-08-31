@@ -125,4 +125,39 @@ struct SkillParserTests {
         #expect(result.document.validation.clarificationRequired)
         #expect(Set(result.document.validation.missingFields) == Set(["kind", "scope", "activation", "enforcement", "version"]))
     }
+
+    @Test func rejectsSymlinkedSkillFiles() throws {
+        let tmp = FileManager.default.temporaryDirectory
+        let root = tmp.appendingPathComponent("skill-parse-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let target = root.appendingPathComponent("target.md")
+        try "secret body".write(to: target, atomically: true, encoding: .utf8)
+        let skillDir = root.appendingPathComponent("symlink-skill")
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        let link = skillDir.appendingPathComponent("SKILL.md")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: target.path)
+
+        #expect(throws: SkillParserError.notRegularFile) {
+            _ = try SkillParser.parse(fileURL: link, basePath: root.path)
+        }
+    }
+
+    @Test func rejectsOversizedSkillFilesBeforeParsing() throws {
+        let tmp = FileManager.default.temporaryDirectory
+        let root = tmp.appendingPathComponent("skill-parse-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let skillDir = root.appendingPathComponent("big-skill")
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        let file = skillDir.appendingPathComponent("SKILL.md")
+        let body = String(repeating: "a", count: Validator.maxFileSize + 1)
+        try body.write(to: file, atomically: true, encoding: .utf8)
+
+        #expect(throws: SkillParserError.fileTooLarge) {
+            _ = try SkillParser.parse(fileURL: file, basePath: root.path)
+        }
+    }
 }

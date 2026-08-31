@@ -1,4 +1,5 @@
 import Foundation
+import NIOCore
 import Testing
 import Vapor
 import VaporTesting
@@ -447,6 +448,33 @@ struct ProcessEnvSecurityTests {
         }
     }
 
+    @Test("BrowserOriginValidationMiddleware does not skip dashboard routes on tenant host")
+    func browserOriginRejectsTenantHostDashboardPost() async throws {
+        try await withIsolatedProcessEnv {
+            let (apply, restore) = temporaryEnv([
+                "FRONTEND_URL": "https://app.example.com",
+                "SAAS_MCP_BASE_DOMAIN": "mcp.example.com",
+            ])
+            apply()
+            defer { restore() }
+
+            try await withApp { app in
+                let g = app.grouped(BrowserOriginValidationMiddleware())
+                g.post("projects", "123", "sync") { _ in "done" }
+                try await app.testing().test(
+                    .POST,
+                    "/projects/123/sync",
+                    beforeRequest: { req in
+                        req.headers.replaceOrAdd(name: .host, value: "tenant.mcp.example.com")
+                    },
+                    afterResponse: { res in
+                        #expect(res.status == .forbidden)
+                    }
+                )
+            }
+        }
+    }
+
     // MARK: - Internal Pro bypass, crypto, MCP URL (env-dependent)
 
     @Test("InternalProBypass matches login case-insensitively")
@@ -679,43 +707,45 @@ struct ProcessEnvSecurityTests {
         }
     }
 
-    @Test("FlyCertificateService reads runtime certificate config")
-    func flyCertificateConfig() throws {
+    @Test("RailwayDomainService reads runtime domain config")
+    func railwayDomainConfig() throws {
         withIsolatedProcessEnv {
             let (apply, restore) = temporaryEnv([
-                "FLY_API_TOKEN": "fly-token",
-                "FLY_ACCESS_TOKEN": "",
-                "FLY_CERTIFICATE_APP_NAME": "gateway-app",
-                "FLY_MCP_GATEWAY_APP": "",
-                "FLY_APP_NAME": "",
-                "FLY_CERTIFICATE_API_BASE_URL": "https://fly-api.test/",
-                "FLY_API_BASE_URL": "",
-                "FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE": "app-12qq5w0",
+                "RAILWAY_PROJECT_TOKEN": "project-token",
+                "RAILWAY_TOKEN": "",
+                "RAILWAY_API_TOKEN": "",
+                "RAILWAY_PROJECT_ID": "3647f696-1766-459a-ac3f-0482e5a1f26c",
+                "RAILWAY_ENVIRONMENT_ID": "9b29a079-8db3-47d5-81e5-6a20d747ad1f",
+                "RAILWAY_SERVICE_ID": "5c1a6101-9c11-49fa-b384-7a71fee049c8",
+                "RAILWAY_DOMAIN_API_URL": "https://railway-api.test/graphql/",
+                "RAILWAY_DOMAIN_TARGET_PORT": "8080",
             ])
             apply()
             defer { restore() }
-            let config = FlyCertificateService.currentConfig()
-            #expect(config?.apiToken == "fly-token")
-            #expect(config?.appName == "gateway-app")
-            #expect(config?.apiBaseURL == "https://fly-api.test")
-            #expect(config?.ownershipTxtValue == "app-12qq5w0")
-
-            let record = FlyCertificateService.ownershipTxtRecord(hostname: "MCP.Example.COM.")
-            #expect(record?.name == "_fly-ownership.mcp.example.com")
-            #expect(record?.value == "app-12qq5w0")
+            let config = RailwayDomainService.currentConfig()
+            #expect(config?.apiURL == "https://railway-api.test/graphql")
+            #expect(config?.projectId == "3647f696-1766-459a-ac3f-0482e5a1f26c")
+            #expect(config?.environmentId == "9b29a079-8db3-47d5-81e5-6a20d747ad1f")
+            #expect(config?.serviceId == "5c1a6101-9c11-49fa-b384-7a71fee049c8")
+            #expect(config?.targetPort == 8080)
         }
     }
 
-    @Test("FlyCertificateService parses issued and failed certificate responses")
-    func flyCertificateResponseParsing() throws {
-        let issued = Data(#"{"certificate":{"configured":true,"client_status":"Ready","issued":{"nodes":[{"type":"rsa"}]}}}"#.utf8)
-        let issuedResult = FlyCertificateService.parseResult(from: issued)
+    @Test("RailwayDomainService maps certificate and DNS status")
+    func railwayDomainStatusParsing() throws {
+        let issuedData = Data(#"{"id":"domain-id","domain":"mcp.example.com","status":{"verified":true,"verificationDnsHost":"_railway-verify.mcp.example.com","verificationToken":"verify-token","certificateStatus":"CERTIFICATE_STATUS_TYPE_VALID","certificateErrorMessage":null,"dnsRecords":[{"recordType":"DNS_RECORD_TYPE_CNAME","fqdn":"mcp.example.com","hostlabel":"mcp","requiredValue":"gateway.up.railway.app","status":"DNS_RECORD_STATUS_PROPAGATED","purpose":"DNS_RECORD_PURPOSE_TRAFFIC_ROUTE"}]}}"#.utf8)
+        let issued = try JSONDecoder().decode(RailwayDomainService.CustomDomain.self, from: issuedData)
+        let issuedResult = RailwayDomainService.result(from: issued)
         #expect(issuedResult.status == .issued)
+        #expect(issuedResult.ownershipVerified)
+        #expect(issuedResult.routingReady)
+        #expect(issuedResult.dnsRecords.first?.type == "TXT")
 
-        let failed = Data(#"{"certificate":{"configured":false,"validation_errors":[{"message":"CNAME does not point to app"}]}}"#.utf8)
-        let failedResult = FlyCertificateService.parseResult(from: failed)
+        let failedData = Data(#"{"id":"domain-id","domain":"mcp.example.com","status":{"verified":false,"verificationDnsHost":null,"verificationToken":null,"certificateStatus":"CERTIFICATE_STATUS_TYPE_ISSUE_FAILED","certificateErrorMessage":"CNAME does not point to service","dnsRecords":[]}}"#.utf8)
+        let failed = try JSONDecoder().decode(RailwayDomainService.CustomDomain.self, from: failedData)
+        let failedResult = RailwayDomainService.result(from: failed)
         #expect(failedResult.status == .failed)
-        #expect(failedResult.message == "CNAME does not point to app")
+        #expect(failedResult.message == "CNAME does not point to service")
     }
 
     @Test("McpIpRateLimitMiddleware uses X-Forwarded-For when trusted")
@@ -733,42 +763,65 @@ struct ProcessEnvSecurityTests {
             AppEnvironment._testOverrideAppEnv = "prod"
 
             try await withApp { app in
-            let limiter = McpIpRateLimitMiddleware(limit: 1, windowSeconds: 120)
-            let g = app.grouped(limiter)
-            g.post("rpc") { _ in "ok" }
-            try await app.testing().test(
-                .POST,
-                "/rpc",
-                beforeRequest: { req in
-                    req.headers.replaceOrAdd(name: "X-Forwarded-For", value: "198.51.100.10, 10.0.0.1")
-                },
-                afterResponse: { res in
-                    #expect(res.status == .ok)
-                }
-            )
-            try await app.testing().test(
-                .POST,
-                "/rpc",
-                beforeRequest: { req in
-                    req.headers.replaceOrAdd(name: "X-Forwarded-For", value: "198.51.100.10, 10.0.0.1")
-                },
-                afterResponse: { res in
-                    #expect(res.status == .tooManyRequests)
-                }
-            )
-            try await app.testing().test(
-                .POST,
-                "/rpc",
-                beforeRequest: { req in
-                    req.headers.replaceOrAdd(name: "X-Forwarded-For", value: "198.51.100.11, 10.0.0.1")
-                },
-                afterResponse: { res in
-                    #expect(res.status == .ok)
-                }
-            )
+                let limiter = McpIpRateLimitMiddleware(limit: 1, windowSeconds: 120)
+                let responder = TestOKResponder()
+                let trustedPeer = try SocketAddress(ipAddress: "10.0.0.1", port: 443)
+                let untrustedPeer = try SocketAddress(ipAddress: "203.0.113.5", port: 443)
+
+                let firstTrusted = try await limiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.10, 10.0.0.1", peer: trustedPeer),
+                    chainingTo: responder
+                )
+                #expect(firstTrusted.status == .ok)
+
+                let repeatedTrusted = try await limiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.10, 10.0.0.1", peer: trustedPeer),
+                    chainingTo: responder
+                )
+                #expect(repeatedTrusted.status == .tooManyRequests)
+
+                let otherForwardedClient = try await limiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.11, 10.0.0.1", peer: trustedPeer),
+                    chainingTo: responder
+                )
+                #expect(otherForwardedClient.status == .ok)
+
+                let untrustedLimiter = McpIpRateLimitMiddleware(limit: 1, windowSeconds: 120)
+                let firstUntrusted = try await untrustedLimiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.20", peer: untrustedPeer),
+                    chainingTo: responder
+                )
+                #expect(firstUntrusted.status == .ok)
+
+                let spoofedSecondUntrusted = try await untrustedLimiter.respond(
+                    to: makeRateLimitRequest(app: app, xff: "198.51.100.21", peer: untrustedPeer),
+                    chainingTo: responder
+                )
+                #expect(spoofedSecondUntrusted.status == .tooManyRequests)
             }
         }
     }
+}
+
+private struct TestOKResponder: AsyncResponder {
+    func respond(to request: Request) async throws -> Response {
+        Response(status: .ok)
+    }
+}
+
+private func makeRateLimitRequest(app: Application, xff: String, peer: SocketAddress) -> Request {
+    var headers = HTTPHeaders()
+    headers.replaceOrAdd(name: "X-Forwarded-For", value: xff)
+    return Request(
+        application: app,
+        method: .POST,
+        url: URI(path: "/rpc"),
+        version: .http1_1,
+        headers: headers,
+        remoteAddress: peer,
+        logger: app.logger,
+        on: app.eventLoopGroup.next()
+    )
 }
 
 private func temporaryEnv(_ overrides: [String: String?]) -> (() -> Void, () -> Void) {

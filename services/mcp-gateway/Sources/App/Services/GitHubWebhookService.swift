@@ -42,7 +42,7 @@ enum GitHubWebhookService {
             events: ["push"]
         )
 
-        let url = "https://api.github.com/repos/\(owner)/\(repo)/hooks"
+        let url = "https://api.github.com/repos/\(RepoFetcher.pathSegmentEscape(owner))/\(RepoFetcher.pathSegmentEscape(repo))/hooks"
         let response = try await client.post(URI(string: url)) { req in
             try req.content.encode(body)
             req.headers.bearerAuthorization = BearerAuthorization(token: token)
@@ -68,7 +68,7 @@ enum GitHubWebhookService {
         token: String,
         client: Client
     ) async throws {
-        let url = "https://api.github.com/repos/\(owner)/\(repo)/hooks/\(webhookId)"
+        let url = "https://api.github.com/repos/\(RepoFetcher.pathSegmentEscape(owner))/\(RepoFetcher.pathSegmentEscape(repo))/hooks/\(RepoFetcher.pathSegmentEscape(webhookId))"
         let response = try await client.delete(URI(string: url)) { req in
             req.headers.bearerAuthorization = BearerAuthorization(token: token)
             req.headers.add(name: "Accept", value: "application/vnd.github+json")
@@ -114,7 +114,7 @@ enum GitHubWebhookService {
         token: String,
         client: Client
     ) async throws -> Int {
-        let url = "https://api.github.com/repos/\(owner)/\(repo)"
+        let url = "https://api.github.com/repos/\(RepoFetcher.pathSegmentEscape(owner))/\(RepoFetcher.pathSegmentEscape(repo))"
         let response = try await client.get(URI(string: url)) { req in
             req.headers.bearerAuthorization = BearerAuthorization(token: token)
             req.headers.add(name: "Accept", value: "application/vnd.github+json")

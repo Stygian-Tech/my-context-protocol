@@ -7,6 +7,7 @@
 | Shared TypeScript packages | `bun run typecheck --filter=@mycontext/web-client` | `CI / Test and build` |
 | MCP gateway | `cd services/mcp-gateway && swift test --enable-swift-testing --disable-xctest --no-parallel -Xswiftc -warnings-as-errors` | `CI / Test and build` |
 | MCP gateway release build | `cd services/mcp-gateway && swift build -c release --product App -Xswiftc -warnings-as-errors` | `CI / Test and build` |
-| Fly config | `flyctl config validate --config services/mcp-gateway/fly.toml` | Manual/local until Fly credentials are present |
+| Railway config | `jq empty railway/gateway.json railway/web.json` | `CI / Test and build` |
+| Production deployment | `bash scripts/railway-deploy-production.sh main all` | Conditional Railway deploy after CI on `main` |
 
 CI uses `scripts/ci-detect-changes.sh` for path detection and `scripts/ci.sh` as the shared local/GitHub entrypoint.

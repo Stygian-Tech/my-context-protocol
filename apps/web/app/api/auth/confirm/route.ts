@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBackendOrigin } from "@/lib/backend-origin";
 import { forwardBackendResponseCookies } from "@/lib/forward-backend-response-cookies";
 import { assertSafeRelativeRedirectPath } from "@/lib/safe-redirect";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -18,7 +17,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=invalid_redirect", request.url), 302);
   }
 
-  const backendUrl = `${BACKEND_URL.replace(/\/$/, "")}/auth/confirm?token=${encodeURIComponent(token)}&redirect=${encodeURIComponent(redirectTo)}`;
+  const backendUrl = `${getBackendOrigin()}/auth/confirm?token=${encodeURIComponent(token)}&redirect=${encodeURIComponent(redirectTo)}`;
 
   const res = await fetch(backendUrl, {
     method: "GET",

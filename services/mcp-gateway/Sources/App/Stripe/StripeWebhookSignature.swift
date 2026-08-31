@@ -33,11 +33,35 @@ enum StripeWebhookSignature {
         }
         let signedPayload = Data((ts + ".").utf8) + payload
         let key = SymmetricKey(data: signingKey(from: secret))
-        let mac = HMAC<SHA256>.authenticationCode(for: signedPayload, using: key)
-        let expected = mac.map { String(format: "%02x", $0) }.joined()
-        guard signatures.contains(expected) else {
+        guard signatures.contains(where: { signature in
+            guard let code = Data(hexString: signature), code.count == SHA256.byteCount else {
+                return false
+            }
+            return HMAC<SHA256>.isValidAuthenticationCode(code, authenticating: signedPayload, using: key)
+        }) else {
             throw Abort(.badRequest, reason: "Invalid Stripe webhook signature")
         }
         return payload
+    }
+}
+
+private extension Data {
+    init?(hexString: String) {
+        let trimmed = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count.isMultiple(of: 2) else {
+            return nil
+        }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(trimmed.count / 2)
+        var index = trimmed.startIndex
+        while index < trimmed.endIndex {
+            let next = trimmed.index(index, offsetBy: 2)
+            guard let byte = UInt8(trimmed[index..<next], radix: 16) else {
+                return nil
+            }
+            bytes.append(byte)
+            index = next
+        }
+        self = Data(bytes)
     }
 }

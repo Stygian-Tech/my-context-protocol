@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBackendOrigin } from "@/lib/backend-origin";
 import { forwardBackendResponseCookies } from "@/lib/forward-backend-response-cookies";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 /**
  * Proxy for the backend's MCP OAuth resume endpoint.
@@ -24,7 +23,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
  */
 export async function GET(request: NextRequest) {
   const { search } = new URL(request.url);
-  const backendUrl = `${BACKEND_URL.replace(/\/$/, "")}/auth/mcp-oauth-resume${search}`;
+  const backendUrl = `${getBackendOrigin()}/auth/mcp-oauth-resume${search}`;
 
   let res: Response;
   try {

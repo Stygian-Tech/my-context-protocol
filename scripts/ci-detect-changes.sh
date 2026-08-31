@@ -7,13 +7,13 @@ HEAD="${GITHUB_SHA:-HEAD}"
 MATCH_ALL=0
 
 case "${GITHUB_EVENT_NAME:-}" in
-  pull_request)
+  pull_request|pull_request_target)
     BASE="${GITHUB_EVENT_PULL_REQUEST_BASE_SHA:-}"
     if [ -z "$BASE" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
       BASE="$(git rev-parse --verify "origin/${GITHUB_BASE_REF}^{commit}" 2>/dev/null || git rev-parse --verify "${GITHUB_BASE_REF}^{commit}" 2>/dev/null || true)"
     fi
     if [ -z "$BASE" ]; then
-      echo "error: pull_request change detection requires GITHUB_EVENT_PULL_REQUEST_BASE_SHA or a resolvable GITHUB_BASE_REF" >&2
+      echo "error: pull request change detection requires GITHUB_EVENT_PULL_REQUEST_BASE_SHA or a resolvable GITHUB_BASE_REF" >&2
       exit 1
     fi
     ;;
@@ -61,6 +61,7 @@ filter_changed() {
 
 filter_changed web \
   'apps/web/**' \
+  'railway/web.json' \
   'packages/**' \
   'package.json' \
   'bun.lock' \
@@ -71,9 +72,9 @@ filter_changed web \
 
 filter_changed mcp_gateway \
   'services/mcp-gateway/**' \
+  'railway/gateway.json' \
   'scripts/ci.sh' \
   'scripts/ci-detect-changes.sh' \
-  'scripts/fly-deploy-mcp-gateway.sh' \
   '.github/workflows/ci.yml'
 
 filter_changed packages \
