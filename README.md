@@ -50,7 +50,7 @@ GitHub Actions is the source of truth for CI. The single workflow at `.github/wo
 bash scripts/ci.sh
 ```
 
-The workflow detects changes with `scripts/ci-detect-changes.sh`, runs the Bun/Turbo workspace checks, runs Swift tests/builds for `services/mcp-gateway`, and conditionally deploys changed production services to Railway from `main`.
+The workflow detects changes with `scripts/ci-detect-changes.sh`, runs the Bun/Turbo workspace checks, runs Swift tests/builds for `services/mcp-gateway`, deploys tested `dev` commits to Railway Development, and exposes Production only through a protected manual dispatch from `main`.
 
 ### Deployment
 
