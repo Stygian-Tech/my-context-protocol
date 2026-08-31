@@ -1,7 +1,7 @@
 # Supabase to Railway development migration
 
-This runbook records the completed development cutover from Fly and Supabase to Railway.
-Production remains unchanged.
+This runbook records the completed development cutover from Fly, Supabase, and Vercel to Railway.
+Production is documented separately and is also Railway-only.
 
 ## Deprecation status
 
@@ -14,11 +14,8 @@ Verified on 2026-08-10:
 - The guarded migration artifacts show identical source and target table inventories and row counts.
 - Railway Gateway uses discrete Railway Postgres variables and has no `DATABASE_URL` or
   `SUPABASE_DB_URL` binding.
-- The Fly app `my-context-protocol-dev-gateway` has been scaled to zero machines. Keep the app and
-  release history temporarily for rollback, but do not deploy `dev` to it.
-
-The Supabase development project is a rollback snapshot only. Pause it after confirming the
-cutover evidence above; do not delete it until the rollback retention decision is explicit.
+- The former Fly app, Supabase project, and Vercel deployment were permanently removed after the
+  Railway cutover was verified. They are not rollback targets.
 
 ## Railway development stack
 
@@ -125,8 +122,8 @@ with `NEXT_PUBLIC_APP_URL=https://testing.mycontextprotocol.dev` and
 
 ## Rollback
 
-Before public dev DNS changes, rollback is simply using the old Fly/Vercel review URLs. After a dev
-DNS cutover, use Marque to reverse the Web CNAME to Vercel and replace the Railway Gateway CNAMEs
-with the retained Fly A/AAAA values. Restore the old wildcard ACME record if Fly must issue or renew
-its development certificate. Keep Supabase as a rollback snapshot; do not allow both databases to
-accept review writes and then assume they remain interchangeable.
+For application failures, restore the previous successful Railway Gateway and Web deployments,
+Gateway first and then Web. Keep additive database migrations in place during an application
+rollback. Restore Railway Postgres from a backup or point-in-time recovery only for confirmed data
+corruption and only after separate approval. The retired Fly, Supabase, and Vercel resources no
+longer exist and must not be referenced as rollback targets.
