@@ -97,12 +97,16 @@ export interface CustomDomainStatus {
   hostname: string | null;
   verified: boolean;
   verification_token?: string | null;
+  verification_record_name?: string | null;
   instructions?: string | null;
   ownership_verification_record_name?: string | null;
   ownership_verification_record_value?: string | null;
   /** Deprecated Fly-specific compatibility fields; always null on Railway. */
   fly_ownership_verification_record_name?: string | null;
   fly_ownership_verification_record_value?: string | null;
+  fly_a_record_values?: string[] | null;
+  fly_aaaa_record_values?: string[] | null;
+  fly_cname_record_value?: string | null;
   platform_dns_records?: Array<{
     type: string;
     name: string;

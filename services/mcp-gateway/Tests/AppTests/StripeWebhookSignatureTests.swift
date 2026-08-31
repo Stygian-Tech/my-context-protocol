@@ -95,4 +95,12 @@ struct StripeWebhookSignatureTests {
         let out = try StripeWebhookSignature.verify(payload: payload, header: header, secret: secret)
         #expect(out == payload)
     }
+
+    @Test("Stripe form encoding escapes parameter separators")
+    func stripeFormEncodingEscapesSeparators() {
+        let encoded = StripeClient.formEncode("/billing/success?x=1&metadata[account_id]=evil")
+        #expect(!encoded.contains("&metadata"))
+        #expect(!encoded.contains("="))
+        #expect(encoded.contains("%26metadata%5Baccount_id%5D%3Devil"))
+    }
 }

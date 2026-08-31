@@ -126,35 +126,67 @@ public func configure(_ app: Application) async throws {
         app.logger.info("Using SQLite database at \(sqlitePath)")
     } else if let databaseURL = Environment.get("DATABASE_URL"), !databaseURL.isEmpty {
         let useInsecureTLS = Environment.get("DATABASE_INSECURE_TLS").map { $0.lowercased() }.map { $0 == "1" || $0 == "true" } ?? false
+        try DatabaseBootstrap.assertInsecurePostgresTLSAllowed(useInsecureTLS, deployKind: deploy)
+        try DatabaseBootstrap.assertPostgresConnectionURLHostAllowedIfResolvable(databaseURL)
         if useInsecureTLS {
             var config = try SQLPostgresConfiguration(url: databaseURL)
             var tlsConfig = TLSConfiguration.makeClientConfiguration()
             tlsConfig.certificateVerification = .none
             config.coreConfiguration.tls = .require(try NIOSSLContext(configuration: tlsConfig))
             app.databases.use(.postgres(configuration: config, sqlLogLevel: sqlPostgresLevel), as: .psql)
+        } else if deploy == .prod {
+            var config = try SQLPostgresConfiguration(url: databaseURL)
+            config.coreConfiguration.tls = .require(try DatabaseBootstrap.verifiedPostgresSSLContext(connectionURL: databaseURL))
+            app.databases.use(
+                .postgres(configuration: config, sqlLogLevel: sqlPostgresLevel),
+                as: .psql
+            )
         } else {
             app.databases.use(try .postgres(url: databaseURL, sqlLogLevel: sqlPostgresLevel), as: .psql)
         }
     } else if let url = Environment.get("SUPABASE_DB_URL"), !url.isEmpty {
-        app.databases.use(try .postgres(url: url, sqlLogLevel: sqlPostgresLevel), as: .psql)
+        try DatabaseBootstrap.assertPostgresConnectionURLHostAllowedIfResolvable(url)
+        if deploy == .prod {
+            var config = try SQLPostgresConfiguration(url: url)
+            config.coreConfiguration.tls = .require(try DatabaseBootstrap.verifiedPostgresSSLContext(connectionURL: url))
+            app.databases.use(
+                .postgres(configuration: config, sqlLogLevel: sqlPostgresLevel),
+                as: .psql
+            )
+        } else {
+            app.databases.use(try .postgres(url: url, sqlLogLevel: sqlPostgresLevel), as: .psql)
+        }
     } else if app.environment == .testing {
         app.databases.use(.sqlite(.memory, sqlLogLevel: sqlLiteLevel), as: .sqlite)
     } else {
         let params: PostgresDiscreteConnectionParams
         do {
             params = try DatabaseBootstrap.postgresDiscreteParameters(for: AppEnvironment.deployKind())
+            try DatabaseBootstrap.assertPostgresHostAllowedForDeployedAppEnv(params.hostname)
         } catch let error as DatabaseBootstrapError {
             app.logger.critical("\(error.description)")
             throw error
         }
-        let pgConfig = SQLPostgresConfiguration(
-            hostname: params.hostname,
-            port: params.port,
-            username: params.username,
-            password: params.password,
-            database: params.database,
-            tls: .disable
-        )
+        let pgConfig: SQLPostgresConfiguration
+        if deploy == .prod {
+            pgConfig = SQLPostgresConfiguration(
+                hostname: params.hostname,
+                port: params.port,
+                username: params.username,
+                password: params.password,
+                database: params.database,
+                tls: .require(try DatabaseBootstrap.verifiedPostgresSSLContext())
+            )
+        } else {
+            pgConfig = SQLPostgresConfiguration(
+                hostname: params.hostname,
+                port: params.port,
+                username: params.username,
+                password: params.password,
+                database: params.database,
+                tls: .disable
+            )
+        }
         app.databases.use(.postgres(configuration: pgConfig, sqlLogLevel: sqlPostgresLevel), as: .psql)
     }
 

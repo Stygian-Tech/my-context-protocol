@@ -475,6 +475,11 @@ struct ProjectController {
         }
         let body = try req.content.decode(ConnectBody.self)
         let branch = body.branch ?? "main"
+        guard RepoFetcher.isValidGitHubOwnerOrRepo(body.owner),
+              RepoFetcher.isValidGitHubOwnerOrRepo(body.repo),
+              RepoFetcher.isValidGitHubRef(branch) else {
+            throw Abort(.badRequest, reason: "Invalid GitHub repository owner, name, or branch")
+        }
 
         guard let encrypted = account.githubTokenEncrypted,
               let token = try? TokenEncryption.decrypt(encrypted), !token.isEmpty else {
@@ -644,13 +649,12 @@ struct ProjectController {
         let verified = project.customDomainVerifiedAt != nil
         let token = verified ? nil : project.customDomainVerificationToken
         let platform = await customDomainPlatformStatus(project: project, req: req)
-        let appOwnershipRecord = project.customDomain.flatMap { host in
-            token.map { customDomainOwnershipRecord(hostname: host, token: $0) }
+        let verificationRecordName = project.customDomain.flatMap { host in
+            token == nil ? nil : customDomainVerificationRecordName(hostname: host)
         }
         let instructions: String?
         if let host = project.customDomain, !host.isEmpty, let t = token, !t.isEmpty {
-            let ownership = customDomainOwnershipRecord(hostname: host, token: t)
-            var parts = ["Add a TXT record on \(ownership.name) with value: \(ownership.value)"]
+            var parts = ["Add a TXT record on \(customDomainVerificationRecordName(hostname: host)) with value: \(t)"]
             parts.append(contentsOf: dnsInstructions(platform?.dnsRecords ?? []))
             instructions = parts.joined(separator: "\n")
         } else if verified, platform?.status != .issued {
@@ -667,11 +671,15 @@ struct ProjectController {
             hostname: project.customDomain,
             verified: verified,
             verification_token: token,
+            verification_record_name: verificationRecordName,
             instructions: instructions,
-            ownership_verification_record_name: appOwnershipRecord?.name,
-            ownership_verification_record_value: appOwnershipRecord?.value,
+            ownership_verification_record_name: verificationRecordName,
+            ownership_verification_record_value: token,
             fly_ownership_verification_record_name: nil,
             fly_ownership_verification_record_value: nil,
+            fly_a_record_values: nil,
+            fly_aaaa_record_values: nil,
+            fly_cname_record_value: nil,
             platform_dns_records: platform?.dnsRecords.map(CustomDomainDNSRecordResponse.init),
             certificate_status: platform?.status.rawValue,
             certificate_message: platform?.message
@@ -720,14 +728,27 @@ struct ProjectController {
             throw Abort(.paymentRequired, reason: "Custom domain requires Pro")
         }
         let project = try await requireProject(req, accountId: account.id!)
-        guard let host = project.customDomain, !host.isEmpty,
-              let token = project.customDomainVerificationToken, !token.isEmpty else {
+        guard let host = project.customDomain, !host.isEmpty else {
             throw Abort(.badRequest, reason: "Set a custom domain first")
         }
-        let ownership = customDomainOwnershipRecord(hostname: host, token: token)
-        let txtOk = try await DnsTxtVerifier.txtRecordsIncludeToken(hostname: ownership.name, token: ownership.value, client: req.client)
-        guard txtOk else {
-            throw Abort(.badRequest, reason: "Ownership TXT record not found. Add a TXT record on \(ownership.name) with value \(ownership.value) and try again.")
+        if project.customDomainVerifiedAt == nil {
+            guard let token = project.customDomainVerificationToken, !token.isEmpty else {
+                throw Abort(.badRequest, reason: "Set a custom domain first")
+            }
+            let txtOkAtVerificationName = try await DnsTxtVerifier.txtRecordsIncludeToken(
+                hostname: customDomainVerificationRecordName(hostname: host),
+                token: token,
+                client: req.client
+            )
+            let txtOk: Bool
+            if txtOkAtVerificationName {
+                txtOk = true
+            } else {
+                txtOk = try await DnsTxtVerifier.txtRecordsIncludeToken(hostname: host, token: token, client: req.client)
+            }
+            guard txtOk else {
+                throw Abort(.badRequest, reason: "TXT record not found or token mismatch. Add a TXT record on \(customDomainVerificationRecordName(hostname: host)) with the shown token and try again.")
+            }
         }
         let platform = await RailwayDomainService.ensureDomain(hostname: host, client: req.client, logger: req.logger)
         guard platform.status != .notConfigured else {
@@ -740,18 +761,31 @@ struct ProjectController {
             let setup = dnsInstructions(platform.dnsRecords).joined(separator: " ")
             throw Abort(.badRequest, reason: setup.isEmpty ? "Railway is still waiting for required DNS records." : setup)
         }
-        project.customDomainVerifiedAt = Date()
-        project.customDomainVerificationToken = nil
-        try await project.save(on: req.db)
+        if project.customDomainVerifiedAt == nil || project.customDomainVerificationToken != nil {
+            project.customDomainVerifiedAt = project.customDomainVerifiedAt ?? Date()
+            project.customDomainVerificationToken = nil
+            try await project.save(on: req.db)
+        }
+        var instructions: [String] = []
+        if platform.status != .issued {
+            if let message = platform.message, !message.isEmpty {
+                instructions.append(message)
+            }
+            instructions.append(contentsOf: dnsInstructions(platform.dnsRecords))
+        }
         return CustomDomainResponse(
             hostname: project.customDomain,
             verified: true,
             verification_token: nil,
-            instructions: platform.status == .issued ? nil : platform.message,
+            verification_record_name: nil,
+            instructions: instructions.isEmpty ? nil : instructions.joined(separator: "\n"),
             ownership_verification_record_name: nil,
             ownership_verification_record_value: nil,
             fly_ownership_verification_record_name: nil,
             fly_ownership_verification_record_value: nil,
+            fly_a_record_values: nil,
+            fly_aaaa_record_values: nil,
+            fly_cname_record_value: nil,
             platform_dns_records: platform.dnsRecords.map(CustomDomainDNSRecordResponse.init),
             certificate_status: platform.status.rawValue,
             certificate_message: platform.message
@@ -773,11 +807,8 @@ struct ProjectController {
         )
     }
 
-    private static func customDomainOwnershipRecord(hostname: String, token: String) -> (name: String, value: String) {
-        let host = hostname.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            .lowercased()
-        return ("_mycontextprotocol.\(host)", token)
+    private static func customDomainVerificationRecordName(hostname: String) -> String {
+        "_mcp-verify.\(hostname.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased())"
     }
 
     private static func dnsInstructions(_ records: [RailwayDomainService.DNSRecord]) -> [String] {

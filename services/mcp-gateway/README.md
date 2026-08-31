@@ -67,6 +67,8 @@ railway variable set --environment production --service Gateway \
   GITHUB_OAUTH_REDIRECT_URI='https://api.mycontextprotocol.dev/auth/github/callback'
 ```
 
+`DATABASE_INSECURE_TLS=1` is for dev only. Production rejects disabled Postgres certificate verification.
+
 `GITHUB_OAUTH_REDIRECT_URI` is **only** for dashboard GitHub login (`/auth/github/callback`). Do not point it at `/auth/github/app/callback` — that path is for GitHub App installation and uses `GITHUB_APP_SETUP_CALLBACK_URL` instead. If login OAuth is sent to the app callback, users return to the frontend with `github_app_error=invalid_state` and `/auth/me` stays 401.
 
 Include GitHub App, Stripe, SaaS MCP host, and admin/pro bypass secrets as needed from `.env.example`.
@@ -121,10 +123,14 @@ railway logs --environment production --service Gateway --deployment --lines 100
 
 Common startup failures:
 
-- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — install the database CA through
-  `DATABASE_SSLROOTCERT_BASE64`; production keeps `DATABASE_INSECURE_TLS=0`.
-- **Missing database config** — hosted environments require `DATABASE_URL` or `SUPABASE_DB_URL`
-  (or all discrete `DATABASE_*` fields). `USE_SQLITE=1` is for local file SQLite only.
+- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — Railway uses the discrete private-network
+  `DATABASE_*` fields documented above and must not also set `DATABASE_URL` or `SUPABASE_DB_URL`.
+  For another managed Postgres provider whose CA is not in the container trust store, set
+  `DATABASE_SSLROOTCERT_PEM`, `DATABASE_SSLROOTCERT_BASE64`, or a verified file path through
+  `DATABASE_SSLROOTCERT`; production rejects disabled certificate verification.
+- **Missing database config** — hosted Railway environments require all discrete
+  `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, and `DATABASE_NAME`
+  fields. `USE_SQLITE=1` is only for local file-backed SQLite.
 
 ## Docker / Compose
 
@@ -133,3 +139,7 @@ Common startup failures:
 ## Internal Docs Boundary
 
 Product specs and the MCP agent guide live in the team’s internal workspace. Do not add Notion URLs or the internal MCP agent guide to this open-source repo without an explicit request.
+
+## License
+
+This service is part of MyContextProtocol and is released under the repository [MIT License](../../LICENSE).

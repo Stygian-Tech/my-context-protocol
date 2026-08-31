@@ -56,9 +56,9 @@ struct SyncPipeline {
         )
         try await release.save(on: db)
 
-        var tempExtractPath: URL?
+        var tempCleanupPath: URL?
         defer {
-            if let path = tempExtractPath {
+            if let path = tempCleanupPath {
                 try? FileManager.default.removeItem(at: path)
             }
         }
@@ -70,7 +70,7 @@ struct SyncPipeline {
                 ref: connection.defaultBranch,
                 token: token
             )
-            tempExtractPath = outcome.extractPath
+            tempCleanupPath = outcome.tempRoot
             let extractPath = outcome.extractPath
 
             var resolvedSha = outcome.resolvedCommitSha
