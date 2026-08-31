@@ -1,6 +1,7 @@
 import Fluent
 import Foundation
 import Vapor
+import Yams
 
 enum SkillMetadataWritebackService {
     struct Result: Content { let pull_request_url: String; let branch: String; let source_path: String }
@@ -8,7 +9,7 @@ enum SkillMetadataWritebackService {
     static func createDraftPullRequest(compiled: CompiledSkill, project: Project, app: Application, db: Database) async throws -> Result {
         guard let document = SkillRuntimeJSON.decode(CompiledSkillDocument.self, from: compiled.canonicalJson),
               !document.validation.clarificationRequired else { throw Abort(.conflict, reason: "Resolve all runtime clarification questions before write-back") }
-        let path = document.source.path
+        let path = ".mycontext/skills.yaml"
         let allowedPath = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/-_."))
         guard !path.hasPrefix("/"), !path.split(separator: "/").contains(".."),
               path.unicodeScalars.allSatisfy(allowedPath.contains) else { throw Abort(.badRequest, reason: "Invalid source path") }
@@ -35,17 +36,34 @@ enum SkillMetadataWritebackService {
         }
         guard createRef.status == .created else { throw githubError(createRef, action: "create the metadata branch") }
 
-        struct FileResponse: Content { let sha: String }
+        struct FileResponse: Content { let sha: String; let content: String?; let encoding: String? }
         let encodedPath = path.split(separator: "/").map { String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }.joined(separator: "/")
         let fileResponse = try await app.client.get(URI(string: "\(api)/contents/\(encodedPath)?ref=\(base)"), headers: headers)
-        guard fileResponse.status == .ok else { throw githubError(fileResponse, action: "read the skill source") }
-        let fileSha = try fileResponse.content.decode(FileResponse.self).sha
-        let content = frontmatter(document) + "\n" + document.instructions.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
-        struct UpdateFile: Content { let message: String; let content: String; let branch: String; let sha: String }
+        guard fileResponse.status == .ok || fileResponse.status == .notFound else {
+            throw githubError(fileResponse, action: "read the skill policy sidecar")
+        }
+        let existing = fileResponse.status == .ok ? try fileResponse.content.decode(FileResponse.self) : nil
+        let currentYaml: String?
+        if let existing {
+            guard existing.encoding == nil || existing.encoding == "base64",
+                  let encoded = existing.content else {
+                throw Abort(.conflict, reason: "Existing skill policy sidecar could not be decoded safely")
+            }
+            let compact = encoded.replacingOccurrences(of: "\n", with: "")
+            guard let data = Data(base64Encoded: compact),
+                  let decoded = String(data: data, encoding: .utf8) else {
+                throw Abort(.conflict, reason: "Existing skill policy sidecar is not valid base64 UTF-8")
+            }
+            currentYaml = decoded
+        } else {
+            currentYaml = nil
+        }
+        let content = try mergedSidecar(existing: currentYaml, document: document, exposure: compiled.exposureType)
+        struct UpdateFile: Content { let message: String; let content: String; let branch: String; let sha: String? }
         let update = try await app.client.put(URI(string: "\(api)/contents/\(encodedPath)"), headers: headers) { request in
             try request.content.encode(UpdateFile(
-                message: "chore: add portable runtime metadata for \(document.id)",
-                content: Data(content.utf8).base64EncodedString(), branch: branch, sha: fileSha
+                message: "chore: update portable runtime policy for \(document.id)",
+                content: Data(content.utf8).base64EncodedString(), branch: branch, sha: existing?.sha
             ))
         }
         guard update.status == .ok || update.status == .created else { throw githubError(update, action: "write skill metadata") }
@@ -54,8 +72,8 @@ enum SkillMetadataWritebackService {
         struct PullResponse: Content { let html_url: String }
         let pull = try await app.client.post(URI(string: "\(api)/pulls"), headers: headers) { request in
             try request.content.encode(CreatePull(
-                title: "Add portable runtime metadata for \(document.id)", head: branch, base: base,
-                body: "Generated from validated MyContextProtocol deployment metadata. The database override remains active until this metadata is merged and synced.", draft: true
+                title: "Update portable runtime policy for \(document.id)", head: branch, base: base,
+                body: "Updates `.mycontext/skills.yaml` from validated MyContextProtocol deployment metadata. `SKILL.md` remains the package's authored source and is not reconstructed.", draft: true
             ))
         }
         guard pull.status == .created else { throw githubError(pull, action: "open the draft pull request") }
@@ -77,16 +95,72 @@ enum SkillMetadataWritebackService {
         return oauth
     }
 
-    private static func frontmatter(_ document: CompiledSkillDocument) -> String {
-        func quoted(_ value: String) -> String { String(data: try! JSONEncoder().encode(value), encoding: .utf8)! }
-        func list(_ values: [String]) -> String { "[" + values.map(quoted).joined(separator: ", ") + "]" }
-        var lines = ["---", "name: \(quoted(document.id))", "description: \(quoted(document.description))", "kind: \(document.kind.rawValue)", "scope: \(document.scope.rawValue)", "enforcement: \(document.enforcement.rawValue)", "priority: \(document.priority)", "version: \(quoted(document.version))", "activation:", "  mode: \(document.activation.mode.rawValue)", "  intents: \(list(document.activation.intents))", "  events: \(list(document.activation.events))", "  tags: \(list(document.activation.tags))", "  examples: \(list(document.activation.examples))"]
-        if !document.requires.isEmpty {
-            lines.append("requires:")
-            for requirement in document.requires { lines.append("  - capability: \(quoted(requirement.capability))"); lines.append("    required: \(requirement.required)"); lines.append("    on_missing: \(requirement.onMissing.rawValue)") }
+    static func mergedSidecar(existing: String?, document: CompiledSkillDocument, exposure: String = "resource") throws -> String {
+        var root = (try existing.flatMap { try load(yaml: $0) } as? [String: Any]) ?? [:]
+        var skills = root["skills"] as? [String: Any] ?? [:]
+        let metadata = SkillRuntimeOverridePatch(
+            exposure: exposure,
+            kind: document.kind,
+            scope: document.scope,
+            activation: document.activation,
+            enforcement: document.enforcement,
+            priority: document.priority,
+            requires: document.requires,
+            avoidWhen: document.avoidWhen,
+            conflictsWith: document.conflictsWith,
+            version: document.version,
+            lifecycle: document.lifecycle
+        )
+        let policy = SkillSourcePolicy(baseChecksum: document.source.checksum, metadata: metadata)
+        let encoded = try JSONEncoder().encode(policy)
+        let object = try JSONSerialization.jsonObject(with: encoded)
+        guard let generated = yamlCompatible(object) as? [String: Any] else {
+            throw Abort(.internalServerError, reason: "Generated skill policy was not an object")
         }
-        lines.append("conflictsWith: \(list(document.conflictsWith))"); lines.append("---")
-        return lines.joined(separator: "\n")
+        let existingSkill = skills[document.id] as? [String: Any] ?? [:]
+        skills[document.id] = merge(existing: existingSkill, generated: generated)
+        root["version"] = root["version"] ?? 1
+        root["skills"] = skills
+        return try dump(object: root, sortKeys: true) + "\n"
+    }
+
+    private static func yamlCompatible(_ value: Any) -> Any {
+        if let string = value as? NSString { return string as String }
+        if let number = value as? NSNumber {
+            if String(cString: number.objCType) == "c" { return number.boolValue }
+            let double = number.doubleValue
+            return double.rounded() == double ? number.intValue : double
+        }
+        if let dictionary = value as? [String: Any] {
+            return dictionary.mapValues(yamlCompatible)
+        }
+        if let array = value as? [Any] {
+            return array.map(yamlCompatible)
+        }
+        if let dictionary = value as? NSDictionary {
+            var result: [String: Any] = [:]
+            for (key, item) in dictionary {
+                if let key = key as? String { result[key] = yamlCompatible(item) }
+            }
+            return result
+        }
+        if let array = value as? NSArray {
+            return array.map(yamlCompatible)
+        }
+        return value
+    }
+
+    private static func merge(existing: [String: Any], generated: [String: Any]) -> [String: Any] {
+        var result = existing
+        for (key, value) in generated {
+            if let generatedObject = value as? [String: Any],
+               let existingObject = result[key] as? [String: Any] {
+                result[key] = merge(existing: existingObject, generated: generatedObject)
+            } else {
+                result[key] = value
+            }
+        }
+        return result
     }
 
     private static func githubError(_ response: ClientResponse, action: String) -> Abort {

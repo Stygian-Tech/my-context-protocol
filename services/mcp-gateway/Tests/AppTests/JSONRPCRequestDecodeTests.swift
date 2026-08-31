@@ -29,18 +29,29 @@ struct JSONRPCRequestDecodeTests {
         let json = #"{"name":"n","arguments":{"a":"1"}}"#.data(using: .utf8)!
         let p = try JSONDecoder().decode(JSONRPCParams.self, from: json)
         #expect(p.name == "n")
-        #expect(p.arguments == ["a": "1"])
+        #expect(p.arguments == ["a": .string("1")])
+        #expect(p.stringArguments == ["a": "1"])
         #expect(p.uri == nil)
     }
 
-    @Test("JSONRPCParams nested arguments coerce numbers and bools")
+    @Test("JSONRPCParams preserves native nested arguments")
     func paramsNested() throws {
-        let json = #"{"arguments":{"s":"x","i":3,"b":true,"d":1.5}}"#.data(using: .utf8)!
+        let json = #"{"arguments":{"s":"x","i":3,"b":true,"d":1.5,"nil":null,"array":["a",2],"object":{"enabled":false}}}"#.data(using: .utf8)!
         let p = try JSONDecoder().decode(JSONRPCParams.self, from: json)
-        #expect(p.arguments?["s"] == "x")
-        #expect(p.arguments?["i"] == "3")
-        #expect(p.arguments?["b"] == "true")
-        #expect(p.arguments?["d"] == "1.5")
+        #expect(p.arguments?["s"] == .string("x"))
+        #expect(p.arguments?["i"] == .integer(3))
+        #expect(p.arguments?["b"] == .bool(true))
+        #expect(p.arguments?["d"] == .number(1.5))
+        #expect(p.arguments?["nil"] == .null)
+        #expect(p.arguments?["array"] == .array([.string("a"), .integer(2)]))
+        #expect(p.arguments?["object"] == .object(["enabled": .bool(false)]))
+        #expect(p.stringArguments == ["s": "x", "i": "3", "b": "true", "d": "1.5"])
+
+        let roundTrip = try JSONDecoder().decode(
+            JSONRPCParams.self,
+            from: JSONEncoder().encode(p)
+        )
+        #expect(roundTrip == p)
     }
 
     @Test("JSONRPCRequest full envelope")
@@ -49,6 +60,14 @@ struct JSONRPCRequestDecodeTests {
         let r = try JSONDecoder().decode(JSONRPCRequest.self, from: json)
         #expect(r.jsonrpc == "2.0")
         #expect(r.method == "tools/list")
+    }
+
+    @Test("List cursors decode and round-trip")
+    func listCursor() throws {
+        let json = #"{"cursor":"opaque-page-2"}"#.data(using: .utf8)!
+        let params = try JSONDecoder().decode(JSONRPCParams.self, from: json)
+        #expect(params.cursor == "opaque-page-2")
+        #expect(try JSONDecoder().decode(JSONRPCParams.self, from: JSONEncoder().encode(params)) == params)
     }
 
     @Test("InputSchema fromCapabilitySchemaJson defaults on empty")

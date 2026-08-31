@@ -1,5 +1,5 @@
 {
-  "originHash" : "80bd3d121111407217dfe64c38017324fcfd69305f2bd4fa8dc361c61f82c3b2",
+  "originHash" : "ba4c63013da111e1a2c4c01c58d80d0aa858a44be5446992592add2b59b68a4a",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -78,8 +78,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Stygian-Tech/mcp-server-kit.git",
       "state" : {
-        "branch" : "f6ab939",
-        "revision" : "f6ab939df5ecefae9ae36a6becb4b9f83f858ff4"
+        "revision" : "c5c97ed9d7d7ce25f6f05e13883eaa4f61bf786e"
       }
     },
     {

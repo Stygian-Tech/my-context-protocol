@@ -51,6 +51,9 @@ final class CompiledSkill: Model, Content {
     @OptionalField(key: "priority") var priority: Int?
     @OptionalField(key: "version") var version: String?
     @OptionalField(key: "source_checksum") var sourceChecksum: String?
+    @OptionalField(key: "source_policy_json") var sourcePolicyJson: String?
+    @OptionalField(key: "source_policy_base_checksum") var sourcePolicyBaseChecksum: String?
+    @Field(key: "source_policy_stale") var sourcePolicyStale: Bool
     @OptionalField(key: "canonical_json") var canonicalJson: String?
     @OptionalField(key: "clarification_json") var clarificationJson: String?
     @Field(key: "clarification_required") var clarificationRequired: Bool
@@ -103,6 +106,7 @@ final class CompiledSkill: Model, Content {
         self.yamlFrontmatterPresent = yamlFrontmatterPresent
         self.canonicalSchemaVersion = CompiledSkillDocument.currentSchemaVersion
         self.clarificationRequired = true
+        self.sourcePolicyStale = false
         self.bodyDiffUnified = bodyDiffUnified
         self.bodyDiffPriorReleaseId = bodyDiffPriorReleaseId
     }
