@@ -226,7 +226,13 @@ export async function updateCompiledSkill(
     runtime?: {
       kind?: "operating" | "task" | "tool-use" | "reference";
       scope?: "global" | "organization" | "workspace" | "repository" | "task";
-      activation?: { mode: "always" | "intent" | "event" | "explicit"; intents: string[]; events: string[]; tags: string[]; examples: string[] };
+      activation?: {
+        mode?: "always" | "intent" | "event" | "explicit";
+        intents?: string[];
+        events?: string[];
+        tags?: string[];
+        examples?: string[];
+      };
       enforcement?: "advisory" | "required";
       priority?: number;
       version?: string;
