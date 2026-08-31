@@ -28,8 +28,13 @@ esac
 
 [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "Expected a full lowercase 40-character Git SHA."
 [ "$PROJECT_ID" = "$EXPECTED_PROJECT_ID" ] || fail "Refusing to deploy an unexpected Railway project ID."
-[ -n "${RAILWAY_TOKEN:-}" ] || fail "Missing environment-scoped RAILWAY_TOKEN."
 command -v railway >/dev/null 2>&1 || fail "Install the Railway CLI before deploying."
+
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+  [ -n "${RAILWAY_TOKEN:-}" ] || fail "Missing environment-scoped RAILWAY_TOKEN."
+else
+  railway whoami >/dev/null 2>&1 || fail "The local Railway CLI is not authenticated."
+fi
 
 cd "$ROOT"
 ACTUAL_SHA="$(git rev-parse HEAD)"
