@@ -15,7 +15,7 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
         .package(url: "https://github.com/vapor/jwt-kit.git", from: "4.13.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
-        .package(url: "https://github.com/Stygian-Tech/mcp-server-kit.git", revision: "f6ab939"),
+        .package(url: "https://github.com/Stygian-Tech/mcp-server-kit.git", revision: "c5c97ed9d7d7ce25f6f05e13883eaa4f61bf786e"),
     ],
     targets: [
         .executableTarget(

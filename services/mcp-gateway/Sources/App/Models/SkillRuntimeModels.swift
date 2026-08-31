@@ -10,6 +10,8 @@ final class SkillRuntimeOverride: Model, Content, @unchecked Sendable {
     @Field(key: "scope") var scope: String
     @Field(key: "metadata_json") var metadataJson: String
     @OptionalField(key: "source_checksum") var sourceChecksum: String?
+    @OptionalField(key: "base_checksum") var baseChecksum: String?
+    @Field(key: "is_stale") var isStale: Bool
     @OptionalField(key: "writeback_pr_url") var writebackPrUrl: String?
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     @Timestamp(key: "updated_at", on: .update) var updatedAt: Date?
@@ -24,8 +26,23 @@ final class SkillAssignment: Model, Content, @unchecked Sendable {
     @Field(key: "skill_id") var skillId: String
     @Field(key: "scope") var scope: String
     @Field(key: "activation_mode") var activationMode: String
+    @Field(key: "target_type") var targetType: String
+    @Field(key: "target_id") var targetId: String
     @Field(key: "required") var required: Bool
     @Field(key: "priority") var priority: Int
+    @Timestamp(key: "created_at", on: .create) var createdAt: Date?
+    init() {}
+}
+
+final class SkillPackageFile: Model, Content, @unchecked Sendable {
+    static let schema = "skill_package_files"
+    @ID(key: .id) var id: UUID?
+    @Parent(key: "skill_package_id") var skillPackage: SkillPackage
+    @Field(key: "path") var path: String
+    @Field(key: "content") var content: Data
+    @OptionalField(key: "content_type") var contentType: String?
+    @Field(key: "byte_count") var byteCount: Int
+    @Field(key: "checksum") var checksum: String
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     init() {}
 }

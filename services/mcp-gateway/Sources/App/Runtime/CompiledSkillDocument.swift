@@ -21,6 +21,31 @@ struct SkillRequirement: Codable, Equatable, Sendable {
     var capability: String
     var required: Bool
     var onMissing: MissingCapabilityFallback
+
+    enum CodingKeys: String, CodingKey {
+        case capability, required
+        case onMissing = "on_missing"
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey { case onMissing }
+
+    init(capability: String, required: Bool, onMissing: MissingCapabilityFallback) {
+        self.capability = capability
+        self.required = required
+        self.onMissing = onMissing
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        capability = try values.decode(String.self, forKey: .capability)
+        required = try values.decode(Bool.self, forKey: .required)
+        if let value = try values.decodeIfPresent(MissingCapabilityFallback.self, forKey: .onMissing) {
+            onMissing = value
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            onMissing = try legacy.decode(MissingCapabilityFallback.self, forKey: .onMissing)
+        }
+    }
 }
 
 struct SkillSource: Codable, Equatable, Sendable {
@@ -46,6 +71,8 @@ struct CompiledSkillDocument: Codable, Equatable, Sendable {
     var kind: SkillKind
     var scope: SkillScope
     var activation: SkillActivation
+    /// Negative routing hints are part of the canonical document so every resolver surface applies them.
+    var avoidWhen: [String]? = nil
     var enforcement: SkillEnforcement
     var priority: Int
     var requires: [SkillRequirement]
@@ -54,6 +81,9 @@ struct CompiledSkillDocument: Codable, Equatable, Sendable {
     var source: SkillSource
     var version: String
     var lifecycle: String?
+    /// Lossless JSON copy of standards-compliant front matter, including optional fields this
+    /// runtime does not interpret yet (for example license, compatibility, metadata, allowed-tools).
+    var standardFrontmatterJson: String? = nil
     var validation: SkillValidationState
 }
 

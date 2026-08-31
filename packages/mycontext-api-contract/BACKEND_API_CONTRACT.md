@@ -533,17 +533,21 @@ Dashboard-only aggregate of the active release MCP surface plus catalog markdown
 | GET | `/projects/:id/request-logs` | Yes | List request logs |
 # Portable Skill Runtime (schema v1)
 
-Projects expose five stable, colon-free MCP tools in addition to `mycontext_catalog` and compiled skill capabilities:
+Projects expose exactly three stable, colon-free runtime tools by default:
 
 - `resolve_context` bootstraps a task with ordered active and suggested skills, provenance, conflicts, capability bindings, missing context, and a trace.
-- `discover_skills` evaluates a new intent or event while retaining current skill IDs.
 - `get_skill` retrieves one complete compiled skill by stable ID and optional version.
-- `list_capabilities` binds abstract requirements against a provider-neutral tool inventory.
 - `report_skill_feedback` persists version-specific evidence and returns an issue draft. It never reports an external side effect unless the harness performs one.
 
-Because the current shared MCP request dependency accepts string-valued tool arguments, structured `context`, `available_tools`, and `current_skill_ids` inputs are JSON encoded strings. Tool results are versioned JSON text.
+The one-release compatibility aliases `mycontext_catalog`, `discover_skills`, and `list_capabilities` remain callable but are omitted from `tools/list`. Their legacy arguments and output wrappers are normalized through the canonical runtime handlers; they do not maintain separate discovery or scoring logic.
+
+Tool arguments preserve native nested JSON. Canonical results include both `structuredContent` and an equivalent JSON text content item for clients that do not consume structured results. Invalid arguments and unknown tool names return JSON-RPC `-32602`; failures encountered while executing an accepted tool call return a successful MCP tool response with `isError: true`.
+
+Generated per-skill tools are disabled by default, so the default `tools/list` result is exactly the three canonical tools. A project can temporarily opt into legacy compiled-tool listing and invocation by setting `legacy_compiled_tools_enabled: true` in `provider_preferences_json` through `PATCH /projects/:id/skill-runtime`. Canonical and alias names are reserved and suppress any colliding compiled capability even when this switch is enabled.
 
 Runtime frontmatter supports `kind`, `scope`, `activation`, `enforcement`, `priority`, `requires`, `conflictsWith`, `version`, and `lifecycle`. Legacy skills remain retrievable but compile with `explicit` activation and structured clarification questions.
+
+Runtime assignments are exact-target records: `target_type` must equal `scope`, and `target_id` must identify the organization, workspace, repository, or task being matched (`*` or `global` for global scope). Legacy unscoped rows remain database-compatible during rolling deployment but are not activated or returned by the dashboard API.
 
 Dashboard APIs:
 

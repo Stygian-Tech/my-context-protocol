@@ -1,5 +1,6 @@
 import Fluent
 import Vapor
+import Crypto
 
 struct SyncPipeline {
     let db: Database
@@ -89,6 +90,7 @@ struct SyncPipeline {
             let repoRoot = try fetcher.resolveRepositoryRoot(extractPath: extractPath)
             let basePath = repoRoot.path
             let skillFiles = fetcher.findSkillFiles(in: repoRoot)
+            let sourcePolicies = try SkillCanonicalCompiler.sourcePolicies(repoRoot: repoRoot)
 
             var allValid = true
             var errorSummary: String?
@@ -112,6 +114,11 @@ struct SyncPipeline {
                         validationStatus: validationStatus
                     )
                     try await skillPackage.save(on: db)
+                    try await Self.persistPackageFiles(
+                        package: skillPackage,
+                        skillDirectory: fileURL.deletingLastPathComponent(),
+                        db: db
+                    )
                     parsedSkills.append((skill, skillPackage))
 
                     if !report.isValid {
@@ -143,8 +150,23 @@ struct SyncPipeline {
                 }
             }
 
-            let compiler = Compiler(db: db)
-            try await compiler.compile(releaseId: release.id!, skills: parsedSkills)
+            let duplicateErrors = Validator.duplicateSkillIDErrors(parsedSkills.map { $0.0 })
+            if !duplicateErrors.isEmpty {
+                allValid = false
+                validationErrors.append(contentsOf: duplicateErrors.map { ["path": $0.path, "message": $0.message] })
+                errorSummary = (errorSummary.map { $0 + "\n" } ?? "")
+                    + duplicateErrors.map { "\($0.path): \($0.message)" }.joined(separator: "\n")
+            }
+
+            let skillsToCompile = parsedSkills
+            try await db.transaction { transaction in
+                let compiler = Compiler(db: transaction)
+                try await compiler.compile(
+                    releaseId: release.id!,
+                    skills: skillsToCompile,
+                    sourcePolicies: sourcePolicies
+                )
+            }
 
             let bodyChangeCount = try await ReleaseMetadataCarryForward.apply(
                 db: db,
@@ -195,6 +217,104 @@ enum PipelineError: Error {
 }
 
 extension SyncPipeline {
+    static let maxPackageFileCount = 128
+    static let maxPackageFileBytes = 256 * 1024
+    static let maxPackageBytes = 2 * 1024 * 1024
+
+    private struct PendingPackageFile: Sendable {
+        let path: String
+        let content: Data
+        let contentType: String?
+        let checksum: String
+    }
+
+    static func persistPackageFiles(package: SkillPackage, skillDirectory: URL, db: Database) async throws {
+        guard let packageId = package.id else { return }
+        let root = skillDirectory.standardizedFileURL
+        let files = try packageFiles(skillDirectory: root)
+        try await db.transaction { transaction in
+            for file in files {
+                let row = SkillPackageFile()
+                row.$skillPackage.id = packageId
+                row.path = file.path
+                row.content = file.content
+                row.contentType = file.contentType
+                row.byteCount = file.content.count
+                row.checksum = file.checksum
+                try await row.save(on: transaction)
+            }
+        }
+    }
+
+    private static func packageFiles(skillDirectory root: URL) throws -> [PendingPackageFile] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var pending: [PendingPackageFile] = []
+        var totalBytes = 0
+        while let fileURL = enumerator.nextObject() as? URL {
+            guard fileURL.lastPathComponent != "SKILL.md" else { continue }
+            let values = try fileURL.resourceValues(
+                forKeys: [.fileSizeKey, .isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey]
+            )
+            if values.isSymbolicLink == true { throw PackageFileIngestionError.unsafeEntry }
+            if values.isDirectory == true {
+                let nestedSkill = fileURL.appendingPathComponent("SKILL.md")
+                if FileManager.default.fileExists(atPath: nestedSkill.path) {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
+            guard values.isRegularFile == true else { continue }
+            let resolved = fileURL.resolvingSymlinksInPath().standardizedFileURL
+            let relative = try safePackageRelativePath(fileURL: resolved, root: root)
+            let size = values.fileSize ?? 0
+            guard size >= 0, size <= maxPackageFileBytes,
+                  pending.count < maxPackageFileCount, totalBytes + size <= maxPackageBytes else {
+                throw PackageFileIngestionError.boundsExceeded
+            }
+            let data = try Data(contentsOf: resolved, options: [.mappedIfSafe])
+            guard data.count == size else { throw PackageFileIngestionError.fileChangedDuringRead }
+            pending.append(.init(
+                path: relative,
+                content: data,
+                contentType: contentType(for: relative),
+                checksum: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            ))
+            totalBytes += data.count
+        }
+        return pending
+    }
+
+    static func safePackageRelativePath(fileURL: URL, root: URL) throws -> String {
+        let normalizedRoot = root.standardizedFileURL
+        let normalizedFile = fileURL.standardizedFileURL
+        guard normalizedFile.path.hasPrefix(normalizedRoot.path + "/") else {
+            throw PackageFileIngestionError.unsafeEntry
+        }
+        let relative = String(normalizedFile.path.dropFirst(normalizedRoot.path.count + 1))
+        guard !relative.isEmpty, !relative.split(separator: "/").contains("..") else {
+            throw PackageFileIngestionError.unsafeEntry
+        }
+        return relative
+    }
+
+    private static func contentType(for path: String) -> String? {
+        switch URL(fileURLWithPath: path).pathExtension.lowercased() {
+        case "md": return "text/markdown"
+        case "txt": return "text/plain"
+        case "json": return "application/json"
+        case "yaml", "yml": return "application/yaml"
+        case "sh": return "text/x-shellscript"
+        case "py": return "text/x-python"
+        case "js", "mjs": return "text/javascript"
+        case "ts": return "text/typescript"
+        default: return nil
+        }
+    }
+
     fileprivate static func relativeRepoPath(fileURL: URL, repoRootPath: String) -> String {
         let p = fileURL.path
         let prefix = repoRootPath.hasSuffix("/") ? repoRootPath : repoRootPath + "/"
@@ -203,4 +323,10 @@ extension SyncPipeline {
         }
         return fileURL.lastPathComponent
     }
+}
+
+enum PackageFileIngestionError: Error, Equatable {
+    case boundsExceeded
+    case fileChangedDuringRead
+    case unsafeEntry
 }

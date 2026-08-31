@@ -198,6 +198,8 @@ export interface SkillRuntimeAssignment {
   skill_id: string;
   scope: "global" | "organization" | "workspace" | "repository" | "task";
   activation_mode: "always" | "intent" | "event" | "explicit";
+  target_type: "global" | "organization" | "workspace" | "repository" | "task";
+  target_id: string;
   required: boolean;
   priority: number;
 }

@@ -960,17 +960,29 @@ struct ProjectController {
     static func updateCompiledSkill(req: Request) async throws -> CompiledSkillResponse {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
+        let response = try await req.db.transaction { transaction in
+            try await updateCompiledSkill(req: req, project: project, db: transaction)
+        }
+        req.application.mcpCatalogNotifications.bumpCatalog(for: project.id!)
+        return response
+    }
+
+    private static func updateCompiledSkill(
+        req: Request,
+        project: Project,
+        db: Database
+    ) async throws -> CompiledSkillResponse {
         guard let releaseId = req.parameters.get("releaseId", as: UUID.self),
               let compiledSkillId = req.parameters.get("compiledSkillId", as: UUID.self) else {
             throw Abort(.badRequest, reason: "Invalid release or compiled skill ID")
         }
-        guard let release = try await Release.query(on: req.db)
+        guard let release = try await Release.query(on: db)
             .filter(\.$id == releaseId)
             .filter(\.$project.$id == project.id!)
             .first() else {
             throw Abort(.notFound, reason: "Release not found")
         }
-        guard let compiled = try await CompiledSkill.query(on: req.db)
+        guard let compiled = try await CompiledSkill.query(on: db)
             .filter(\.$id == compiledSkillId)
             .filter(\.$release.$id == releaseId)
             .first() else {
@@ -1040,29 +1052,38 @@ struct ProjectController {
             compiled.clarificationRequired = document.validation.clarificationRequired
             compiled.clarificationJson = SkillRuntimeJSON.encode(SkillCanonicalCompiler.questionsForRuntime(fields: remaining.sorted()))
 
-            let existingOverride = try await SkillRuntimeOverride.query(on: req.db)
-                .filter(\.$project.$id == project.id!).filter(\.$skillId == document.id).filter(\.$scope == document.scope.rawValue).first()
+            let priorOverrides = try await SkillRuntimeOverride.query(on: db)
+                .filter(\.$project.$id == project.id!)
+                .filter(\.$skillId == document.id)
+                .all()
+            let existingOverride = priorOverrides.first { $0.scope == document.scope.rawValue }
+            for stale in priorOverrides where stale.id != existingOverride?.id {
+                try await stale.delete(on: db)
+            }
             let overrideRow = existingOverride ?? SkillRuntimeOverride()
             if existingOverride == nil { overrideRow.$project.id = project.id!; overrideRow.skillId = document.id; overrideRow.scope = document.scope.rawValue }
-            overrideRow.metadataJson = SkillRuntimeJSON.encode(runtime); overrideRow.sourceChecksum = document.source.checksum
-            try await overrideRow.save(on: req.db)
+            overrideRow.metadataJson = SkillRuntimeJSON.encode(runtime)
+            overrideRow.sourceChecksum = document.source.checksum
+            overrideRow.baseChecksum = document.source.checksum
+            overrideRow.isStale = false
+            try await overrideRow.save(on: db)
         }
-        try await compiled.save(on: req.db)
+        try await compiled.save(on: db)
         if bodyTextChanged, hadBodyDiff {
             release.skillBodyChangesCount = max(0, release.skillBodyChangesCount - 1)
-            try await release.save(on: req.db)
+            try await release.save(on: db)
         }
         if let routing = body.routing {
-            try await Self.applyRoutingPatch(compiledSkillId: compiled.id!, patch: routing, db: req.db)
+            try await Self.applyRoutingPatch(compiledSkillId: compiled.id!, patch: routing, db: db)
         }
         let exposureChanged = compiled.exposureType != exposureBefore
         let summaryChanged = compiled.summary != summaryBefore
         let routingChanged = body.routing != nil
-        let routingRule = try await RoutingRule.query(on: req.db)
+        let routingRule = try await RoutingRule.query(on: db)
             .filter(\.$compiledSkill.$id == compiled.id!)
             .first()
         let routingHints = RoutingHints.from(rule: routingRule)
-        let caps = try await CapabilityDef.query(on: req.db)
+        let caps = try await CapabilityDef.query(on: db)
             .filter(\.$compiledSkill.$id == compiled.id!)
             .all()
         let capType = compiled.exposureType == "guidance" ? "prompt" : compiled.exposureType
@@ -1086,7 +1107,7 @@ struct ProjectController {
         for cap in caps {
             cap.type = capType
             cap.schemaJson = newSchema
-            try await cap.save(on: req.db)
+            try await cap.save(on: db)
         }
 
         let routingHintsAfter = RoutingHints.from(rule: routingRule)
@@ -1120,11 +1141,8 @@ struct ProjectController {
                 compiled.status = autoStatus
             }
         }
-        try await compiled.save(on: req.db)
+        try await compiled.save(on: db)
 
-        if releaseId == project.activeReleaseId, let pid = project.id {
-            req.application.mcpCatalogNotifications.bumpCatalog(for: pid)
-        }
         return Self.compiledSkillResponse(compiled, schemaJson: newSchema, routingRule: routingRule)
     }
 
@@ -1162,7 +1180,15 @@ struct ProjectController {
     static func updateRuntimeSettings(req: Request) async throws -> RuntimeSettingsResponse {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
-        struct AssignmentPatch: Content { let skill_id: String; let scope: String; let activation_mode: String; let required: Bool; let priority: Int }
+        struct AssignmentPatch: Content {
+            let skill_id: String
+            let scope: String
+            let activation_mode: String
+            let required: Bool
+            let priority: Int
+            let target_type: String?
+            let target_id: String?
+        }
         struct Body: Content {
             let telemetry_enabled: Bool?
             let telemetry_retention_days: Int?
@@ -1174,25 +1200,78 @@ struct ProjectController {
             let assignments: [AssignmentPatch]?
         }
         let body = try req.content.decode(Body.self)
+        let normalizedAssignments: [(skillId: String, scope: String, activation: String, required: Bool, priority: Int, targetType: String, targetId: String)]?
+        if let patches = body.assignments {
+            let activeSkillIds: Set<String>
+            if let releaseId = project.activeReleaseId {
+                activeSkillIds = Set(try await CompiledSkill.query(on: req.db)
+                    .filter(\.$release.$id == releaseId)
+                    .filter(\.$status == "ready")
+                    .all()
+                    .compactMap { $0.skillId ?? $0.name })
+            } else {
+                activeSkillIds = []
+            }
+            var uniqueness = Set<String>()
+            normalizedAssignments = try patches.map { patch in
+                let skillId = patch.skill_id.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !skillId.isEmpty, skillId.count <= 128, activeSkillIds.contains(skillId) else {
+                    throw Abort(.badRequest, reason: "Assignments must reference a ready skill in the active release")
+                }
+                guard SkillScope(rawValue: patch.scope) != nil,
+                      SkillActivationMode(rawValue: patch.activation_mode) != nil else {
+                    throw Abort(.badRequest, reason: "Invalid assignment scope or activation mode")
+                }
+                guard (0...100).contains(patch.priority) else {
+                    throw Abort(.badRequest, reason: "Assignment priority must be between 0 and 100")
+                }
+                guard let targetType = patch.target_type?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      let targetId = patch.target_id?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !targetType.isEmpty, !targetId.isEmpty, targetId.count <= 512,
+                      targetType == patch.scope else {
+                    throw Abort(.badRequest, reason: "Assignment target type must match its scope and include an exact target identity")
+                }
+                if targetType == SkillScope.global.rawValue, targetId != "*", targetId != "global" {
+                    throw Abort(.badRequest, reason: "Global assignments must target `*` or `global`")
+                }
+                let identity = "\(skillId)\u{1f}\(patch.scope)\u{1f}\(targetType)\u{1f}\(targetId)"
+                guard uniqueness.insert(identity).inserted else {
+                    throw Abort(.badRequest, reason: "Duplicate assignment for skill, scope, and target identity")
+                }
+                return (skillId, patch.scope, patch.activation_mode, patch.required, patch.priority, targetType, targetId)
+            }
+        } else {
+            normalizedAssignments = nil
+        }
         let settings = try await runtimeSettingsRow(projectId: project.id!, db: req.db)
         if let value = body.telemetry_enabled { settings.telemetryEnabled = value }
         if let value = body.telemetry_retention_days { settings.telemetryRetentionDays = min(365, max(1, value)) }
-        if let value = body.semantic_enabled { settings.semanticEnabled = value }
-        if body.embedding_provider != nil { settings.embeddingProvider = body.embedding_provider?.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if body.embedding_model != nil { settings.embeddingModel = body.embedding_model?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        // Embedding controls are retained in the wire response for compatibility, but resolution
+        // is deterministic and never reads or writes embeddings.
+        settings.semanticEnabled = false
+        settings.embeddingProvider = nil
+        settings.embeddingModel = nil
         if let value = body.feedback_issue_creation_enabled { settings.feedbackIssueCreationEnabled = value }
         if let json = body.provider_preferences_json {
             guard json.isEmpty || (try? JSONSerialization.jsonObject(with: Data(json.utf8))) != nil else { throw Abort(.badRequest, reason: "provider_preferences_json must be valid JSON") }
             settings.providerPreferencesJson = json.isEmpty ? nil : json
         }
-        try await settings.save(on: req.db)
-        if let patches = body.assignments {
-            try await SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).delete()
-            for patch in patches {
-                guard SkillScope(rawValue: patch.scope) != nil, SkillActivationMode(rawValue: patch.activation_mode) != nil else { throw Abort(.badRequest, reason: "Invalid assignment scope or activation mode") }
-                let row = SkillAssignment(); row.$project.id = project.id!; row.skillId = patch.skill_id
-                row.scope = patch.scope; row.activationMode = patch.activation_mode; row.required = patch.required
-                row.priority = min(100, max(0, patch.priority)); try await row.save(on: req.db)
+        try await req.db.transaction { transaction in
+            try await settings.save(on: transaction)
+            if let patches = normalizedAssignments {
+                try await SkillAssignment.query(on: transaction).filter(\.$project.$id == project.id!).delete()
+                for patch in patches {
+                    let row = SkillAssignment()
+                    row.$project.id = project.id!
+                    row.skillId = patch.skillId
+                    row.scope = patch.scope
+                    row.activationMode = patch.activation
+                    row.required = patch.required
+                    row.priority = patch.priority
+                    row.targetType = patch.targetType
+                    row.targetId = patch.targetId
+                    try await row.save(on: transaction)
+                }
             }
         }
         let assignments = try await SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$priority, .descending).all()
@@ -1205,15 +1284,17 @@ struct ProjectController {
         if let existing = try await ProjectRuntimeSettings.query(on: db).filter(\.$project.$id == projectId).first() { return existing }
         let settings = ProjectRuntimeSettings(); settings.$project.id = projectId
         settings.telemetryEnabled = false; settings.telemetryRetentionDays = 30; settings.semanticEnabled = false
+        settings.embeddingProvider = nil; settings.embeddingModel = nil
         settings.feedbackIssueCreationEnabled = false
         try await settings.save(on: db); return settings
     }
 
     private static func runtimeSettingsResponse(_ settings: ProjectRuntimeSettings, assignments: [SkillAssignment], events: [SkillRuntimeEvent]) -> RuntimeSettingsResponse {
-        .init(telemetry_enabled: settings.telemetryEnabled, telemetry_retention_days: settings.telemetryRetentionDays,
-              semantic_enabled: settings.semanticEnabled, embedding_provider: settings.embeddingProvider,
-              embedding_model: settings.embeddingModel, feedback_issue_creation_enabled: settings.feedbackIssueCreationEnabled,
-              provider_preferences_json: settings.providerPreferencesJson, assignments: assignments, recent_events: events)
+        let scopedAssignments = assignments.filter { $0.targetType == $0.scope }
+        return .init(telemetry_enabled: settings.telemetryEnabled, telemetry_retention_days: settings.telemetryRetentionDays,
+              semantic_enabled: false, embedding_provider: nil,
+              embedding_model: nil, feedback_issue_creation_enabled: settings.feedbackIssueCreationEnabled,
+              provider_preferences_json: settings.providerPreferencesJson, assignments: scopedAssignments, recent_events: events)
     }
 
     private static func apiKeyResponse(_ k: ApiKey, projectId: UUID) -> ApiKeyResponse {

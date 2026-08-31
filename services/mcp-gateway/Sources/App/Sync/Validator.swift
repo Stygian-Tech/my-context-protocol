@@ -14,7 +14,7 @@ struct ValidationError {
 
 struct Validator {
     static let maxFileSize = 1024 * 1024
-    static let allowedNamePattern = try! NSRegularExpression(pattern: "^[a-z0-9][a-z0-9-]*$")
+    static let allowedNamePattern = try! NSRegularExpression(pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
     static func validate(_ skill: ParsedSkill) -> ValidationReport {
         var errors: [ValidationError] = []
@@ -58,6 +58,31 @@ struct Validator {
             ))
         }
 
+        if skill.hadYamlFrontmatter {
+            let folderName = URL(fileURLWithPath: skill.path).deletingLastPathComponent().lastPathComponent
+            if folderName.isEmpty || folderName != skill.name {
+                errors.append(ValidationError(
+                    path: skill.path,
+                    message: "name must exactly match the parent skill directory: expected \"\(folderName)\"",
+                    line: nil
+                ))
+            }
+            let description = skill.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if description.isEmpty {
+                errors.append(ValidationError(path: skill.path, message: "description cannot be empty", line: nil))
+            } else if description.count > 1024 {
+                errors.append(ValidationError(path: skill.path, message: "description must be 1024 characters or less", line: nil))
+            }
+        }
+
+        if MCPConstants.isReservedRuntimeToolName(skill.name) {
+            errors.append(ValidationError(
+                path: skill.path,
+                message: "name is reserved by the MyContextProtocol runtime: \"\(skill.name)\"",
+                line: nil
+            ))
+        }
+
         if skill.body.count > Self.maxFileSize {
             errors.append(ValidationError(
                 path: skill.path,
@@ -71,5 +96,15 @@ struct Validator {
             errors: errors,
             warnings: warnings
         )
+    }
+
+    static func duplicateSkillIDErrors(_ skills: [ParsedSkill]) -> [ValidationError] {
+        let grouped = Dictionary(grouping: skills, by: \.name)
+        return grouped.keys.sorted().flatMap { name -> [ValidationError] in
+            guard let matches = grouped[name], matches.count > 1 else { return [] }
+            return matches.map {
+                ValidationError(path: $0.path, message: "duplicate skill id \"\(name)\" in this release", line: nil)
+            }
+        }
     }
 }

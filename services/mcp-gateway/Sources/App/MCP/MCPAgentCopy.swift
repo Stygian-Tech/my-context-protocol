@@ -34,9 +34,9 @@ enum MCPAgentCopy {
     static func initializeInstructions(projectName: String, projectDashboardURL: String?) -> String {
         var lines: [String] = [
             "You are connected to MyContextProtocol project \"\(projectName)\".",
-            "Discovery: before choosing project-specific skills, call tool `\(MCPConstants.catalogToolName)` with the current user task (`mode=route`, `task=...`) to rank relevant skills across tools, resources, and prompts.",
-            "To load any full SKILL.md body through the tool path, call `\(MCPConstants.catalogToolName)` with `mode=skill` and `skill=<slug-or-uri>`.",
-            "Compiled tools and prompts use the SKILL.md package slug as the MCP name (no `skill:` prefix).",
+            "Start by calling `\(MCPConstants.resolveContextToolName)` with the current user request and the tools available in your session. It returns active and suggested skills, conflicts, provenance, capability bindings, and a resolution trace.",
+            "Use `\(MCPConstants.getSkillToolName)` when you need the complete versioned skill document, and `\(MCPConstants.reportSkillFeedbackToolName)` when observed guidance is missing, ambiguous, incorrect, conflicting, or outdated.",
+            "Projects with the explicit legacy compiled-tools switch may additionally expose per-skill tools using the SKILL.md package slug (no `skill:` prefix).",
             "Prefer tools for callable procedures; use resources for long markdown context (`resources/read` with `ctx://skill/...` URIs); prompts expose reusable guidance templates.",
         ]
         if let dash = projectDashboardURL, !dash.isEmpty {

@@ -1,15 +1,18 @@
 import Foundation
+import MCPServerKit
 import Testing
 @testable import App
 
 @Suite("MCP agent visibility")
 struct MCPAgentVisibilityTests {
     @Test func protocolVersionNegotiation() {
-        #expect(MCPProtocolVersion.negotiated(requested: "2025-06-18") == "2025-06-18")
-        #expect(MCPProtocolVersion.negotiated(requested: "2024-11-05") == "2024-11-05")
-        #expect(MCPProtocolVersion.negotiated(requested: "2099-01-01") == "2024-11-05")
-        #expect(MCPProtocolVersion.negotiated(requested: nil) == "2024-11-05")
-        #expect(MCPProtocolVersion.negotiated(requested: "  ") == "2024-11-05")
+        #expect(MCPServerKit.MCPProtocolVersion.negotiated(requested: "2025-11-25") == "2025-11-25")
+        #expect(MCPServerKit.MCPProtocolVersion.negotiated(requested: "2025-03-26") == "2025-03-26")
+        #expect(MCPServerKit.MCPProtocolVersion.negotiated(requested: "2025-06-18") == "2025-06-18")
+        #expect(MCPServerKit.MCPProtocolVersion.negotiated(requested: "2024-11-05") == "2024-11-05")
+        #expect(MCPServerKit.MCPProtocolVersion.negotiated(requested: "2099-01-01") == "2025-11-25")
+        #expect(MCPServerKit.MCPProtocolVersion.negotiated(requested: nil) == "2025-11-25")
+        #expect(MCPServerKit.MCPProtocolVersion.negotiated(requested: "  ") == "2025-11-25")
     }
 
     @Test func catalogRevisionBumps() {
@@ -37,9 +40,86 @@ struct MCPAgentVisibilityTests {
     }
 
     @Test func jsonRpcParamsDecodesProtocolVersion() throws {
-        let json = #"{"protocolVersion":"2025-06-18","capabilities":{}}"#.data(using: .utf8)!
+        let json = #"{"protocolVersion":"2025-11-25","capabilities":{}}"#.data(using: .utf8)!
         let p = try JSONDecoder().decode(JSONRPCParams.self, from: json)
-        #expect(p.protocolVersion == "2025-06-18")
+        #expect(p.protocolVersion == "2025-11-25")
+    }
+
+    @Test func initializeCopyAdvertisesCanonicalBootstrapTool() {
+        let copy = MCPAgentCopy.initializeInstructions(projectName: "Example", projectDashboardURL: nil)
+        #expect(copy.contains("`resolve_context`"))
+        #expect(copy.contains("`get_skill`"))
+        #expect(copy.contains("`report_skill_feedback`"))
+        #expect(!copy.contains("`mycontext_catalog`"))
+        #expect(!copy.contains("`discover_skills`"))
+        #expect(!copy.contains("`list_capabilities`"))
+    }
+
+    @Test func publicAndReservedRuntimeToolNamesAreStable() {
+        #expect(MCPConstants.runtimeToolNames == ["resolve_context", "get_skill", "report_skill_feedback"])
+        #expect(Set(MCPConstants.hiddenRuntimeToolAliases) == ["mycontext_catalog", "discover_skills", "list_capabilities"])
+        #expect(MCPConstants.callableRuntimeToolNames.count == 6)
+        for name in MCPConstants.callableRuntimeToolNames {
+            #expect(MCPConstants.isReservedRuntimeToolName(name))
+        }
+    }
+
+    @Test func runtimeSchemasAreRequiredTypedAndStructured() {
+        let resolve = CapabilitySchemaBuilder.runtimeToolInputSchema(name: "resolve_context")
+        #expect(resolve.required == ["request"])
+        #expect(resolve.additionalProperties == false)
+        #expect(resolve.properties?["available_tools"]?.type == "array")
+        #expect(resolve.properties?["available_tools"]?.items?.type == "object")
+        #expect(resolve.properties?["context"]?.type == "object")
+
+        let feedback = CapabilitySchemaBuilder.runtimeToolInputSchema(name: "report_skill_feedback")
+        #expect(Set(feedback.required ?? []) == ["skill_id", "version", "category", "summary", "evidence"])
+        #expect(feedback.properties?["category"]?.enumValues?.contains(.string("poor_discovery")) == true)
+        #expect(feedback.properties?["create_issue"]?.type == "boolean")
+        #expect(feedback.properties?["evidence"]?.maxLength == 8_000)
+
+        for name in MCPConstants.runtimeToolNames {
+            let output = CapabilitySchemaBuilder.runtimeToolOutputSchema(name: name)
+            #expect(output.type == "object")
+            #expect(output.required?.isEmpty == false)
+        }
+    }
+
+    @Test func paginationIsStableAndRejectsWrongContext() throws {
+        let values = ["a", "b", "c", "d", "e"]
+        let first = try MCPPaginator.page(values, cursor: nil, scope: "tools:release-a", pageSize: 2)
+        #expect(first.items == ["a", "b"])
+        let second = try MCPPaginator.page(values, cursor: first.nextCursor, scope: "tools:release-a", pageSize: 2)
+        #expect(second.items == ["c", "d"])
+        let final = try MCPPaginator.page(values, cursor: second.nextCursor, scope: "tools:release-a", pageSize: 2)
+        #expect(final.items == ["e"])
+        #expect(final.nextCursor == nil)
+        #expect(throws: MCPPaginationError.self) {
+            try MCPPaginator.page(values, cursor: first.nextCursor, scope: "resources:release-a", pageSize: 2)
+        }
+        #expect(throws: MCPPaginationError.self) {
+            try MCPPaginator.page(values, cursor: "not+a+cursor", scope: "tools:release-a", pageSize: 2)
+        }
+    }
+
+    @Test func packageResourcePathsAndUrisRejectTraversal() throws {
+        #expect(try SkillPackageResourceService.normalize(relativePath: "references/guide.md") == "references/guide.md")
+        let uri = SkillPackageResourceService.uri(
+            skillId: "swift checks",
+            path: "references/guide.md",
+            version: "release+abc123"
+        )
+        #expect(uri == "ctx://skill/swift%20checks/file/references/guide.md?version=release%2Babc123")
+        #expect(
+            try SkillPackageResourceService.parse(uri: uri) == .init(
+                skillId: "swift checks",
+                path: "references/guide.md",
+                version: "release+abc123"
+            )
+        )
+        #expect(throws: (any Error).self) { try SkillPackageResourceService.normalize(relativePath: "../secret") }
+        #expect(throws: (any Error).self) { try SkillPackageResourceService.normalize(relativePath: "%2e%2e/secret") }
+        #expect(throws: (any Error).self) { try SkillPackageResourceService.parse(uri: "ctx://skill/swift/file/../secret") }
     }
 
     @Test func eventPathSegments() {

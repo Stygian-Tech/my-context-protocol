@@ -194,6 +194,7 @@ function SkillEditorRow({
   const [runtimeEnforcement, setRuntimeEnforcement] = useState(skill.enforcement ?? "advisory");
   const [runtimePriority, setRuntimePriority] = useState(skill.priority ?? 50);
   const [runtimeVersion, setRuntimeVersion] = useState(skill.version ?? "0.0.0");
+  const [runtimeDirty, setRuntimeDirty] = useState(false);
   /** Errors returned from the API after a failed save (merged with live validation for display). */
   const [serverIssues, setServerIssues] = useState<McpMetadataIssue[]>([]);
   /** When false and body is valid non-empty, show rendered markdown; click or focus opens the editor. */
@@ -236,6 +237,7 @@ function SkillEditorRow({
     setRuntimeEnforcement(skill.enforcement ?? "advisory");
     setRuntimePriority(skill.priority ?? 50);
     setRuntimeVersion(skill.version ?? "0.0.0");
+    setRuntimeDirty(false);
     setServerIssues([]);
     setSkillBodyEditing(false);
   }, [skill]);
@@ -260,21 +262,20 @@ function SkillEditorRow({
           failure_modes: listFromMultiline(failureModesText),
           invoke_first: invokeFirst,
         },
-        runtime: {
+      };
+      if (runtimeDirty) {
+        payload.runtime = {
           kind: runtimeKind,
           scope: runtimeScope,
           activation: {
             mode: runtimeActivation,
             intents: listFromMultiline(useWhenText),
-            events: [],
-            tags: [],
-            examples: [],
           },
           enforcement: runtimeEnforcement,
           priority: runtimePriority,
           version: runtimeVersion.trim() || "0.0.0",
-        },
-      };
+        };
+      }
       if (schemaDirty) {
         payload.replace_schema = true;
         payload.schema_json = schemaJson;
@@ -284,6 +285,7 @@ function SkillEditorRow({
     onSuccess: () => {
       setServerIssues([]);
       setSchemaDirty(false);
+      setRuntimeDirty(false);
       queryClient.invalidateQueries({
         queryKey: ["compiled-skills", projectId, releaseId],
       });
@@ -445,9 +447,9 @@ function SkillEditorRow({
           size="sm"
           onClick={() => writebackMutation.mutate()}
           disabled={writebackMutation.isPending || skill.clarification_required === true}
-          title={skill.clarification_required ? "Resolve and save runtime clarification before write-back" : "Open a draft GitHub pull request"}
+          title={skill.clarification_required ? "Resolve and save runtime clarification before opening a sidecar pull request" : "Open a draft pull request for .mycontext/skills.yaml"}
         >
-          {writebackMutation.isPending ? "Opening PR…" : "Write Back"}
+          {writebackMutation.isPending ? "Opening PR…" : "Open Sidecar PR"}
         </Button>
         <Button
           type="button"
@@ -464,7 +466,7 @@ function SkillEditorRow({
   return (
     <div className="space-y-3 rounded-lg border p-4">
       {headerBar}
-      {writebackMutation.error ? <p className="text-destructive text-xs">Could not open the metadata pull request. Confirm repository write and pull-request permissions.</p> : null}
+      {writebackMutation.error ? <p className="text-destructive text-xs">Could not open the sidecar policy pull request. Confirm repository write and pull-request permissions.</p> : null}
       {reviewFieldSet.size > 0 ? (
         <p
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-snug text-amber-950 dark:text-amber-100"
@@ -642,46 +644,46 @@ function SkillEditorRow({
           </p>
           {skill.clarification_required ? (
             <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200" role="status">
-              Clarification required: {(skill.clarification_questions ?? []).map((question) => question.field).join(", ") || "runtime metadata"}.
+              Clarification required: {(skill.clarification_questions ?? []).map((question) => question.question).join(" ") || "Review the runtime policy before publishing."}
             </p>
           ) : null}
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           <div className="space-y-1.5">
             <Label className="text-xs">Kind</Label>
-            <Select value={runtimeKind} onValueChange={(value) => setRuntimeKind(value as typeof runtimeKind)}>
+            <Select value={runtimeKind} onValueChange={(value) => { setRuntimeKind(value as typeof runtimeKind); setRuntimeDirty(true); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{["operating", "task", "tool-use", "reference"].map((value) => <SelectItem key={value} value={value}>{selectOptionTitleCase(value)}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Scope</Label>
-            <Select value={runtimeScope} onValueChange={(value) => setRuntimeScope(value as typeof runtimeScope)}>
+            <Select value={runtimeScope} onValueChange={(value) => { setRuntimeScope(value as typeof runtimeScope); setRuntimeDirty(true); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{["global", "organization", "workspace", "repository", "task"].map((value) => <SelectItem key={value} value={value}>{selectOptionTitleCase(value)}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Activation</Label>
-            <Select value={runtimeActivation} onValueChange={(value) => setRuntimeActivation(value as typeof runtimeActivation)}>
+            <Select value={runtimeActivation} onValueChange={(value) => { setRuntimeActivation(value as typeof runtimeActivation); setRuntimeDirty(true); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{["always", "intent", "event", "explicit"].map((value) => <SelectItem key={value} value={value}>{selectOptionTitleCase(value)}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Enforcement</Label>
-            <Select value={runtimeEnforcement} onValueChange={(value) => setRuntimeEnforcement(value as typeof runtimeEnforcement)}>
+            <Select value={runtimeEnforcement} onValueChange={(value) => { setRuntimeEnforcement(value as typeof runtimeEnforcement); setRuntimeDirty(true); }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{["advisory", "required"].map((value) => <SelectItem key={value} value={value}>{selectOptionTitleCase(value)}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor={`runtime-priority-${skill.id}`} className="text-xs">Priority</Label>
-            <Input id={`runtime-priority-${skill.id}`} type="number" min={0} max={100} value={runtimePriority} onChange={(event) => setRuntimePriority(Math.min(100, Math.max(0, Number(event.target.value))))} />
+            <Input id={`runtime-priority-${skill.id}`} type="number" min={0} max={100} value={runtimePriority} onChange={(event) => { setRuntimePriority(Math.min(100, Math.max(0, Number(event.target.value)))); setRuntimeDirty(true); }} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor={`runtime-version-${skill.id}`} className="text-xs">Version</Label>
-            <Input id={`runtime-version-${skill.id}`} value={runtimeVersion} onChange={(event) => setRuntimeVersion(event.target.value)} placeholder="1.0.0" />
+            <Input id={`runtime-version-${skill.id}`} value={runtimeVersion} onChange={(event) => { setRuntimeVersion(event.target.value); setRuntimeDirty(true); }} placeholder="source revision + checksum" />
           </div>
         </div>
       </div>
@@ -702,9 +704,10 @@ function SkillEditorRow({
         )}
       >
         <div>
-          <p className="text-xs font-medium">SKILL Routing (Front Matter)</p>
+          <p className="text-xs font-medium">Skill Routing (Source + Sidecar)</p>
           <p className="text-muted-foreground mt-0.5 text-xs leading-snug">
-            One phrase per line (same as comma-separated lists in SKILL.md). Shown in MCP{" "}
+            One phrase per line. Source routing is preserved; deployment policy is written to{" "}
+            <code className="font-mono text-[0.7rem]">.mycontext/skills.yaml</code>. Hints are shown in MCP{" "}
             <code className="font-mono text-[0.7rem]">resources/list</code> and at the top of{" "}
             <code className="font-mono text-[0.7rem]">resources/read</code> when exposure is{" "}
             <span className="font-medium">resource</span>. Values are stored in the release even
