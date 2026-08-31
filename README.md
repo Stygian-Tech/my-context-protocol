@@ -21,7 +21,7 @@ Stygian-style monorepo for MyContextProtocol: a hosted MCP gateway that ingests 
 └── turbo.json
 ```
 
-The backend also consumes the external Swift package `mcp-server-kit` for reusable MCP protocol primitives. During local two-repo development this is wired as a sibling checkout; publish and pin that package before relying on GitHub Actions or Fly remote builds.
+The backend also consumes the external Swift package `mcp-server-kit` for reusable MCP protocol primitives. During local two-repo development this is wired as a sibling checkout; publish and pin that package before relying on GitHub Actions or Railway remote builds.
 
 ## Local Development
 
@@ -50,13 +50,14 @@ GitHub Actions is the source of truth for CI. The single workflow at `.github/wo
 bash scripts/ci.sh
 ```
 
-The workflow detects changes with `scripts/ci-detect-changes.sh`, runs the Bun/Turbo workspace checks, runs Swift tests/builds for `services/mcp-gateway`, and conditionally deploys the gateway to Fly.io on `dev` and `main`.
+The workflow detects changes with `scripts/ci-detect-changes.sh`, runs the Bun/Turbo workspace checks, runs Swift tests/builds for `services/mcp-gateway`, and conditionally deploys changed production services to Railway from `main`.
 
 ### Deployment
 
-- **Backend**: Fly.io, configured by `services/mcp-gateway/fly.toml` and deployed with `bash scripts/fly-deploy-mcp-gateway.sh dev|main`.
-- **Frontend**: Vercel Git integration with **Root Directory = `apps/web`**. Vercel reads `apps/web/vercel.json`. Install runs from the monorepo root (`cd ../.. && bun install --frozen-lockfile`) so workspace deps and `bun.lock` stay in sync. Bun is pinned to **1.3.6** (`.bun-version`) to match Vercel’s default runtime. Production builds use Turbopack (`next build --turbopack` in `apps/web/package.json`).
-- **Optional self-hosting**: `services/mcp-gateway/docker-compose.yml` remains as a Portainer/Compose reference, but Fly is the primary backend path.
+- **Development**: Railway hosts Web, Gateway, and Postgres. Configuration lives under `railway/`; see `docs/runbooks/supabase-to-railway-dev.md`.
+- **Production**: Railway hosts Web, Gateway, and Postgres in an isolated `production` environment. See `railway/README.md` and `docs/runbooks/supabase-to-railway-production.md`.
+- **Retired infrastructure**: the previous Fly gateway, Supabase database, and Vercel frontend were permanently removed after the Railway cutover was verified. They are not rollback targets.
+- **Optional self-hosting**: `services/mcp-gateway/docker-compose.yml` remains as a Portainer/Compose reference.
 
 ## History
 

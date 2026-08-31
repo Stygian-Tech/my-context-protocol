@@ -42,29 +42,29 @@ Sources/App/
 └── Utilities/     # Shared low-level helpers
 ```
 
-## Fly.io
+## Hosted environments
 
-First-time setup:
+Development and production run on isolated Railway environments with Railway Postgres. See the
+root `railway/README.md` and the runbooks under `docs/runbooks/`. The former Fly production app,
+Supabase database, and Vercel frontend were permanently removed after the Railway production
+cutover and are not rollback resources.
 
-```bash
-fly apps create my-context-protocol-dev-mcp-gateway
-fly apps create my-context-protocol-prod-mcp-gateway
-```
-
-Set secrets on each Fly app:
+Set production variables on the Railway Gateway service:
 
 ```bash
-fly secrets set \
-  APP_ENV=dev \
-  DATABASE_URL='postgres://...' \
-  DATABASE_INSECURE_TLS=1 \
+railway variable set --environment production --service Gateway \
+  APP_ENV=prod \
+  DATABASE_HOST='postgres.railway.internal' \
+  DATABASE_PORT=5432 \
+  DATABASE_USERNAME='postgres' \
+  DATABASE_PASSWORD='...' \
+  DATABASE_NAME='railway' \
   ENCRYPTION_KEY='...' \
-  CORS_ORIGIN='https://testing.mycontextprotocol.dev' \
-  FRONTEND_URL='https://testing.mycontextprotocol.dev' \
+  CORS_ORIGIN='https://mycontextprotocol.dev' \
+  FRONTEND_URL='https://mycontextprotocol.dev' \
   GITHUB_CLIENT_ID='...' \
   GITHUB_CLIENT_SECRET='...' \
-  GITHUB_OAUTH_REDIRECT_URI='https://api.testing.mycontextprotocol.dev/auth/github/callback' \
-  --app my-context-protocol-dev-mcp-gateway
+  GITHUB_OAUTH_REDIRECT_URI='https://api.mycontextprotocol.dev/auth/github/callback'
 ```
 
 `GITHUB_OAUTH_REDIRECT_URI` is **only** for dashboard GitHub login (`/auth/github/callback`). Do not point it at `/auth/github/app/callback` — that path is for GitHub App installation and uses `GITHUB_APP_SETUP_CALLBACK_URL` instead. If login OAuth is sent to the app callback, users return to the frontend with `github_app_error=invalid_state` and `/auth/me` stays 401.
@@ -88,50 +88,43 @@ claude mcp add --transport http my-context https://<project-host>/mcp
 
 Use Claude's fixed callback-port option only when you need a stable localhost redirect URI for local testing.
 
-For tenant custom domains, the gateway must create Fly edge certificates after DNS verification. Set a Fly token with certificate access and the gateway app name:
+For tenant custom domains, the gateway creates Railway custom domains after application ownership
+verification. Set a production-scoped Railway project token on Gateway:
 
 ```bash
-fly secrets set \
-  FLY_API_TOKEN='FlyV1...' \
-  FLY_CERTIFICATE_APP_NAME='my-context-protocol-dev-gateway' \
-  FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE='app-12qq5w0' \
-  --app my-context-protocol-dev-gateway
+railway variable set --environment production --service Gateway \
+  RAILWAY_PROJECT_TOKEN='...'
 ```
 
-Use the value Fly shows for `TXT _fly-ownership.<hostname>` when running `fly certs setup <hostname>`.
-The dashboard includes that ownership TXT record in the tenant DNS validation flow before requesting a Fly certificate.
-
-Without these runtime secrets, a tenant CNAME can route to Fly but TLS for that custom hostname will fail before Vapor sees the request.
+The dashboard returns both the application ownership TXT record and Railway's required routing or
+ownership records. Without a project token, existing domains keep routing but creating a new tenant
+domain fails closed with HTTP 503.
 
 Verified custom domains remain stored when an account loses Pro, but runtime routing requires current Pro entitlement. Routing resumes automatically after the account regains Pro access.
 
-Deploy:
+Deploy production from the repository root:
 
 ```bash
-bash deploy.sh dev
-bash deploy.sh main
+bash scripts/railway-deploy-production.sh main Gateway
 ```
 
-From the repo root:
-
-```bash
-bash scripts/fly-deploy-mcp-gateway.sh dev
-```
-
-GitHub Actions uses the root script and expects `FLY_API_TOKEN`, plus optional `FLY_MCP_GATEWAY_APP_DEV`, `FLY_MCP_GATEWAY_APP_PROD`, and `FLY_ORG` secrets.
+GitHub Actions uses the same script on `main` and expects a production-scoped
+`RAILWAY_PRODUCTION_TOKEN` repository secret.
 
 ### Troubleshooting
 
-If Fly reports the app is not listening on `0.0.0.0:8080`, check machine logs:
+Check production deployment logs with:
 
 ```bash
-fly logs -a my-context-protocol-dev-gateway
+railway logs --environment production --service Gateway --deployment --lines 100
 ```
 
 Common startup failures:
 
-- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — set `DATABASE_INSECURE_TLS=1` (already in `fly.toml` `[env]` for dev; can also set as a secret). Use proper CA trust for production instead of skipping verification.
-- **Missing database config** — `APP_ENV=dev` requires `DATABASE_URL` or `SUPABASE_DB_URL` (or all discrete `DATABASE_*` fields). `USE_SQLITE=1` is for local file SQLite only, not Fly.
+- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — install the database CA through
+  `DATABASE_SSLROOTCERT_BASE64`; production keeps `DATABASE_INSECURE_TLS=0`.
+- **Missing database config** — hosted environments require `DATABASE_URL` or `SUPABASE_DB_URL`
+  (or all discrete `DATABASE_*` fields). `USE_SQLITE=1` is for local file SQLite only.
 
 ## Docker / Compose
 
