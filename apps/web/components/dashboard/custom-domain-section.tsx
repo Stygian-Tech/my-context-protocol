@@ -31,7 +31,7 @@ const SECTION_SHELL =
 const INSET_SURFACE =
   "rounded-lg border border-border/80 bg-muted/35 dark:bg-muted/20";
 
-type RoutingChoice = "address" | "cname";
+type DnsRecord = NonNullable<CustomDomainStatus["platform_dns_records"]>[number];
 
 function certificateStatusLabel(
   status: "not_configured" | "pending" | "issued" | "failed" | "unknown" | null | undefined,
@@ -68,45 +68,27 @@ function hasText(value: string | null | undefined) {
 
 function dnsRecordGroups(data: CustomDomainStatus) {
   const hostname = data.hostname?.trim();
-  const verification: Array<{ type: string; name: string; value: string }> = [];
-  const addressRouting: Array<{ type: string; name: string; value: string }> = [];
-  const cnameRouting: Array<{ type: string; name: string; value: string }> = [];
+  const verification: DnsRecord[] = [];
+  const token = data.ownership_verification_record_value || data.verification_token;
 
-  if (hostname && hasText(data.verification_token)) {
+  if (hostname && hasText(token)) {
     verification.push({
       type: "TXT",
-      name: data.verification_record_name?.trim() || `_mcp-verify.${hostname}`,
-      value: data.verification_token!.trim(),
+      name: data.ownership_verification_record_name?.trim() || data.verification_record_name?.trim() || `_mcp-verify.${hostname}`,
+      value: token!.trim(),
     });
-  }
-  if (hasText(data.fly_ownership_verification_record_name) && hasText(data.fly_ownership_verification_record_value)) {
-    verification.push({
-      type: "TXT",
-      name: data.fly_ownership_verification_record_name!.trim(),
-      value: data.fly_ownership_verification_record_value!.trim(),
-    });
-  }
-  if (hostname) {
-    for (const value of data.fly_a_record_values ?? []) {
-      if (hasText(value)) {
-        addressRouting.push({ type: "A", name: hostname, value: value.trim() });
-      }
-    }
-    for (const value of data.fly_aaaa_record_values ?? []) {
-      if (hasText(value)) {
-        addressRouting.push({ type: "AAAA", name: hostname, value: value.trim() });
-      }
-    }
-    if (hasText(data.fly_cname_record_value)) {
-      cnameRouting.push({
-        type: "CNAME",
-        name: hostname,
-        value: data.fly_cname_record_value!.trim(),
-      });
-    }
   }
 
-  return { verification, addressRouting, cnameRouting };
+  return { verification, platform: data.platform_dns_records ?? [] };
+}
+
+function dnsRecordStatusLabel(status: DnsRecord["status"]) {
+  switch (status?.replace(/^DNS_RECORD_STATUS_/, "")) {
+    case "PROPAGATED": return "Propagated";
+    case "REQUIRES_UPDATE": return "Needs DNS update";
+    case "PENDING": return "Pending propagation";
+    default: return "Not confirmed";
+  }
 }
 
 function visibleInstructions(data: CustomDomainStatus) {
@@ -127,9 +109,9 @@ function visibleInstructions(data: CustomDomainStatus) {
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
-function formatDnsRecordsForCopy(records: Array<{ type: string; name: string; value: string }>) {
+function formatDnsRecordsForCopy(records: DnsRecord[]) {
   return records
-    .map((record) => record.value)
+    .map((record) => `${record.name}\t${record.type}\t${record.value}`)
     .join("\n");
 }
 
@@ -156,22 +138,19 @@ function DnsRecordList({
   title,
   records,
   action,
-  disabled,
+  showStatus = false,
 }: {
   title: string;
-  records: Array<{ type: string; name: string; value: string }>;
+  records: DnsRecord[];
   action?: {
     label: string;
     onClick: () => void;
   };
-  disabled?: boolean;
+  showStatus?: boolean;
 }) {
   return (
     <div
-      className={cn(
-        "overflow-hidden rounded-md border border-border/70",
-        disabled && "opacity-50",
-      )}
+      className="overflow-hidden rounded-md border border-border/70"
     >
       <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-muted/25 px-2.5 py-1.5">
         <span className="text-xs font-medium text-foreground">{title}</span>
@@ -181,10 +160,9 @@ function DnsRecordList({
             size="sm"
             variant="outline"
             onClick={action.onClick}
-            disabled={disabled}
             className="h-7 px-2 text-xs"
           >
-            <CopyIcon className="size-3.5" />
+            <CopyIcon data-icon="inline-start" />
             {action.label}
           </Button>
         )}
@@ -197,7 +175,10 @@ function DnsRecordList({
           >
             <span className="font-medium text-foreground">{record.type}</span>
             <span className="break-all font-mono text-muted-foreground">{record.name}</span>
-            <span className="break-all font-mono text-foreground">{record.value}</span>
+            <div className="flex flex-col gap-1">
+              <span className="break-all font-mono text-foreground">{record.value}</span>
+              {showStatus && <span className="text-muted-foreground">{dnsRecordStatusLabel(record.status)}</span>}
+            </div>
           </div>
         ))}
       </div>
@@ -213,7 +194,6 @@ interface CustomDomainSectionProps {
 export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSectionProps) {
   // Hooks must be called unconditionally before any early returns.
   const [hostname, setHostname] = useState("");
-  const [routingChoice, setRoutingChoice] = useState<RoutingChoice | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -223,22 +203,26 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
 
   const setMutation = useMutation({
     mutationFn: () => setProjectCustomDomain(projectId, hostname.trim()),
-    onSuccess: (next) => {
+    onMutate: () => queryClient.cancelQueries({ queryKey: ["custom-domain", projectId] }),
+    onSuccess: async (next) => {
+      // A read started before this write must not replace its newer result.
+      await queryClient.cancelQueries({ queryKey: ["custom-domain", projectId] });
       queryClient.setQueryData(["custom-domain", projectId], next);
-      queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       setHostname("");
-      setRoutingChoice(null);
+      verifyMutation.reset();
     },
   });
 
   const verifyMutation = useMutation({
     mutationFn: () => verifyProjectCustomDomain(projectId),
-    onSuccess: (next) => {
+    onMutate: () => queryClient.cancelQueries({ queryKey: ["custom-domain", projectId] }),
+    onSuccess: async (next) => {
+      await queryClient.cancelQueries({ queryKey: ["custom-domain", projectId] });
       queryClient.setQueryData(["custom-domain", projectId], next);
-      queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     },
+    onError: () => queryClient.invalidateQueries({ queryKey: ["custom-domain", projectId] }),
   });
 
   if (!isPro) {
@@ -275,15 +259,9 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
     return <Skeleton className="h-40 w-full" />;
   }
 
-  const visibleData = verifyMutation.data ?? setMutation.data ?? data;
+  const visibleData = data;
   const tlsLabel = certificateStatusLabel(visibleData.certificate_status);
-  const canRefreshChecks =
-    Boolean(visibleData.hostname) &&
-    (!visibleData.verified ||
-      visibleData.certificate_status === "pending" ||
-      visibleData.certificate_status === "failed" ||
-      visibleData.certificate_status === "not_configured" ||
-      visibleData.certificate_status === "unknown");
+  const canRefreshChecks = Boolean(visibleData.hostname);
   const verifyError =
     verifyMutation.error instanceof ApiError
       ? formatApiErrorDetail(verifyMutation.error.body) || verifyMutation.error.message
@@ -291,28 +269,23 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
         ? "Could not refresh DNS and TLS checks."
         : null;
   const isChecking = verifyMutation.isPending;
+  const isMutating = isChecking || setMutation.isPending;
+  const saveError = setMutation.error instanceof ApiError
+    ? formatApiErrorDetail(setMutation.error.body) || setMutation.error.message
+    : setMutation.error ? "Could not save the custom hostname." : null;
   const showCheckDetails =
     Boolean(visibleData.hostname) &&
     (isChecking ||
       visibleData.verified ||
       hasText(visibleData.certificate_message) ||
-      hasText(visibleData.fly_ownership_verification_record_name));
+      Boolean(visibleData.platform_dns_records?.length));
   const recordGroups = dnsRecordGroups(visibleData);
-  const hasRoutingOptions =
-    recordGroups.addressRouting.length > 0 || recordGroups.cnameRouting.length > 0;
-  const hasDnsRecords = recordGroups.verification.length > 0 || hasRoutingOptions;
-  const addressDisabled = routingChoice === "cname";
-  const cnameDisabled = routingChoice === "address";
+  const hasDnsRecords = recordGroups.verification.length > 0 || recordGroups.platform.length > 0;
   const instructions = visibleInstructions(visibleData);
 
-  function copyRoutingRecords(choice: RoutingChoice) {
-    const records =
-      choice === "address" ? recordGroups.addressRouting : recordGroups.cnameRouting;
-    setRoutingChoice(choice);
-    void copyTextToClipboard(formatDnsRecordsForCopy(records), {
-      success: choice === "address"
-        ? "A/AAAA records copied to clipboard"
-        : "CNAME record copied to clipboard",
+  function copyPlatformRecords() {
+    void copyTextToClipboard(formatDnsRecordsForCopy(recordGroups.platform), {
+      success: "Railway DNS records copied to clipboard",
       error: "Could not copy DNS records",
     });
   }
@@ -330,8 +303,8 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
           Custom Domain
         </h2>
         <p className="text-sm text-muted-foreground">
-          Point your own hostname at this project. Add the TXT record we show,
-          then verify. Routing remains active while the account has Pro.
+          Point your own hostname at this project. Add the project verification
+          and Railway DNS records shown below, then verify. Routing remains active while the account has Pro.
         </p>
       </div>
       <div className="space-y-4">
@@ -364,57 +337,17 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
             </div>
             {recordGroups.verification.length > 0 && (
               <DnsRecordList
-                title="Required verification records"
+                title="Project verification record"
                 records={recordGroups.verification}
               />
             )}
-            {hasRoutingOptions && (
-              <div className="space-y-2">
-                <div>
-                  <p className="text-xs font-medium text-foreground">Routing options</p>
-                  <p className="text-xs text-muted-foreground">
-                    Choose one option for the hostname. Copying one option disables the other to avoid invalid DNS records.
-                  </p>
-                </div>
-                {routingChoice && (
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>
-                      Selected: {routingChoice === "address" ? "A/AAAA records" : "CNAME record"}
-                    </span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setRoutingChoice(null)}
-                      className="h-7 px-2 text-xs"
-                    >
-                      Restart DNS flow
-                    </Button>
-                  </div>
-                )}
-                {recordGroups.addressRouting.length > 0 && (
-                  <DnsRecordList
-                    title="Option 1: A/AAAA records"
-                    records={recordGroups.addressRouting}
-                    disabled={addressDisabled}
-                    action={{
-                      label: routingChoice === "address" ? "Copy again" : "Copy A/AAAA",
-                      onClick: () => copyRoutingRecords("address"),
-                    }}
-                  />
-                )}
-                {recordGroups.cnameRouting.length > 0 && (
-                  <DnsRecordList
-                    title="Option 2: CNAME record"
-                    records={recordGroups.cnameRouting}
-                    disabled={cnameDisabled}
-                    action={{
-                      label: routingChoice === "cname" ? "Copy again" : "Copy CNAME",
-                      onClick: () => copyRoutingRecords("cname"),
-                    }}
-                  />
-                )}
-              </div>
+            {recordGroups.platform.length > 0 && (
+              <DnsRecordList
+                title="Required Railway DNS records"
+                records={recordGroups.platform}
+                showStatus
+                action={{ label: "Copy Railway records", onClick: copyPlatformRecords }}
+              />
             )}
           </div>
         )}
@@ -432,27 +365,13 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
             </div>
             <ul className="space-y-1.5 text-xs text-muted-foreground">
               <li>
-                DNS TXT verification:{" "}
-                <span className={visibleData.verified ? "text-green-600 dark:text-green-500" : undefined}>
-                  {visibleData.verified ? "verified" : isChecking ? "checking" : "waiting"}
-                </span>
-              </li>
-              {hasText(visibleData.fly_ownership_verification_record_name) && (
-                <li>
-                  Fly ownership TXT:{" "}
-                  <span className={visibleData.verified ? "text-green-600 dark:text-green-500" : undefined}>
-                    {visibleData.verified ? "verified" : isChecking ? "checking" : "waiting"}
-                  </span>
-                </li>
-              )}
-              <li>
-                Fly routing:{" "}
+                Project domain verification:{" "}
                 <span className={visibleData.verified ? "text-green-600 dark:text-green-500" : undefined}>
                   {visibleData.verified ? "verified" : isChecking ? "checking" : "waiting"}
                 </span>
               </li>
               <li>
-                Fly TLS certificate:{" "}
+                Railway TLS certificate:{" "}
                 <span className={certificateStatusTone(visibleData.certificate_status)}>
                   {isChecking
                     ? "requesting status"
@@ -480,12 +399,16 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
         {verifyError && (
           <p className="text-sm text-destructive">{verifyError}</p>
         )}
+        {saveError && (
+          <p className="text-sm text-destructive">{saveError}</p>
+        )}
         <div className={cn(INSET_SURFACE, "space-y-2 p-3")}>
           <Label htmlFor="custom-host">Hostname</Label>
           <Input
             id="custom-host"
             value={hostname}
             onChange={(e) => setHostname(e.target.value)}
+            disabled={isMutating}
             placeholder="mcp.example.com"
             className="bg-transparent dark:bg-transparent"
           />
@@ -495,7 +418,7 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
             type="button"
             size="sm"
             onClick={() => setMutation.mutate()}
-            disabled={setMutation.isPending || !hostname.trim()}
+            disabled={isMutating || !hostname.trim()}
           >
             {setMutation.isPending
               ? "Saving…"
@@ -509,9 +432,10 @@ export function CustomDomainSection({ projectId, isPro = true }: CustomDomainSec
               size="sm"
               variant="secondary"
               onClick={() => verifyMutation.mutate()}
-              disabled={verifyMutation.isPending}
+              disabled={isMutating}
             >
               <RefreshCwIcon
+                data-icon="inline-start"
                 className={verifyMutation.isPending ? "animate-spin" : undefined}
               />
               {verifyMutation.isPending

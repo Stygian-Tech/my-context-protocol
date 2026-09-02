@@ -352,9 +352,9 @@ Content-Type: application/json
 
 **Response:** `CustomDomainStatus`
 
-- Resets verification when the hostname changes.
-- The frontend should show both TXT verification records when present.
-- Routing records are alternatives: use either the A/AAAA values or the CNAME value for the same hostname, not both.
+- Ensures the domain exists on the configured Railway Gateway service before saving; saving resets project verification.
+- Show the project ownership TXT record plus **all** `platform_dns_records` returned by Railway. Railway ownership TXT, routing CNAME, and certificate-validation records are requirements, not alternative routing options.
+- Production fails closed with HTTP 503 when Railway provisioning is not configured. A provider provisioning failure also returns HTTP 503 without saving the hostname.
 
 ---
 
@@ -370,7 +370,9 @@ POST /projects/:id/custom-domain/verify
 
 - Verifies `TXT _mcp-verify.<hostname>` against `verification_token`.
 - Falls back to the legacy TXT-at-hostname check for existing domains.
-- Requests or refreshes Fly certificate provisioning after project TXT verification.
+- Ensures the Railway domain exists after project TXT verification (also repairs domains saved before the Railway migration).
+- Requires Railway ownership verification and propagated traffic-routing records before marking the project domain verified. TLS can still be pending; inspect `certificate_status` separately.
+- Already-verified projects skip the project TXT check, but still refresh Railway checks. An unavailable provisioning configuration returns HTTP 503; failed provisioning returns HTTP 502; missing DNS requirements return HTTP 400.
 
 ---
 
@@ -418,6 +420,17 @@ Use these shapes for request/response bodies.
   "verification_token": "string | null | undefined",
   "verification_record_name": "string | null | undefined",
   "instructions": "string | null | undefined",
+  "ownership_verification_record_name": "string | null | undefined",
+  "ownership_verification_record_value": "string | null | undefined",
+  "platform_dns_records": [
+    {
+      "type": "string",
+      "name": "string",
+      "value": "string",
+      "status": "string | null | undefined",
+      "purpose": "string | null | undefined"
+    }
+  ],
   "fly_ownership_verification_record_name": "string | null | undefined",
   "fly_ownership_verification_record_value": "string | null | undefined",
   "fly_a_record_values": "string[] | null | undefined",
@@ -429,10 +442,11 @@ Use these shapes for request/response bodies.
 ```
 
 - `verification_record_name`: usually `_mcp-verify.<hostname>` while project ownership is pending.
-- `fly_ownership_verification_record_name` / `fly_ownership_verification_record_value`: Fly ownership TXT record required before certificate issuance.
-- `fly_a_record_values` and `fly_aaaa_record_values`: address-record routing option for the custom hostname.
-- `fly_cname_record_value`: CNAME routing option for the custom hostname.
-- DNS routing options are mutually exclusive for a hostname: configure the A/AAAA records or configure the CNAME record, not both.
+- `ownership_verification_record_name` / `ownership_verification_record_value`: provider-neutral aliases for the **project** ownership record, not Railway's ownership TXT record.
+- `platform_dns_records` is optional/nullable. Each row is a required Railway DNS record with its exact type, name, and value. The Gateway includes Railway's separate ownership token as a TXT row with purpose `OWNERSHIP_VERIFICATION`; routing rows use `DNS_RECORD_PURPOSE_TRAFFIC_ROUTE`.
+- Per-record status `DNS_RECORD_STATUS_PROPAGATED` indicates a ready record. Other statuses, including absent or unknown statuses, must not be shown as verified. Do not derive current Railway DNS readiness from the persisted project `verified` flag.
+- `certificate_status` is the normalized Railway edge certificate state, independent of project verification and routing DNS readiness.
+- The `fly_*` fields are deprecated compatibility fields and are null/omitted on the Railway backend. Do not use them for new setup instructions.
 
 ### Project catalog (`GET /projects/:id/catalog`)
 
