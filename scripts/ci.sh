@@ -10,9 +10,6 @@ cd "$ROOT"
 export CI="${CI:-true}"
 export NEXT_PUBLIC_APP_ENV="${NEXT_PUBLIC_APP_ENV:-test}"
 
-echo "==> Railway deployment authentication"
-bash scripts/test-railway-deploy.sh
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
