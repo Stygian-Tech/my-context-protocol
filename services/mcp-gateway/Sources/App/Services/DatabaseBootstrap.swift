@@ -92,19 +92,61 @@ enum DatabaseBootstrap {
     /// providers can additionally require a provider CA bundle, so allow deployment to add one without
     /// disabling chain or hostname verification.
     static func verifiedPostgresSSLContext(connectionURL: String? = nil) throws -> NIOSSLContext {
-        var tlsConfig = TLSConfiguration.makeClientConfiguration()
-        tlsConfig.certificateVerification = .fullVerification
-
-        let additionalRoots = try postgresAdditionalTrustRoots(connectionURL: connectionURL)
-        if !additionalRoots.isEmpty {
-            tlsConfig.additionalTrustRoots = additionalRoots
-        }
-
+        let tlsConfig = try verifiedPostgresTLSConfiguration(connectionURL: connectionURL)
         do {
             return try NIOSSLContext(configuration: tlsConfig)
         } catch {
             throw DatabaseBootstrapError.invalidPostgresTLSRoot(reason: "configured trust roots could not be loaded by NIOSSL")
         }
+    }
+
+    /// TLS settings behind `verifiedPostgresSSLContext`.
+    ///
+    /// With `DATABASE_TLS_PINNED_CA` truthy, the configured CA becomes the *only* trust root and hostname
+    /// matching is skipped while the chain is still verified against that CA. This is for self-signed
+    /// managed Postgres (e.g. Railway, whose server certificate only names `localhost`) reached over a
+    /// private hostname: only a server holding that CA's key can complete the handshake.
+    static func verifiedPostgresTLSConfiguration(connectionURL: String? = nil) throws -> TLSConfiguration {
+        var tlsConfig = TLSConfiguration.makeClientConfiguration()
+        tlsConfig.certificateVerification = .fullVerification
+
+        if isTruthyEnv("DATABASE_TLS_PINNED_CA") {
+            let pinned = try postgresPinnedTrustRootCertificates(connectionURL: connectionURL)
+            guard !pinned.isEmpty else {
+                throw DatabaseBootstrapError.invalidPostgresTLSRoot(
+                    reason: "DATABASE_TLS_PINNED_CA requires DATABASE_SSLROOTCERT, DATABASE_SSLROOTCERT_PEM, or DATABASE_SSLROOTCERT_BASE64"
+                )
+            }
+            tlsConfig.trustRoots = .certificates(pinned)
+            tlsConfig.certificateVerification = .noHostnameVerification
+            return tlsConfig
+        }
+
+        let additionalRoots = try postgresAdditionalTrustRoots(connectionURL: connectionURL)
+        if !additionalRoots.isEmpty {
+            tlsConfig.additionalTrustRoots = additionalRoots
+        }
+        return tlsConfig
+    }
+
+    static func postgresPinnedTrustRootCertificates(connectionURL: String? = nil) throws -> [NIOSSLCertificate] {
+        var certs: [NIOSSLCertificate] = []
+
+        if let file = configuredPostgresSSLRootCertFile(connectionURL: connectionURL) {
+            do {
+                certs += try NIOSSLCertificate.fromPEMFile(file)
+            } catch {
+                throw DatabaseBootstrapError.invalidPostgresTLSRoot(reason: "DATABASE_SSLROOTCERT file could not be read as PEM")
+            }
+        }
+        if let pem = configuredPostgresSSLRootCertPEM() {
+            certs += try certificates(fromPEM: pem, source: "DATABASE_SSLROOTCERT_PEM")
+        }
+        if let base64 = configuredPostgresSSLRootCertBase64() {
+            certs += try certificates(fromBase64PEM: base64, source: "DATABASE_SSLROOTCERT_BASE64")
+        }
+
+        return certs
     }
 
     static func postgresAdditionalTrustRoots(connectionURL: String? = nil) throws -> [NIOSSLAdditionalTrustRoots] {
