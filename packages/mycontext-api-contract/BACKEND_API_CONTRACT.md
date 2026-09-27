@@ -547,17 +547,18 @@ Dashboard-only aggregate of the active release MCP surface plus catalog markdown
 | GET | `/projects/:id/request-logs` | Yes | List request logs |
 # Portable Skill Runtime (schema v1)
 
-Projects expose exactly three stable, colon-free runtime tools by default:
+Projects expose four stable, colon-free runtime tools by default:
 
 - `resolve_context` bootstraps a task with ordered active and suggested skills, provenance, conflicts, capability bindings, missing context, and a trace.
 - `get_skill` retrieves one complete compiled skill by stable ID and optional version.
 - `report_skill_feedback` persists version-specific evidence and returns an issue draft. It never reports an external side effect unless the harness performs one.
+- `report_skill_usage` records one best-effort batch of explicit agent-reported use or conscious skipping at task completion when telemetry is enabled. Missing reports remain unknown.
 
 The one-release compatibility aliases `mycontext_catalog`, `discover_skills`, and `list_capabilities` remain callable but are omitted from `tools/list`. Their legacy arguments and output wrappers are normalized through the canonical runtime handlers; they do not maintain separate discovery or scoring logic.
 
 Tool arguments preserve native nested JSON. Canonical results include both `structuredContent` and an equivalent JSON text content item for clients that do not consume structured results. Invalid arguments and unknown tool names return JSON-RPC `-32602`; failures encountered while executing an accepted tool call return a successful MCP tool response with `isError: true`.
 
-Generated per-skill tools are disabled by default, so the default `tools/list` result is exactly the three canonical tools. A project can temporarily opt into legacy compiled-tool listing and invocation by setting `legacy_compiled_tools_enabled: true` in `provider_preferences_json` through `PATCH /projects/:id/skill-runtime`. Canonical and alias names are reserved and suppress any colliding compiled capability even when this switch is enabled.
+Generated per-skill tools are disabled by default, so the default `tools/list` result is exactly the four canonical tools. A project can temporarily opt into legacy compiled-tool listing and invocation by setting `legacy_compiled_tools_enabled: true` in `provider_preferences_json` through `PATCH /projects/:id/skill-runtime`. Canonical and alias names are reserved and suppress any colliding compiled capability even when this switch is enabled.
 
 Runtime frontmatter supports `kind`, `scope`, `activation`, `enforcement`, `priority`, `requires`, `conflictsWith`, `version`, and `lifecycle`. Legacy skills remain retrievable but compile with `explicit` activation and structured clarification questions.
 
@@ -570,3 +571,44 @@ Dashboard APIs:
 - `POST /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId/writeback` creates a branch and draft GitHub pull request; it never pushes the default branch.
 
 Detailed runtime telemetry is disabled by default, stores hashes and coarse events rather than prompts or source code, and is pruned using the configured retention period (30 days by default).
+
+
+## Per-Skill Usage Analytics
+
+`GET /projects/:id/skill-usage` requires dashboard authentication and project ownership. It uses retained database event aggregates independently of runtime settings and transport request-log sampling. The existing `/api/projects/:path*` browser rewrite exposes it through the application origin.
+
+Query parameters:
+
+| Parameter | Values / Default |
+| --- | --- |
+| `window` | `24h`, `7d` (default), `30d`; constrained by retention |
+| `page` | One-based page, default `1` |
+| `page_size` | Default `25`, maximum `100` |
+| `sort` | `activity` (default), `skill_id`, `surfaced`, `instructions_delivered`, `agent_reported_used`, `agent_reported_skipped` |
+| `direction` | `desc` (default), `asc` |
+| `skill_id` | Optional exact skill ID for detail |
+
+Response fields are `collection_enabled`, `retention_days`, `requested_window`, `effective_from`, `effective_to`, `reporting_coverage: "partial"`, `historical_measurements: "legacy_resolver_only"`, `page`, `page_size`, `total`, and `skills`. Timestamps are ISO 8601. Each skill includes `skill_id`, `name`, `is_current`, nullable `last_activity`, and `counts`. Counts contain `surfaced`, `instructions_delivered`, `supporting_file_read`, `resolver_selected`, `resolver_suggested`, `resolver_excluded`, `agent_reported_used`, `agent_reported_skipped`, and `legacy_resolver_selected`.
+
+With `skill_id`, the row also includes `versions` (nullable `release_id`, `version`, `checksum`, and `counts`), `resolver_exclusion_reasons`, and `agent_skip_reasons` (each reason entry is `{reason, count}`). These arrays are empty in the list response. Current skills remain visible with zero counts, while historical skills remain visible while events are retained. Renamed IDs remain separate. Legacy resolver events retain unknown version attribution; generic request counts never reconstruct historical skill usage. Disabling collection stops new activity but does not hide retained history. Zero means no recorded activity, not evidence of no actual use.
+
+### Agent Usage Reports
+
+`report_skill_usage` accepts native JSON arguments:
+
+```json
+{
+  "report_id": "stable-task-report-id",
+  "trace_id": "optional-resolution-trace-uuid",
+  "skills": [
+    {"skill_id": "example", "version": "1.0.0", "outcome": "used"},
+    {"skill_id": "another", "version": "2.0.0", "outcome": "skipped", "skip_reason": "not_relevant"}
+  ]
+}
+```
+
+`report_id` is 1–128 characters; each batch has 1–100 entries. Canonical `get_skill` responses and resolver active/suggested entries include `releaseId`; agents should copy it into the report entry’s `release_id` to preserve exact attribution across releases. Each entry requires `skill_id` (1–128), `version` (1–512), and `outcome` (`used` or `skipped`), with optional `release_id` UUID and `checksum` (1–128). Unknown fields are rejected; free-text explanations are not accepted. `skip_reason` is required only for `skipped`, with one of `not_relevant`, `redundant`, `instruction_conflict`, `missing_capability`, `task_changed`, or `other`.
+
+The server validates skill references against project releases and any trace against the authenticated project/client. Client identity is server-derived from the API key or OAuth principal and client, never supplied by the agent. Stable report IDs deduplicate retries within this identity: an identical retry returns `already_recorded`, and conflicting reuse is rejected. The result is `{status: "recorded" | "already_recorded" | "collection_disabled", recorded_count: number}`. Persistence failures return an error rather than acknowledging storage.
+
+Agents should submit one best-effort task-end batch only for actual use or consciously considered and declined skills. They must not enumerate all surfaced skills as skipped, expose private deliberation, or block task completion on reporting failure. Passive observed telemetry failures do not fail instruction delivery. Collection shares existing opt-in and retention controls (30 days by default); neither prompts nor source code, credentials, or reasoning transcripts are stored.

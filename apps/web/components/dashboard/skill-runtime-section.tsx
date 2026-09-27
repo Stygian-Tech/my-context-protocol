@@ -44,12 +44,15 @@ export function SkillRuntimeSection({ projectId }: { projectId: string }) {
   const save = useMutation({
     mutationFn: () => updateProjectSkillRuntime(projectId, {
       telemetry_enabled: telemetryEnabled,
-      telemetry_retention_days: 30,
+      telemetry_retention_days: query.data?.telemetry_retention_days ?? 30,
       semantic_enabled: false,
       feedback_issue_creation_enabled: feedbackEnabled,
       assignments,
     }),
-    onSuccess: (value) => queryClient.setQueryData(["skill-runtime", projectId], value),
+    onSuccess: (value) => {
+      queryClient.setQueryData(["skill-runtime", projectId], value);
+      void queryClient.invalidateQueries({ queryKey: ["skill-usage", projectId] });
+    },
   });
 
   if (query.isLoading) return <Skeleton className="h-80 w-full" />;
@@ -65,7 +68,7 @@ export function SkillRuntimeSection({ projectId }: { projectId: string }) {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <RuntimeCheckbox label="30-Day Telemetry" description="Opt-in redacted resolution events; prompts, skill bodies, code, and credentials are not stored." checked={telemetryEnabled} onChange={setTelemetryEnabled} />
+        <RuntimeCheckbox label="Skill Telemetry" description={`Opt-in observed skill activity and explicit agent reports, retained for ${query.data.telemetry_retention_days} days. Prompts, skill bodies, code, and credentials are not stored.`} checked={telemetryEnabled} onChange={setTelemetryEnabled} />
         <RuntimeCheckbox label="Feedback Issue Drafts" description="Allows explicit feedback calls to prepare an external issue draft; it does not claim the issue was created." checked={feedbackEnabled} onChange={setFeedbackEnabled} />
       </div>
 
