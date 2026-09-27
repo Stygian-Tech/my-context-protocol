@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBackendOrigin } from "@/lib/backend-origin";
 import { forwardBackendResponseCookies } from "@/lib/forward-backend-response-cookies";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 /** Server-side proxy: forwards cookies like /api/auth/me (avoids rewrite edge cases for POST + session). */
 export async function POST(request: NextRequest) {
   const requestUrl = new URL(request.url);
-  const backendUrl = `${BACKEND_URL.replace(/\/$/, "")}/billing/portal-session`;
+  const backendUrl = `${getBackendOrigin()}/billing/portal-session`;
   const cookie = request.headers.get("cookie") ?? "";
   const body = await request.text();
 

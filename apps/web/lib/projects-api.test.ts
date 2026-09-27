@@ -47,6 +47,10 @@ import {
   updateCompiledSkill,
   updateProjectCatalogMarkdown,
   verifyProjectCustomDomain,
+  fetchProjectSkillRuntime,
+  fetchProjectSkillUsage,
+  updateProjectSkillRuntime,
+  writeBackCompiledSkillMetadata,
 } from "./projects-api";
 
 afterEach(() => {
@@ -57,6 +61,14 @@ afterEach(() => {
 });
 
 describe("projects-api", () => {
+  it("fetchProjectSkillUsage defaults to seven days and encodes filters", async () => {
+    get.mockResolvedValue({ skills: [] });
+    await fetchProjectSkillUsage("p");
+    expect(get).toHaveBeenLastCalledWith("/projects/p/skill-usage?window=7d");
+    await fetchProjectSkillUsage("p/1", { window: "30d", page: 2, page_size: 25, sort: "surfaced", direction: "asc", skill_id: "skill & one" });
+    expect(get).toHaveBeenLastCalledWith("/projects/p%2F1/skill-usage?window=30d&page=2&page_size=25&sort=surfaced&direction=asc&skill_id=skill+%26+one");
+  });
+
   it("fetchProjects unwraps array or .projects", async () => {
     get.mockResolvedValueOnce([{ id: "1" }]);
     expect(await fetchProjects()).toEqual([{ id: "1" }]);
@@ -189,6 +201,26 @@ describe("projects-api", () => {
     expect(patch).toHaveBeenCalledWith(
       "/projects/pid/releases/rid/compiled-skills/csid",
       { summary: "x" }
+    );
+  });
+
+  it("portable runtime helpers use tenant-scoped endpoints", async () => {
+    get.mockResolvedValueOnce({ telemetry_enabled: false, assignments: [], recent_events: [] });
+    await fetchProjectSkillRuntime("pid");
+    expect(get).toHaveBeenCalledWith("/projects/pid/skill-runtime");
+
+    patch.mockResolvedValueOnce({ telemetry_enabled: true, assignments: [], recent_events: [] });
+    await updateProjectSkillRuntime("pid", { telemetry_enabled: true, assignments: [] });
+    expect(patch).toHaveBeenCalledWith("/projects/pid/skill-runtime", {
+      telemetry_enabled: true,
+      assignments: [],
+    });
+
+    post.mockResolvedValueOnce({ pull_request_url: "https://github.test/pr/1" });
+    await writeBackCompiledSkillMetadata("pid", "rid", "sid");
+    expect(post).toHaveBeenCalledWith(
+      "/projects/pid/releases/rid/compiled-skills/sid/writeback",
+      {}
     );
   });
 

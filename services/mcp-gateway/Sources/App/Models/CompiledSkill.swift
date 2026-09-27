@@ -42,6 +42,22 @@ final class CompiledSkill: Model, Content {
     @Field(key: "yaml_frontmatter_present")
     var yamlFrontmatterPresent: Bool
 
+    @Field(key: "canonical_schema_version") var canonicalSchemaVersion: Int
+    @OptionalField(key: "skill_id") var skillId: String?
+    @OptionalField(key: "kind") var kind: String?
+    @OptionalField(key: "scope") var scope: String?
+    @OptionalField(key: "activation_mode") var activationMode: String?
+    @OptionalField(key: "enforcement") var enforcement: String?
+    @OptionalField(key: "priority") var priority: Int?
+    @OptionalField(key: "version") var version: String?
+    @OptionalField(key: "source_checksum") var sourceChecksum: String?
+    @OptionalField(key: "source_policy_json") var sourcePolicyJson: String?
+    @OptionalField(key: "source_policy_base_checksum") var sourcePolicyBaseChecksum: String?
+    @Field(key: "source_policy_stale") var sourcePolicyStale: Bool
+    @OptionalField(key: "canonical_json") var canonicalJson: String?
+    @OptionalField(key: "clarification_json") var clarificationJson: String?
+    @Field(key: "clarification_required") var clarificationRequired: Bool
+
     /// Unified line diff vs `body_diff_prior_release_id` when SKILL body changed between releases.
     @OptionalField(key: "body_diff_unified")
     var bodyDiffUnified: String?
@@ -88,6 +104,9 @@ final class CompiledSkill: Model, Content {
         self.repoSpecific = repoSpecific
         self.status = status
         self.yamlFrontmatterPresent = yamlFrontmatterPresent
+        self.canonicalSchemaVersion = CompiledSkillDocument.currentSchemaVersion
+        self.clarificationRequired = true
+        self.sourcePolicyStale = false
         self.bodyDiffUnified = bodyDiffUnified
         self.bodyDiffPriorReleaseId = bodyDiffPriorReleaseId
     }

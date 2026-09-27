@@ -1,4 +1,5 @@
 import Fluent
+import MCPServerKit
 import Vapor
 
 private struct MCPDispatchOutput {
@@ -17,6 +18,10 @@ struct MCPController {
         guard let projectId = project.id else {
             return Response(status: .internalServerError, body: .init(string: "Invalid project"))
         }
+        if let transportError = validateTransportHeaders(req: req) {
+            return transportError
+        }
+        let requestProtocolVersion = effectiveProtocolVersion(req: req)
 
         let clientName: String? = mcpClientLabel(req: req)
 
@@ -47,6 +52,17 @@ struct MCPController {
             return res
         }
 
+        if let envelopeError = validateJSONRPCEnvelope(body) {
+            let out = try await serveRpcError(
+                id: body.id == .null ? nil : body.id,
+                code: -32600,
+                message: envelopeError,
+                req: req
+            )
+            req.attachMcpCatalogRevisionHeader(to: out.response)
+            return out.response
+        }
+
         let out: MCPDispatchOutput
         switch body.method {
         case "initialize":
@@ -54,13 +70,25 @@ struct MCPController {
             out = try await handleInitialize(req: req, project: project, params: body.params, id: body.id)
         case "tools/list":
             req.logger.mcpTrace("mcp dispatch handler=tools/list projectId=\(projectId.uuidString)")
-            out = try await handleToolsList(req: req, project: project, id: body.id)
+            out = try await handleToolsList(
+                req: req,
+                project: project,
+                params: body.params,
+                id: body.id,
+                protocolVersion: requestProtocolVersion
+            )
         case "tools/call":
             req.logger.mcpTrace("mcp dispatch handler=tools/call projectId=\(projectId.uuidString)")
-            out = try await handleToolsCall(req: req, projectId: projectId, params: body.params, id: body.id)
+            out = try await handleToolsCall(
+                req: req,
+                projectId: projectId,
+                params: body.params,
+                id: body.id,
+                protocolVersion: requestProtocolVersion
+            )
         case "resources/list":
             req.logger.mcpTrace("mcp dispatch handler=resources/list projectId=\(projectId.uuidString)")
-            out = try await handleResourcesList(req: req, project: project, id: body.id)
+            out = try await handleResourcesList(req: req, project: project, params: body.params, id: body.id)
         case "resources/read":
             req.logger.mcpTrace("mcp dispatch handler=resources/read projectId=\(projectId.uuidString)")
             out = try await handleResourcesRead(req: req, project: project, params: body.params, id: body.id)
@@ -72,7 +100,7 @@ struct MCPController {
             out = try await handleResourcesUnsubscribe(req: req, params: body.params, id: body.id)
         case "prompts/list":
             req.logger.mcpTrace("mcp dispatch handler=prompts/list projectId=\(projectId.uuidString)")
-            out = try await handlePromptsList(req: req, project: project, id: body.id)
+            out = try await handlePromptsList(req: req, project: project, params: body.params, id: body.id)
         case "prompts/get":
             req.logger.mcpTrace("mcp dispatch handler=prompts/get projectId=\(projectId.uuidString)")
             out = try await handlePromptsGet(req: req, project: project, params: body.params, id: body.id)
@@ -111,6 +139,64 @@ struct MCPController {
         return out.response
     }
 
+    static func validateTransportHeaders(req: Request) -> Response? {
+        if let rawVersion = req.headers.first(name: "MCP-Protocol-Version") {
+            let version = rawVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard MCPServerKit.MCPProtocolVersion(rawValue: version) != nil else {
+                return Response(status: .badRequest, body: .init(string: "Unsupported MCP-Protocol-Version"))
+            }
+        }
+        if let accept = req.headers.first(name: .accept), accept != "*/*" {
+            let normalized = accept.lowercased()
+            let valid = req.method == .GET
+                ? normalized.contains("text/event-stream")
+                : normalized.contains("application/json") && normalized.contains("text/event-stream")
+            guard valid else {
+                let expected = req.method == .GET ? "text/event-stream" : "application/json and text/event-stream"
+                return Response(status: .badRequest, body: .init(string: "Accept must include \(expected)"))
+            }
+        }
+        if let rawOrigin = req.headers.first(name: .origin) {
+            let origin = rawOrigin.trimmingCharacters(in: .whitespacesAndNewlines)
+            let configured = (Environment.get("MCP_ALLOWED_ORIGINS") ?? "")
+                .split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let allowed = Set(AppFrontendURL.allowedOriginBases() + configured)
+            guard allowed.contains(where: { $0.caseInsensitiveCompare(origin) == .orderedSame }) else {
+                return Response(status: .forbidden, body: .init(string: "Invalid origin"))
+            }
+        }
+        return nil
+    }
+
+    static func effectiveProtocolVersion(req: Request) -> MCPServerKit.MCPProtocolVersion {
+        guard let raw = req.headers.first(name: "MCP-Protocol-Version")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              let version = MCPServerKit.MCPProtocolVersion(rawValue: raw) else {
+            return .missingHTTPHeaderFallback
+        }
+        return version
+    }
+
+    private static func supportsRichToolResults(_ version: MCPServerKit.MCPProtocolVersion) -> Bool {
+        switch version {
+        case .v2025_06_18, .v2025_11_25: return true
+        case .v2024_11_05, .v2025_03_26: return false
+        }
+    }
+
+    private static func validateJSONRPCEnvelope(_ body: JSONRPCRequest) -> String? {
+        guard body.jsonrpc == "2.0" else { return "Invalid Request: jsonrpc must be 2.0" }
+        let isNotification = body.method == .notificationsInitialized || body.method == .notificationsCancelled
+        if isNotification {
+            guard body.id == nil else { return "Invalid Request: notifications must not include an id" }
+        } else {
+            guard let id = body.id, id != .null else {
+                return "Invalid Request: requests must include a non-null id"
+            }
+        }
+        return nil
+    }
+
     private static func serveSuccess(_ content: some Content, req: Request) async throws -> MCPDispatchOutput {
         let response = try await content.encodeResponse(for: req)
         return MCPDispatchOutput(
@@ -122,7 +208,7 @@ struct MCPController {
     }
 
     private static func serveNotificationAck() -> MCPDispatchOutput {
-        let response = Response(status: .noContent)
+        let response = Response(status: .accepted)
         return MCPDispatchOutput(
             response: response,
             httpStatus: Int(response.status.code),
@@ -183,9 +269,10 @@ struct MCPController {
         guard let projectId = project.id else {
             return try await serveRpcError(id: id, code: -32603, message: "Invalid project", req: req)
         }
-        let negotiated = MCPProtocolVersion.negotiated(requested: params?.protocolVersion)
+        let negotiated = MCPServerKit.MCPProtocolVersion.negotiated(requested: params?.protocolVersion)
         let dash = projectDashboardURL(projectId: projectId)
-        let instructions = MCPAgentCopy.initializeInstructions(projectName: project.name, projectDashboardURL: dash)
+        let telemetryEnabled = await SkillUsageInstrumentation.collectionEnabled(projectId: projectId, db: req.db)
+        let instructions = MCPAgentCopy.initializeInstructions(projectName: project.name, projectDashboardURL: dash, telemetryEnabled: telemetryEnabled)
         let result = InitializeResult(
             protocolVersion: negotiated,
             capabilities: ServerCapabilities(
@@ -210,69 +297,101 @@ struct MCPController {
         return "\(base)/projects/\(projectId.uuidString)"
     }
 
-    private static func syntheticCatalogTool() -> MCPTool {
-        let schemaJson = CapabilitySchemaBuilder.toolInputSchemaJson(
-            description: "Returns a markdown overview of tools, resources, and prompts for this project.",
-            summary: nil
-        )
-        return MCPTool(
-            name: MCPConstants.catalogToolName,
-            description: "Overview of this project’s MCP catalog—call first when unsure which skill to use.",
-            inputSchema: InputSchema.fromCapabilitySchemaJson(schemaJson)
-        )
+    private static func runtimeTools(protocolVersion: MCPServerKit.MCPProtocolVersion) -> [MCPTool] {
+        let descriptions = [
+            "resolve_context": "Task bootstrap: returns ordered active and suggested skills, conflicts, provenance, capability bindings, and a resolution trace.",
+            "get_skill": "Returns the complete versioned compiled skill document, including original Markdown and provenance.",
+            "report_skill_usage": "When project telemetry is enabled, report one task-end batch of actual skill uses or consciously considered skips. Missing reports remain unknown. Retry with the same report_id; no reasoning transcripts or free-text explanations.",
+            "report_skill_feedback": "Stores version-specific skill feedback and returns an issue draft; never implies an external side effect occurred."
+        ]
+        let titles = [
+            "resolve_context": "Resolve project context",
+            "get_skill": "Get complete skill",
+            "report_skill_feedback": "Report skill feedback",
+            "report_skill_usage": "Report skill usage",
+        ]
+        return MCPConstants.runtimeToolNames.map { name in
+            let isReadOnly = name != MCPConstants.reportSkillFeedbackToolName && name != MCPConstants.reportSkillUsageToolName
+            if supportsRichToolResults(protocolVersion) {
+                return MCPTool(
+                    name: name,
+                    description: descriptions[name],
+                    inputSchema: CapabilitySchemaBuilder.runtimeToolInputSchema(name: name),
+                    title: titles[name],
+                    outputSchema: CapabilitySchemaBuilder.runtimeToolOutputSchema(name: name),
+                    annotations: MCPToolAnnotations(
+                        title: titles[name],
+                        readOnlyHint: isReadOnly,
+                        destructiveHint: false,
+                        idempotentHint: isReadOnly || name == MCPConstants.reportSkillUsageToolName,
+                        openWorldHint: false
+                    )
+                )
+            }
+            return MCPTool(
+                name: name,
+                description: descriptions[name],
+                inputSchema: CapabilitySchemaBuilder.runtimeToolInputSchema(name: name)
+            )
+        }
     }
 
-    private static func handleToolsList(req: Request, project: Project, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handleToolsList(
+        req: Request,
+        project: Project,
+        params: JSONRPCParams?,
+        id: JSONRPCId?,
+        protocolVersion: MCPServerKit.MCPProtocolVersion
+    ) async throws -> MCPDispatchOutput {
         struct ToolsListPayload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
             let result: ToolsListResult
         }
 
-        let catalogTool = syntheticCatalogTool()
-
-        // activeReleaseId is already populated from storage — no DB round-trip needed.
-        guard let releaseId = project.activeReleaseId else {
-            req.logger.mcpTrace("mcp tools/list result=catalog_only reason=no_active_release")
-            return try await serveSuccess(
-                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [catalogTool])),
-                req: req
+        var tools = runtimeTools(protocolVersion: protocolVersion)
+        var toolSkills: [String: CompiledSkill] = [:]
+        let legacyEnabled = try await ToolHandlers.legacyCompiledToolsEnabled(db: req.db, projectId: project.id!)
+        if legacyEnabled, let releaseId = project.activeReleaseId {
+            let compiledSkillIds = try await MCPCatalogService.readyCompiledSkillIds(releaseId: releaseId, db: req.db)
+            let capabilityDefs = try await MCPCatalogService.capabilityDefs(
+                compiledSkillIds: compiledSkillIds,
+                types: ["tool"],
+                db: req.db
             )
+            let legacyTools = capabilityDefs.compactMap { cap -> MCPTool? in
+                guard !MCPConstants.isReservedRuntimeToolName(cap.capabilityName) else {
+                    req.logger.warning("mcp tools/list suppressed compiled capability with reserved runtime name=\(cap.capabilityName)")
+                    return nil
+                }
+                let compiled = cap.compiledSkill
+                toolSkills[cap.capabilityName] = compiled
+                let hints = McpCatalogMarkdown.routingHints(for: compiled)
+                return MCPTool(
+                    name: cap.capabilityName,
+                    description: MCPAgentCopy.toolDescription(baseSummary: compiled.summary, hints: hints),
+                    inputSchema: InputSchema.fromCapabilitySchemaJson(cap.schemaJson)
+                )
+            }.sorted { $0.name < $1.name }
+            tools.append(contentsOf: legacyTools)
         }
-
-        let compiledSkillIds = try await MCPCatalogService.readyCompiledSkillIds(releaseId: releaseId, db: req.db)
-        guard !compiledSkillIds.isEmpty else {
-            req.logger.mcpTrace("mcp tools/list result=catalog_only reason=no_ready_skills releaseId=\(releaseId.uuidString)")
-            return try await serveSuccess(
-                ToolsListPayload(jsonrpc: "2.0", id: id, result: ToolsListResult(tools: [catalogTool])),
-                req: req
-            )
-        }
-
-        let capabilityDefs = try await MCPCatalogService.capabilityDefs(
-            compiledSkillIds: compiledSkillIds,
-            types: ["tool"],
-            db: req.db
-        )
-        req.logger.mcpTrace("mcp tools/list readySkillRows=\(compiledSkillIds.count) toolCaps=\(capabilityDefs.count)")
-
-        let rest = capabilityDefs.map { cap in
-            let compiled = cap.compiledSkill
-            let hints = McpCatalogMarkdown.routingHints(for: compiled)
-            let desc = MCPAgentCopy.toolDescription(baseSummary: compiled.summary, hints: hints)
-            let inputSchema = InputSchema.fromCapabilitySchemaJson(cap.schemaJson)
-            return MCPTool(
-                name: cap.capabilityName,
-                description: desc,
-                inputSchema: inputSchema
-            )
-        }
-
-        let listResult = ToolsListResult(tools: [catalogTool] + rest)
+        let scope = "tools:\(project.id!.uuidString):\(project.activeReleaseId?.uuidString ?? "none"):\(legacyEnabled)"
+        let page: MCPPaginationPage<MCPTool>
+        do { page = try MCPPaginator.page(tools, cursor: params?.cursor, scope: scope) }
+        catch { return try await serveRpcError(id: id, code: -32602, message: "Invalid pagination cursor", req: req) }
+        req.logger.mcpTrace("mcp tools/list count=\(page.items.count) legacyCompiledTools=\(legacyEnabled)")
+        await SkillUsageInstrumentation.surfaced(page.items.compactMap { toolSkills[$0.name] }, projectId: project.id!, clientIdentity: skillUsageClientIdentity(req: req) ?? "unknown", source: "tools/list", db: req.db)
+        let listResult = ToolsListResult(tools: page.items, nextCursor: page.nextCursor)
         return try await serveSuccess(ToolsListPayload(jsonrpc: "2.0", id: id, result: listResult), req: req)
     }
 
-    private static func handleToolsCall(req: Request, projectId: UUID, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handleToolsCall(
+        req: Request,
+        projectId: UUID,
+        params: JSONRPCParams?,
+        id: JSONRPCId?,
+        protocolVersion: MCPServerKit.MCPProtocolVersion
+    ) async throws -> MCPDispatchOutput {
         struct ToolCallPayload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
@@ -282,15 +401,51 @@ struct MCPController {
         guard let name = params?.name else {
             return try await serveRpcError(id: id, code: -32602, message: "Invalid params: missing name", req: req)
         }
-        let argKeys = (params?.arguments ?? [:]).keys.sorted().joined(separator: ",")
+        if name == MCPConstants.reportSkillUsageToolName, skillUsageClientIdentity(req: req) == nil {
+            return try await serveRpcError(id: id, code: -32603, message: "Missing authenticated client identity", req: req)
+        }
+        let arguments = params?.arguments ?? [:]
+        let argKeys = arguments.keys.sorted().joined(separator: ",")
         req.logger.mcpTrace("mcp tools/call tool=\(name) argKeys=[\(argKeys)]")
 
         do {
-            let content = try await ToolHandlers.handle(name: name, arguments: params?.arguments ?? [:], db: req.db, projectId: projectId)
-            let toolResult = ToolCallResult(content: [ContentItem(type: "text", text: content)], isError: false)
+            let output = try await ToolHandlers.handle(
+                name: name,
+                arguments: arguments,
+                db: req.db,
+                projectId: projectId,
+                clientIdentity: skillUsageClientIdentity(req: req) ?? "unknown"
+            )
+            let richResults = supportsRichToolResults(protocolVersion)
+            let content = richResults ? output.content : output.content.filter {
+                if case .text = $0 { return true }
+                return false
+            }
+            let toolResult = ToolCallResult(
+                content: content,
+                structuredContent: richResults ? output.structuredContent : nil,
+                isError: false
+            )
             return try await serveSuccess(ToolCallPayload(jsonrpc: "2.0", id: id, result: toolResult), req: req)
         } catch let ToolHandlerError.unknownTool(name: unknown) {
-            return try await serveRpcError(id: id, code: -32601, message: "Unknown tool: \(unknown)", req: req)
+            return try await serveRpcError(id: id, code: -32602, message: "Unknown tool: \(unknown)", req: req)
+        } catch let abort as Abort {
+            if abort.status == .badRequest {
+                return try await serveRpcError(id: id, code: -32602, message: abort.reason, req: req)
+            }
+            let error = JSONValue.object([
+                "error": .object([
+                    "code": .string("tool_failure"),
+                    "message": .string(abort.reason),
+                ]),
+            ])
+            let richResults = supportsRichToolResults(protocolVersion)
+            let toolResult = ToolCallResult(
+                text: SkillRuntimeJSON.encode(error),
+                structuredContent: richResults ? error : nil,
+                isError: true
+            )
+            return try await serveSuccess(ToolCallPayload(jsonrpc: "2.0", id: id, result: toolResult), req: req)
         } catch {
             let message: String
             if AppEnvironment.deployKind() == .prod {
@@ -299,17 +454,32 @@ struct MCPController {
             } else {
                 message = error.localizedDescription
             }
-            return try await serveRpcError(id: id, code: -32603, message: message, req: req)
+            let failure = JSONValue.object([
+                "error": .object([
+                    "code": .string("tool_failure"),
+                    "message": .string(message),
+                ]),
+            ])
+            let richResults = supportsRichToolResults(protocolVersion)
+            let toolResult = ToolCallResult(
+                text: SkillRuntimeJSON.encode(failure),
+                structuredContent: richResults ? failure : nil,
+                isError: true
+            )
+            return try await serveSuccess(ToolCallPayload(jsonrpc: "2.0", id: id, result: toolResult), req: req)
         }
     }
 
-    private static func handleResourcesList(req: Request, project: Project, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handleResourcesList(req: Request, project: Project, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct Payload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
             let result: ResourcesListResult
         }
         guard let releaseId = project.activeReleaseId else {
+            if params?.cursor != nil {
+                return try await serveRpcError(id: id, code: -32602, message: "Invalid pagination cursor", req: req)
+            }
             return try await serveSuccess(
                 Payload(jsonrpc: "2.0", id: id, result: ResourcesListResult(resources: [], nextCursor: nil)),
                 req: req
@@ -334,10 +504,25 @@ struct MCPController {
                 failureModes: meta.failureModes,
                 invokeFirst: meta.invokeFirst
             )
+        }.sorted { $0.uri < $1.uri }
+        let page: MCPPaginationPage<MCPResource>
+        do {
+            page = try MCPPaginator.page(
+                resources,
+                cursor: params?.cursor,
+                scope: "resources:\(project.id!.uuidString):\(releaseId.uuidString)"
+            )
+        } catch {
+            return try await serveRpcError(id: id, code: -32602, message: "Invalid pagination cursor", req: req)
         }
-        req.logger.mcpTrace("mcp resources/list count=\(resources.count)")
+        let returnedUris = Set(page.items.map(\.uri))
+        await SkillUsageInstrumentation.surfaced(caps.compactMap { cap in
+            guard let meta = CapabilitySchemaBuilder.parseResourceMeta(cap.schemaJson), returnedUris.contains(meta.uri) else { return nil }
+            return cap.compiledSkill
+        }, projectId: project.id!, clientIdentity: skillUsageClientIdentity(req: req) ?? "unknown", source: "resources/list", db: req.db)
+        req.logger.mcpTrace("mcp resources/list count=\(page.items.count)")
         return try await serveSuccess(
-            Payload(jsonrpc: "2.0", id: id, result: ResourcesListResult(resources: resources, nextCursor: nil)),
+            Payload(jsonrpc: "2.0", id: id, result: ResourcesListResult(resources: page.items, nextCursor: page.nextCursor)),
             req: req
         )
     }
@@ -353,6 +538,32 @@ struct MCPController {
         }
         let uriLog = uri.count > 120 ? String(uri.prefix(120)) + "…" : uri
         req.logger.mcpTrace("mcp resources/read uri=\(uriLog)")
+        do {
+            if let reference = try SkillPackageResourceService.parse(uri: uri) {
+                let (compiled, document) = try await SkillPackageResourceService.activeCompiledSkill(
+                    projectId: project.id!,
+                    skillId: reference.skillId,
+                    version: reference.version,
+                    db: req.db
+                )
+                if let path = reference.path {
+                    let file = try await SkillPackageResourceService.file(compiled: compiled, path: path, db: req.db)
+                    let mimeType = file.contentType ?? "application/octet-stream"
+                    let contents = if let text = String(data: file.content, encoding: .utf8) {
+                        ResourceContents(uri: uri, mimeType: mimeType, text: text)
+                    } else {
+                        ResourceContents(uri: uri, mimeType: mimeType, blob: file.content.base64EncodedString())
+                    }
+                    await SkillUsageInstrumentation.delivered(compiled, path: path, projectId: project.id!, clientIdentity: skillUsageClientIdentity(req: req) ?? "unknown", source: "resources/read", db: req.db)
+                    return try await serveSuccess(Payload(jsonrpc: "2.0", id: id, result: .init(contents: [contents])), req: req)
+                }
+                await SkillUsageInstrumentation.delivered(compiled, projectId: project.id!, clientIdentity: skillUsageClientIdentity(req: req) ?? "unknown", source: "resources/read", db: req.db)
+                let contents = ResourceContents(uri: uri, mimeType: "text/markdown", text: document.instructions)
+                return try await serveSuccess(Payload(jsonrpc: "2.0", id: id, result: .init(contents: [contents])), req: req)
+            }
+        } catch let abort as Abort {
+            return try await serveRpcError(id: id, code: -32602, message: abort.reason, req: req)
+        }
         guard let releaseId = project.activeReleaseId else {
             return try await serveRpcError(id: id, code: -32602, message: "No active release", req: req)
         }
@@ -371,6 +582,9 @@ struct MCPController {
                     skillSummary: compiled.summary
                 ) {
                     body = preamble + body
+                }
+                if compiled.skillBody != nil {
+                    await SkillUsageInstrumentation.delivered(compiled, projectId: project.id!, clientIdentity: skillUsageClientIdentity(req: req) ?? "unknown", source: "resources/read", db: req.db)
                 }
                 let read = ResourceReadResult(contents: [
                     ResourceContents(uri: uri, mimeType: meta.mimeType, text: body)
@@ -421,15 +635,18 @@ struct MCPController {
         )
     }
 
-    private static func handlePromptsList(req: Request, project: Project, id: JSONRPCId?) async throws -> MCPDispatchOutput {
+    private static func handlePromptsList(req: Request, project: Project, params: JSONRPCParams?, id: JSONRPCId?) async throws -> MCPDispatchOutput {
         struct Payload: Content {
             let jsonrpc: String
             let id: JSONRPCId?
             let result: PromptsListResult
         }
         guard let releaseId = project.activeReleaseId else {
+            if params?.cursor != nil {
+                return try await serveRpcError(id: id, code: -32602, message: "Invalid pagination cursor", req: req)
+            }
             return try await serveSuccess(
-                Payload(jsonrpc: "2.0", id: id, result: PromptsListResult(prompts: [])),
+                Payload(jsonrpc: "2.0", id: id, result: PromptsListResult(prompts: [], nextCursor: nil)),
                 req: req
             )
         }
@@ -448,9 +665,21 @@ struct MCPController {
                 description: desc,
                 arguments: nil
             )
+        }.sorted { $0.name < $1.name }
+        let page: MCPPaginationPage<MCPPrompt>
+        do {
+            page = try MCPPaginator.page(
+                prompts,
+                cursor: params?.cursor,
+                scope: "prompts:\(project.id!.uuidString):\(releaseId.uuidString)"
+            )
+        } catch {
+            return try await serveRpcError(id: id, code: -32602, message: "Invalid pagination cursor", req: req)
         }
+        let returnedNames = Set(page.items.map(\.name))
+        await SkillUsageInstrumentation.surfaced(caps.filter { returnedNames.contains($0.capabilityName) }.map(\.compiledSkill), projectId: project.id!, clientIdentity: skillUsageClientIdentity(req: req) ?? "unknown", source: "prompts/list", db: req.db)
         return try await serveSuccess(
-            Payload(jsonrpc: "2.0", id: id, result: PromptsListResult(prompts: prompts)),
+            Payload(jsonrpc: "2.0", id: id, result: PromptsListResult(prompts: page.items, nextCursor: page.nextCursor)),
             req: req
         )
     }
@@ -483,8 +712,13 @@ struct MCPController {
         let compiled = cap.compiledSkill
         var text = compiled.skillBody ?? compiled.summary ?? ""
         if let args = params?.arguments, !args.isEmpty {
-            let lines = args.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
+            let lines = args.keys.sorted().map { key in
+                "\(key): \(SkillRuntimeJSON.encode(args[key]!))"
+            }.joined(separator: "\n")
             text = "Context:\n\(lines)\n\n\(text)"
+        }
+        if compiled.skillBody != nil {
+            await SkillUsageInstrumentation.delivered(compiled, projectId: project.id!, clientIdentity: skillUsageClientIdentity(req: req) ?? "unknown", source: "prompts/get", db: req.db)
         }
         let result = PromptGetResult(
             description: compiled.summary,
@@ -522,6 +756,21 @@ struct MCPController {
         default:
             return nil
         }
+    }
+
+    /// Authenticated opaque principal, stable across OAuth refresh and separate for each user/client.
+    static func skillUsageClientIdentity(req: Request) -> String? {
+        if let id = req.storage[McpApiKeyRecordKey.self]?.id {
+            return RequestLogClientResolver.storedApiKeyReference(apiKeyId: id)
+        }
+        if let token = req.storage[McpOAuthAccessTokenRecordKey.self] {
+            let subject: String
+            if token.subjectType == "service" { subject = "service" }
+            else if let accountId = token.accountId { subject = "user:\(accountId.uuidString)" }
+            else { return nil }
+            return "oauth:\(token.$client.id.uuidString):\(subject)"
+        }
+        return nil
     }
 
     private static func mcpClientLabel(req: Request) -> String? {

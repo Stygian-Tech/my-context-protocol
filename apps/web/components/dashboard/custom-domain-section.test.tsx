@@ -5,8 +5,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CustomDomainSection } from "./custom-domain-section";
+import { ApiError } from "@/lib/api";
 import {
+  type CustomDomainStatus,
   fetchCustomDomain,
+  setProjectCustomDomain,
   verifyProjectCustomDomain,
 } from "@/lib/projects-api";
 
@@ -18,49 +21,47 @@ vi.mock("@/lib/projects-api", () => ({
   verifyProjectCustomDomain: vi.fn(),
 }));
 
-vi.mock("@/lib/clipboard", () => ({
-  copyTextToClipboard,
-}));
+vi.mock("@/lib/clipboard", () => ({ copyTextToClipboard }));
 
-const initialStatus = {
+const initialStatus: CustomDomainStatus = {
   hostname: "mcp.example.com",
   verified: true,
   verification_token: null,
   verification_record_name: null,
   instructions: null,
-  fly_ownership_verification_record_name: "_fly-ownership.mcp.example.com",
-  fly_ownership_verification_record_value: "fly-token",
-  fly_a_record_values: null,
-  fly_aaaa_record_values: null,
-  fly_cname_record_value: null,
-  certificate_status: "pending" as const,
-  certificate_message: "Fly certificate provisioning is pending.",
+  platform_dns_records: [
+    {
+      type: "TXT",
+      name: "_railway-verify.mcp.example.com",
+      value: "railway-token",
+      status: "DNS_RECORD_STATUS_PROPAGATED",
+      purpose: "OWNERSHIP_VERIFICATION",
+    },
+    {
+      type: "CNAME",
+      name: "mcp.example.com",
+      value: "gateway.up.railway.app",
+      status: "DNS_RECORD_STATUS_REQUIRES_UPDATE",
+      purpose: "DNS_RECORD_PURPOSE_TRAFFIC_ROUTE",
+    },
+  ],
+  certificate_status: "pending",
+  certificate_message: "Railway TLS certificate provisioning is pending.",
 };
 
-const issuedStatus = {
+const issuedStatus: CustomDomainStatus = {
   ...initialStatus,
-  certificate_status: "issued" as const,
-  certificate_message: "Fly edge TLS certificate is issued.",
-};
-
-const dnsRequiredStatus = {
-  ...initialStatus,
-  instructions: [
-    "Add an A record on mcp.example.com pointing to: 66.241.125.232",
-    "Add an AAAA record on mcp.example.com pointing to: 2a09:8280:1::1",
-    "Add a CNAME record on mcp.example.com pointing to: gateway.fly.dev",
-  ].join("\n"),
-  fly_a_record_values: ["66.241.125.232"],
-  fly_aaaa_record_values: ["2a09:8280:1::1"],
-  fly_cname_record_value: "gateway.fly.dev",
-  certificate_message: "Fly certificate validation is waiting on DNS records.",
+  platform_dns_records: initialStatus.platform_dns_records!.map((record) => ({
+    ...record,
+    status: "DNS_RECORD_STATUS_PROPAGATED",
+  })),
+  certificate_status: "issued",
+  certificate_message: "Railway edge TLS certificate is issued.",
 };
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => {};
-  const promise = new Promise<T>((innerResolve) => {
-    resolve = innerResolve;
-  });
+  const promise = new Promise<T>((innerResolve) => { resolve = innerResolve; });
   return { promise, resolve };
 }
 
@@ -73,9 +74,7 @@ async function waitFor(assertion: () => void) {
       return;
     } catch (error) {
       lastError = error;
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
     }
   }
   throw lastError;
@@ -91,10 +90,7 @@ describe("CustomDomainSection", () => {
     vi.mocked(verifyProjectCustomDomain).mockResolvedValue(issuedStatus);
     copyTextToClipboard.mockResolvedValue(undefined);
     queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -102,18 +98,13 @@ describe("CustomDomainSection", () => {
   });
 
   afterEach(async () => {
-    await act(async () => {
-      root.unmount();
-    });
+    await act(async () => { root.unmount(); });
     host.remove();
     queryClient.clear();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
-  it("shows DNS and TLS check phases while refresh is running", async () => {
-    const check = deferred<typeof issuedStatus>();
-    vi.mocked(verifyProjectCustomDomain).mockReturnValue(check.promise);
-
+  async function renderSection() {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
@@ -121,235 +112,208 @@ describe("CustomDomainSection", () => {
         </QueryClientProvider>,
       );
     });
+    await waitFor(() => { expect(host.textContent).toContain("Hostname:"); });
+  }
 
-    await waitFor(() => {
-      expect(host.textContent).toContain("Refresh DNS/TLS");
-    });
-
-    const button = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Refresh DNS/TLS"),
+  function button(label: string) {
+    const result = Array.from(host.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes(label),
     );
+    expect(result).toBeDefined();
+    return result!;
+  }
 
+  async function click(label: string) {
+    await act(async () => { button(label).click(); });
+  }
+
+  async function enterHostname(value: string) {
+    const input = host.querySelector("input")!;
     await act(async () => {
-      button?.click();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
     });
+  }
 
-    await waitFor(() => {
-      expect(verifyProjectCustomDomain).toHaveBeenCalledWith("project-1");
-      expect(host.textContent).toContain("Checking DNS and TLS");
-      expect(host.textContent).toContain("DNS TXT verification:");
-      expect(host.textContent).toContain("Fly ownership TXT:");
-      expect(host.textContent).toContain("Fly routing:");
-      expect(host.textContent).toContain("Fly TLS certificate:");
-      expect(host.textContent).toContain("requesting status");
-    });
-
-    await act(async () => {
-      check.resolve(issuedStatus);
-      await check.promise;
-    });
+  it("renders Railway TXT and CNAME requirements without Fly routing choices", async () => {
+    await renderSection();
+    expect(host.textContent).toContain("Required Railway DNS records");
+    expect(host.textContent).toContain("_railway-verify.mcp.example.com");
+    expect(host.textContent).toContain("railway-token");
+    expect(host.textContent).toContain("gateway.up.railway.app");
+    expect(host.textContent).not.toContain("Fly");
+    expect(host.textContent).not.toContain("Routing options");
   });
 
-  it("shows project verification TXT on a non-conflicting record name", async () => {
+  it("shows each Railway record's status independently of saved project verification", async () => {
+    await renderSection();
+    const ownershipRow = Array.from(host.querySelectorAll("span")).find(
+      (span) => span.textContent === "_railway-verify.mcp.example.com",
+    )!.parentElement!;
+    const routingRow = Array.from(host.querySelectorAll("span")).find(
+      (span) => span.textContent === "gateway.up.railway.app",
+    )!.parentElement!.parentElement!;
+    expect(ownershipRow.textContent).toContain("Propagated");
+    expect(routingRow.textContent).toContain("Needs DNS update");
+    expect(routingRow.textContent).not.toContain("Propagated");
+    expect(host.textContent).toContain("Project domain verification: verified");
+  });
+
+  it("renders the non-conflicting project verification record once with generic aliases", async () => {
     vi.mocked(fetchCustomDomain).mockResolvedValue({
       ...initialStatus,
       verified: false,
       verification_token: "project-token",
       verification_record_name: "_mcp-verify.mcp.example.com",
-      fly_ownership_verification_record_name: null,
-      fly_ownership_verification_record_value: null,
-      certificate_status: null,
-      certificate_message: null,
+      ownership_verification_record_name: "_mcp-verify.mcp.example.com",
+      ownership_verification_record_value: "project-token",
     });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CustomDomainSection projectId="project-1" />
-        </QueryClientProvider>,
-      );
-    });
-
-    await waitFor(() => {
-      expect(host.textContent).toContain("Required verification records");
-      expect(host.textContent).toContain("_mcp-verify.mcp.example.com");
-      expect(host.textContent).toContain("project-token");
-    });
+    await renderSection();
+    expect(host.textContent).toContain("Project verification record");
+    expect(host.textContent?.match(/project-token/g)).toHaveLength(1);
+    expect(host.textContent).toContain("_mcp-verify.mcp.example.com");
+    expect(host.textContent).toContain("_railway-verify.mcp.example.com");
   });
 
-  it("renders the returned TLS status and message after refresh", async () => {
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CustomDomainSection projectId="project-1" />
-        </QueryClientProvider>,
-      );
-    });
-
-    await waitFor(() => {
-      expect(host.textContent).toContain("Refresh DNS/TLS");
-    });
-
-    const button = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Refresh DNS/TLS"),
-    );
-
-    await act(async () => {
-      button?.click();
-    });
-
-    await waitFor(() => {
-      expect(host.textContent).toContain("Latest DNS/TLS check");
-      expect(host.textContent).toContain("TLS issued");
-      expect(host.textContent).toContain("Fly edge TLS certificate is issued.");
-    });
-  });
-
-  it("renders Fly DNS requirements returned by the TLS check", async () => {
-    vi.mocked(verifyProjectCustomDomain).mockResolvedValue(dnsRequiredStatus);
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CustomDomainSection projectId="project-1" />
-        </QueryClientProvider>,
-      );
-    });
-
-    await waitFor(() => {
-      expect(host.textContent).toContain("Refresh DNS/TLS");
-    });
-
-    const button = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Refresh DNS/TLS"),
-    );
-
-    await act(async () => {
-      button?.click();
-    });
-
-    await waitFor(() => {
-      expect(host.textContent).toContain("DNS records");
-      expect(host.textContent).toContain("Required verification records");
-      expect(host.textContent).toContain("TXT");
-      expect(host.textContent).toContain("_fly-ownership.mcp.example.com");
-      expect(host.textContent).toContain("fly-token");
-      expect(host.textContent).toContain("Routing options");
-      expect(host.textContent).toContain("Copying one option disables the other to avoid invalid DNS records.");
-      expect(host.textContent).toContain("Option 1: A/AAAA records");
-      expect(host.textContent).toContain("Copy A/AAAA");
-      expect(host.textContent).toContain("A");
-      expect(host.textContent).toContain("66.241.125.232");
-      expect(host.textContent).toContain("AAAA");
-      expect(host.textContent).toContain("2a09:8280:1::1");
-      expect(host.textContent).toContain("Option 2: CNAME record");
-      expect(host.textContent).toContain("Copy CNAME");
-      expect(host.textContent).toContain("CNAME");
-      expect(host.textContent).toContain("gateway.fly.dev");
-      expect(host.textContent).toContain("Add an A record on mcp.example.com pointing to: 66.241.125.232");
-    });
-  });
-
-  it("locks routing to the copied option until the flow is restarted", async () => {
-    vi.mocked(verifyProjectCustomDomain).mockResolvedValue(dnsRequiredStatus);
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CustomDomainSection projectId="project-1" />
-        </QueryClientProvider>,
-      );
-    });
-
-    await waitFor(() => {
-      expect(host.textContent).toContain("Refresh DNS/TLS");
-    });
-
-    const refresh = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Refresh DNS/TLS"),
-    );
-
-    await act(async () => {
-      refresh?.click();
-    });
-
-    await waitFor(() => {
-      expect(host.textContent).toContain("Copy A/AAAA");
-      expect(host.textContent).toContain("Copy CNAME");
-    });
-
-    const copyAddress = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Copy A/AAAA"),
-    );
-
-    await act(async () => {
-      copyAddress?.click();
-    });
-
+  it("copies complete Railway records, retaining both verification and routing", async () => {
+    await renderSection();
+    await click("Copy Railway records");
     expect(copyTextToClipboard).toHaveBeenCalledWith(
-      "66.241.125.232\n2a09:8280:1::1",
-      {
-        success: "A/AAAA records copied to clipboard",
-        error: "Could not copy DNS records",
-      },
+      "_railway-verify.mcp.example.com\tTXT\trailway-token\nmcp.example.com\tCNAME\tgateway.up.railway.app",
+      { success: "Railway DNS records copied to clipboard", error: "Could not copy DNS records" },
     );
-    expect(host.textContent).toContain("Selected: A/AAAA records");
-
-    const copyCnameDisabled = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Copy CNAME"),
-    );
-    expect(copyCnameDisabled?.hasAttribute("disabled")).toBe(true);
-
-    const restart = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Restart DNS flow"),
-    );
-
-    await act(async () => {
-      restart?.click();
-    });
-
-    const copyCnameEnabled = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Copy CNAME"),
-    );
-    expect(copyCnameEnabled?.hasAttribute("disabled")).toBe(false);
+    expect(button("Copy Railway records").disabled).toBe(false);
   });
 
-  it("does not repeat the certificate message in the instructions", async () => {
-    vi.mocked(verifyProjectCustomDomain).mockResolvedValue({
-      ...dnsRequiredStatus,
-      instructions: [
-        "Fly certificate validation is waiting on DNS records.",
-        "Add an A record on mcp.example.com pointing to: 66.241.125.232",
-      ].join("\n"),
-      certificate_message: "Fly certificate validation is waiting on DNS records.",
-    });
+  it("shows refresh progress and prevents hostname changes during verification", async () => {
+    const check = deferred<CustomDomainStatus>();
+    vi.mocked(verifyProjectCustomDomain).mockReturnValue(check.promise);
+    await renderSection();
+    await enterHostname("next.example.com");
+    await click("Refresh DNS/TLS");
+    await waitFor(() => { expect(host.textContent).toContain("Checking DNS and TLS"); });
+    expect(host.textContent).toContain("Railway TLS certificate: requesting status");
+    expect(button("Update Hostname").disabled).toBe(true);
+    expect(host.querySelector("input")!.disabled).toBe(true);
+    await act(async () => { check.resolve(issuedStatus); await check.promise; });
+    await waitFor(() => { expect(host.textContent).toContain("TLS issued"); });
+  });
 
+  it("renders successive TLS refreshes and later query refetches", async () => {
+    await renderSection();
+    await click("Refresh DNS/TLS");
+    await waitFor(() => { expect(host.textContent).toContain("TLS issued"); });
+    vi.mocked(verifyProjectCustomDomain).mockResolvedValue(initialStatus);
+    await click("Refresh DNS/TLS");
+    await waitFor(() => { expect(host.textContent).toContain("TLS pending"); });
+    vi.mocked(fetchCustomDomain).mockResolvedValue(issuedStatus);
     await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CustomDomainSection projectId="project-1" />
-        </QueryClientProvider>,
-      );
+      await queryClient.refetchQueries({ queryKey: ["custom-domain", "project-1"] });
     });
+    await waitFor(() => { expect(host.textContent).toContain("TLS issued"); });
+  });
 
-    await waitFor(() => {
-      expect(host.textContent).toContain("Refresh DNS/TLS");
-    });
-
-    const button = Array.from(host.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent?.includes("Refresh DNS/TLS"),
-    );
-
+  it("displays the new hostname after verification then replacement and blocks overlapping refresh", async () => {
+    const save = deferred<CustomDomainStatus>();
+    vi.mocked(setProjectCustomDomain).mockReturnValue(save.promise);
+    await renderSection();
+    await click("Refresh DNS/TLS");
+    await waitFor(() => { expect(host.textContent).toContain("TLS issued"); });
+    await enterHostname("next.example.com");
+    await click("Update Hostname");
+    await waitFor(() => { expect(button("Refresh DNS/TLS").disabled).toBe(true); });
+    expect(setProjectCustomDomain).toHaveBeenCalledWith("project-1", "next.example.com");
     await act(async () => {
-      button?.click();
+      save.resolve({
+        hostname: "next.example.com",
+        verified: false,
+        verification_token: "new-token",
+        certificate_status: "pending",
+        platform_dns_records: [],
+      });
+      await save.promise;
     });
-
     await waitFor(() => {
-      expect(host.textContent).toContain("Add an A record on mcp.example.com pointing to: 66.241.125.232");
+      expect(host.textContent).toContain("Hostname: next.example.com");
+      expect(host.textContent).toContain("new-token");
+      expect(host.textContent).not.toContain("mcp.example.com");
+      expect(host.textContent).not.toContain("TLS issued");
     });
+  });
 
-    const messageMatches =
-      host.textContent?.match(/Fly certificate validation is waiting on DNS records\./g) ?? [];
-    expect(messageMatches).toHaveLength(1);
+  it("does not let an earlier in-flight query overwrite a verification result", async () => {
+    await renderSection();
+    const staleRead = deferred<CustomDomainStatus>();
+    vi.mocked(fetchCustomDomain).mockReturnValue(staleRead.promise);
+    let refetch: Promise<void>;
+    await act(async () => {
+      refetch = queryClient.refetchQueries({ queryKey: ["custom-domain", "project-1"] });
+    });
+    await click("Refresh DNS/TLS");
+    await waitFor(() => { expect(host.textContent).toContain("TLS issued"); });
+    await act(async () => {
+      staleRead.resolve(initialStatus);
+      await staleRead.promise;
+      await refetch;
+    });
+    expect(host.textContent).toContain("TLS issued");
+    expect(queryClient.getQueryData(["custom-domain", "project-1"])).toEqual(issuedStatus);
+  });
+
+  it("preserves extra validation record types and does not claim unknown status is propagated", async () => {
+    vi.mocked(fetchCustomDomain).mockResolvedValue({
+      ...initialStatus,
+      platform_dns_records: [{ type: "CAA", name: "example.com", value: '0 issue "letsencrypt.org"', status: "NEW_STATUS" }],
+    });
+    await renderSection();
+    expect(host.textContent).toContain("CAA");
+    expect(host.textContent).toContain('0 issue "letsencrypt.org"');
+    expect(host.textContent).toContain("Not confirmed");
+  });
+
+  it("refreshes Railway records when verification returns missing DNS requirements", async () => {
+    await renderSection();
+    vi.mocked(fetchCustomDomain).mockResolvedValue({
+      ...initialStatus,
+      platform_dns_records: [{ type: "TXT", name: "_railway-verify.mcp.example.com", value: "new-railway-token" }],
+    });
+    vi.mocked(verifyProjectCustomDomain).mockRejectedValue(new ApiError("Bad Request", 400, {
+      reason: "Railway is still waiting for required DNS records.",
+    }));
+    await click("Refresh DNS/TLS");
+    await waitFor(() => {
+      expect(host.textContent).toContain("new-railway-token");
+      expect(host.textContent).toContain("Railway is still waiting for required DNS records.");
+    });
+    expect(host.textContent).not.toContain("gateway.up.railway.app");
+    expect(button("Refresh DNS/TLS").disabled).toBe(false);
+  });
+
+  it("shows missing Railway provisioning configuration without claiming TLS is ready", async () => {
+    vi.mocked(fetchCustomDomain).mockResolvedValue({
+      ...initialStatus,
+      platform_dns_records: [],
+      certificate_status: "not_configured",
+      certificate_message: "Railway domain provisioning is not configured. Set a Railway project token on the Gateway service.",
+    });
+    await renderSection();
+    expect(host.textContent).toContain("TLS not configured");
+    expect(host.textContent).toContain("Set a Railway project token on the Gateway service.");
+    expect(host.textContent).not.toContain("TLS issued");
+    expect(button("Refresh DNS/TLS").disabled).toBe(false);
+  });
+
+  it("shows save failures and does not repeat the certificate message in instructions", async () => {
+    vi.mocked(fetchCustomDomain).mockResolvedValue({
+      ...initialStatus,
+      instructions: `${initialStatus.certificate_message}\nAdd the required CNAME record.`,
+    });
+    vi.mocked(setProjectCustomDomain).mockRejectedValue(new Error("Unavailable"));
+    await renderSection();
+    expect(host.textContent?.match(/Railway TLS certificate provisioning is pending\./g)).toHaveLength(1);
+    expect(host.textContent).toContain("Add the required CNAME record.");
+    await enterHostname("next.example.com");
+    await click("Update Hostname");
+    await waitFor(() => { expect(host.textContent).toContain("Could not save the custom hostname."); });
   });
 });

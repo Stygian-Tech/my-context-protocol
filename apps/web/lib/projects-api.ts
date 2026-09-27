@@ -13,6 +13,10 @@ import type {
   CompiledSkill,
   AccountDashboardSummary,
   ProjectDashboardSummary,
+  ProjectSkillRuntime,
+  SkillRuntimeAssignment,
+  ProjectSkillUsage,
+  SkillUsageQuery,
 } from "./types";
 import type {
   AccountDashboardTimeseries,
@@ -97,11 +101,21 @@ export interface CustomDomainStatus {
   verification_token?: string | null;
   verification_record_name?: string | null;
   instructions?: string | null;
+  ownership_verification_record_name?: string | null;
+  ownership_verification_record_value?: string | null;
+  /** Deprecated Fly-specific compatibility fields; always null on Railway. */
   fly_ownership_verification_record_name?: string | null;
   fly_ownership_verification_record_value?: string | null;
   fly_a_record_values?: string[] | null;
   fly_aaaa_record_values?: string[] | null;
   fly_cname_record_value?: string | null;
+  platform_dns_records?: Array<{
+    type: string;
+    name: string;
+    value: string;
+    status?: string | null;
+    purpose?: string | null;
+  }> | null;
   certificate_status?: "not_configured" | "pending" | "issued" | "failed" | "unknown" | null;
   certificate_message?: string | null;
 }
@@ -211,12 +225,51 @@ export async function updateCompiledSkill(
     /** When true, `schema_json` is applied (use empty string to rebuild defaults). */
     replace_schema?: boolean;
     schema_json?: string | null;
+    runtime?: {
+      kind?: "operating" | "task" | "tool-use" | "reference";
+      scope?: "global" | "organization" | "workspace" | "repository" | "task";
+      activation?: {
+        mode?: "always" | "intent" | "event" | "explicit";
+        intents?: string[];
+        events?: string[];
+        tags?: string[];
+        examples?: string[];
+      };
+      enforcement?: "advisory" | "required";
+      priority?: number;
+      version?: string;
+    };
   }
 ): Promise<CompiledSkill> {
   return api.patch<CompiledSkill>(
     `/projects/${projectId}/releases/${releaseId}/compiled-skills/${compiledSkillId}`,
     body
   );
+}
+
+export async function writeBackCompiledSkillMetadata(projectId: string, releaseId: string, compiledSkillId: string): Promise<{ pull_request_url: string; branch: string; source_path: string }> {
+  return api.post(`/projects/${projectId}/releases/${releaseId}/compiled-skills/${compiledSkillId}/writeback`, {});
+}
+
+export async function fetchProjectSkillRuntime(projectId: string): Promise<ProjectSkillRuntime> {
+  return api.get<ProjectSkillRuntime>(`/projects/${projectId}/skill-runtime`);
+}
+
+export async function fetchProjectSkillUsage(projectId: string, params: SkillUsageQuery = {}): Promise<ProjectSkillUsage> {
+  const query = new URLSearchParams({ window: params.window ?? "7d" });
+  if (params.page != null) query.set("page", String(params.page));
+  if (params.page_size != null) query.set("page_size", String(params.page_size));
+  if (params.sort) query.set("sort", params.sort);
+  if (params.direction) query.set("direction", params.direction);
+  if (params.skill_id) query.set("skill_id", params.skill_id);
+  return api.get<ProjectSkillUsage>(`/projects/${encodeURIComponent(projectId)}/skill-usage?${query}`);
+}
+
+export async function updateProjectSkillRuntime(
+  projectId: string,
+  body: Partial<Omit<ProjectSkillRuntime, "recent_events" | "assignments">> & { assignments?: SkillRuntimeAssignment[] }
+): Promise<ProjectSkillRuntime> {
+  return api.patch<ProjectSkillRuntime>(`/projects/${projectId}/skill-runtime`, body);
 }
 
 export async function fetchApiKeys(

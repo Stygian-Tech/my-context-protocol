@@ -10,6 +10,9 @@ cd "$ROOT"
 export CI="${CI:-true}"
 export NEXT_PUBLIC_APP_ENV="${NEXT_PUBLIC_APP_ENV:-test}"
 
+echo "==> Railway deployment authentication"
+bash scripts/test-railway-deploy.sh
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -41,6 +44,9 @@ run_logged() {
 
 header "Bun workspace install"
 bun install --frozen-lockfile
+
+header "Railway config"
+jq empty railway/gateway.json railway/web.json
 
 # ---------------------------------------------------------------------------
 # Frontend checks (parallel sub-jobs)
@@ -83,7 +89,7 @@ swift_checks() {
     SUPABASE_DB_URL="" \
     DISABLE_ADMIN_ANALYTICS_ROLLUP_SCHEDULER=1 \
     DISABLE_STRIPE_RECONCILIATION_SCHEDULER=1 \
-    swift test --skip-update \
+    swift test --disable-automatic-resolution \
       --enable-swift-testing --disable-xctest \
       --no-parallel \
       -Xswiftc -warnings-as-errors

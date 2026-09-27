@@ -352,9 +352,9 @@ Content-Type: application/json
 
 **Response:** `CustomDomainStatus`
 
-- Resets verification when the hostname changes.
-- The frontend should show both TXT verification records when present.
-- Routing records are alternatives: use either the A/AAAA values or the CNAME value for the same hostname, not both.
+- Ensures the domain exists on the configured Railway Gateway service before saving; saving resets project verification.
+- Show the project ownership TXT record plus **all** `platform_dns_records` returned by Railway. Railway ownership TXT, routing CNAME, and certificate-validation records are requirements, not alternative routing options.
+- Production fails closed with HTTP 503 when Railway provisioning is not configured. A provider provisioning failure also returns HTTP 503 without saving the hostname.
 
 ---
 
@@ -370,7 +370,9 @@ POST /projects/:id/custom-domain/verify
 
 - Verifies `TXT _mcp-verify.<hostname>` against `verification_token`.
 - Falls back to the legacy TXT-at-hostname check for existing domains.
-- Requests or refreshes Fly certificate provisioning after project TXT verification.
+- Ensures the Railway domain exists after project TXT verification (also repairs domains saved before the Railway migration).
+- Requires Railway ownership verification and propagated traffic-routing records before marking the project domain verified. TLS can still be pending; inspect `certificate_status` separately.
+- Already-verified projects skip the project TXT check, but still refresh Railway checks. An unavailable provisioning configuration returns HTTP 503; failed provisioning returns HTTP 502; missing DNS requirements return HTTP 400.
 
 ---
 
@@ -418,6 +420,17 @@ Use these shapes for request/response bodies.
   "verification_token": "string | null | undefined",
   "verification_record_name": "string | null | undefined",
   "instructions": "string | null | undefined",
+  "ownership_verification_record_name": "string | null | undefined",
+  "ownership_verification_record_value": "string | null | undefined",
+  "platform_dns_records": [
+    {
+      "type": "string",
+      "name": "string",
+      "value": "string",
+      "status": "string | null | undefined",
+      "purpose": "string | null | undefined"
+    }
+  ],
   "fly_ownership_verification_record_name": "string | null | undefined",
   "fly_ownership_verification_record_value": "string | null | undefined",
   "fly_a_record_values": "string[] | null | undefined",
@@ -429,10 +442,11 @@ Use these shapes for request/response bodies.
 ```
 
 - `verification_record_name`: usually `_mcp-verify.<hostname>` while project ownership is pending.
-- `fly_ownership_verification_record_name` / `fly_ownership_verification_record_value`: Fly ownership TXT record required before certificate issuance.
-- `fly_a_record_values` and `fly_aaaa_record_values`: address-record routing option for the custom hostname.
-- `fly_cname_record_value`: CNAME routing option for the custom hostname.
-- DNS routing options are mutually exclusive for a hostname: configure the A/AAAA records or configure the CNAME record, not both.
+- `ownership_verification_record_name` / `ownership_verification_record_value`: provider-neutral aliases for the **project** ownership record, not Railway's ownership TXT record.
+- `platform_dns_records` is optional/nullable. Each row is a required Railway DNS record with its exact type, name, and value. The Gateway includes Railway's separate ownership token as a TXT row with purpose `OWNERSHIP_VERIFICATION`; routing rows use `DNS_RECORD_PURPOSE_TRAFFIC_ROUTE`.
+- Per-record status `DNS_RECORD_STATUS_PROPAGATED` indicates a ready record. Other statuses, including absent or unknown statuses, must not be shown as verified. Do not derive current Railway DNS readiness from the persisted project `verified` flag.
+- `certificate_status` is the normalized Railway edge certificate state, independent of project verification and routing DNS readiness.
+- The `fly_*` fields are deprecated compatibility fields and are null/omitted on the Railway backend. Do not use them for new setup instructions.
 
 ### Project catalog (`GET /projects/:id/catalog`)
 
@@ -531,3 +545,70 @@ Dashboard-only aggregate of the active release MCP surface plus catalog markdown
 | PATCH | `/projects/:id/api-keys/:keyId` | Yes | Rename API key (active only) |
 | DELETE | `/projects/:id/api-keys/:keyId` | Yes | Revoke API key (soft) |
 | GET | `/projects/:id/request-logs` | Yes | List request logs |
+# Portable Skill Runtime (schema v1)
+
+Projects expose four stable, colon-free runtime tools by default:
+
+- `resolve_context` bootstraps a task with ordered active and suggested skills, provenance, conflicts, capability bindings, missing context, and a trace.
+- `get_skill` retrieves one complete compiled skill by stable ID and optional version.
+- `report_skill_feedback` persists version-specific evidence and returns an issue draft. It never reports an external side effect unless the harness performs one.
+- `report_skill_usage` records one best-effort batch of explicit agent-reported use or conscious skipping at task completion when telemetry is enabled. Missing reports remain unknown.
+
+The one-release compatibility aliases `mycontext_catalog`, `discover_skills`, and `list_capabilities` remain callable but are omitted from `tools/list`. Their legacy arguments and output wrappers are normalized through the canonical runtime handlers; they do not maintain separate discovery or scoring logic.
+
+Tool arguments preserve native nested JSON. Canonical results include both `structuredContent` and an equivalent JSON text content item for clients that do not consume structured results. Invalid arguments and unknown tool names return JSON-RPC `-32602`; failures encountered while executing an accepted tool call return a successful MCP tool response with `isError: true`.
+
+Generated per-skill tools are disabled by default, so the default `tools/list` result is exactly the four canonical tools. A project can temporarily opt into legacy compiled-tool listing and invocation by setting `legacy_compiled_tools_enabled: true` in `provider_preferences_json` through `PATCH /projects/:id/skill-runtime`. Canonical and alias names are reserved and suppress any colliding compiled capability even when this switch is enabled.
+
+Runtime frontmatter supports `kind`, `scope`, `activation`, `enforcement`, `priority`, `requires`, `conflictsWith`, `version`, and `lifecycle`. Legacy skills remain retrievable but compile with `explicit` activation and structured clarification questions.
+
+Runtime assignments are exact-target records: `target_type` must equal `scope`, and `target_id` must identify the organization, workspace, repository, or task being matched (`*` or `global` for global scope). Legacy unscoped rows remain database-compatible during rolling deployment but are not activated or returned by the dashboard API.
+
+Dashboard APIs:
+
+- `GET|PATCH /projects/:id/skill-runtime` reads or updates scoped assignments, semantic settings, provider preferences, feedback authorization, telemetry consent, and recent trace events.
+- `PATCH /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId` accepts a `runtime` sidecar patch alongside existing MCP metadata.
+- `POST /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId/writeback` creates a branch and draft GitHub pull request; it never pushes the default branch.
+
+Detailed runtime telemetry is disabled by default, stores hashes and coarse events rather than prompts or source code, and is pruned using the configured retention period (30 days by default).
+
+
+## Per-Skill Usage Analytics
+
+`GET /projects/:id/skill-usage` requires dashboard authentication and project ownership. It uses retained database event aggregates independently of runtime settings and transport request-log sampling. The existing `/api/projects/:path*` browser rewrite exposes it through the application origin.
+
+Query parameters:
+
+| Parameter | Values / Default |
+| --- | --- |
+| `window` | `24h`, `7d` (default), `30d`; constrained by retention |
+| `page` | One-based page, default `1` |
+| `page_size` | Default `25`, maximum `100` |
+| `sort` | `activity` (default), `skill_id`, `surfaced`, `instructions_delivered`, `agent_reported_used`, `agent_reported_skipped` |
+| `direction` | `desc` (default), `asc` |
+| `skill_id` | Optional exact skill ID for detail |
+
+Response fields are `collection_enabled`, `retention_days`, `requested_window`, `effective_from`, `effective_to`, `reporting_coverage: "partial"`, `historical_measurements: "legacy_resolver_only"`, `page`, `page_size`, `total`, and `skills`. Timestamps are ISO 8601. Each skill includes `skill_id`, `name`, `is_current`, nullable `last_activity`, and `counts`. Counts contain `surfaced`, `instructions_delivered`, `supporting_file_read`, `resolver_selected`, `resolver_suggested`, `resolver_excluded`, `agent_reported_used`, `agent_reported_skipped`, and `legacy_resolver_selected`.
+
+With `skill_id`, the row also includes `versions` (nullable `release_id`, `version`, `checksum`, and `counts`), `resolver_exclusion_reasons`, and `agent_skip_reasons` (each reason entry is `{reason, count}`). These arrays are empty in the list response. Current skills remain visible with zero counts, while historical skills remain visible while events are retained. Renamed IDs remain separate. Legacy resolver events retain unknown version attribution; generic request counts never reconstruct historical skill usage. Disabling collection stops new activity but does not hide retained history. Zero means no recorded activity, not evidence of no actual use.
+
+### Agent Usage Reports
+
+`report_skill_usage` accepts native JSON arguments:
+
+```json
+{
+  "report_id": "stable-task-report-id",
+  "trace_id": "optional-resolution-trace-uuid",
+  "skills": [
+    {"skill_id": "example", "version": "1.0.0", "outcome": "used"},
+    {"skill_id": "another", "version": "2.0.0", "outcome": "skipped", "skip_reason": "not_relevant"}
+  ]
+}
+```
+
+`report_id` is 1–128 characters; each batch has 1–100 entries. Canonical `get_skill` responses and resolver active/suggested entries include `releaseId`; agents should copy it into the report entry’s `release_id` to preserve exact attribution across releases. Each entry requires `skill_id` (1–128), `version` (1–512), and `outcome` (`used` or `skipped`), with optional `release_id` UUID and `checksum` (1–128). Unknown fields are rejected; free-text explanations are not accepted. `skip_reason` is required only for `skipped`, with one of `not_relevant`, `redundant`, `instruction_conflict`, `missing_capability`, `task_changed`, or `other`.
+
+The server validates skill references against project releases and any trace against the authenticated project/client. Client identity is server-derived from the API key or OAuth principal and client, never supplied by the agent. Stable report IDs deduplicate retries within this identity: an identical retry returns `already_recorded`, and conflicting reuse is rejected. The result is `{status: "recorded" | "already_recorded" | "collection_disabled", recorded_count: number}`. Persistence failures return an error rather than acknowledging storage.
+
+Agents should submit one best-effort task-end batch only for actual use or consciously considered and declined skills. They must not enumerate all surfaced skills as skipped, expose private deliberation, or block task completion on reporting failure. Passive observed telemetry failures do not fail instruction delivery. Collection shares existing opt-in and retention controls (30 days by default); neither prompts nor source code, credentials, or reasoning transcripts are stored.

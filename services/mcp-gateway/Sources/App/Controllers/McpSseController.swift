@@ -7,6 +7,9 @@ enum McpSseController {
         guard let project = req.storage[ProjectKey.self], let pid = project.id else {
             throw Abort(.unauthorized)
         }
+        if let transportError = MCPController.validateTransportHeaders(req: req) {
+            return transportError
+        }
         let app = req.application
         let subId = UUID()
         let stream = AsyncStream<String> { continuation in

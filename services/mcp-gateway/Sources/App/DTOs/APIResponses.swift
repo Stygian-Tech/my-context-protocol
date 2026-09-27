@@ -38,11 +38,15 @@ struct CustomDomainResponse: Content {
     let verification_token: String?
     let verification_record_name: String?
     let instructions: String?
+    let ownership_verification_record_name: String?
+    let ownership_verification_record_value: String?
+    /// Deprecated Fly-specific compatibility fields; always nil on Railway.
     let fly_ownership_verification_record_name: String?
     let fly_ownership_verification_record_value: String?
     let fly_a_record_values: [String]?
     let fly_aaaa_record_values: [String]?
     let fly_cname_record_value: String?
+    let platform_dns_records: [CustomDomainDNSRecordResponse]?
     let certificate_status: String?
     let certificate_message: String?
 
@@ -50,13 +54,32 @@ struct CustomDomainResponse: Content {
         case hostname, verified, instructions
         case verification_token = "verification_token"
         case verification_record_name = "verification_record_name"
+        case ownership_verification_record_name = "ownership_verification_record_name"
+        case ownership_verification_record_value = "ownership_verification_record_value"
         case fly_ownership_verification_record_name = "fly_ownership_verification_record_name"
         case fly_ownership_verification_record_value = "fly_ownership_verification_record_value"
         case fly_a_record_values = "fly_a_record_values"
         case fly_aaaa_record_values = "fly_aaaa_record_values"
         case fly_cname_record_value = "fly_cname_record_value"
+        case platform_dns_records = "platform_dns_records"
         case certificate_status = "certificate_status"
         case certificate_message = "certificate_message"
+    }
+}
+
+struct CustomDomainDNSRecordResponse: Content {
+    let type: String
+    let name: String
+    let value: String
+    let status: String?
+    let purpose: String?
+
+    init(_ record: RailwayDomainService.DNSRecord) {
+        type = record.type
+        name = record.name
+        value = record.value
+        status = record.status
+        purpose = record.purpose
     }
 }
 
@@ -301,6 +324,18 @@ struct CompiledSkillResponse: Content {
     let risk_level: String
     let repo_specific: Bool
     let status: String
+    let canonical_schema_version: Int
+    let skill_id: String?
+    let kind: String?
+    let scope: String?
+    let activation_mode: String?
+    let enforcement: String?
+    let priority: Int?
+    let version: String?
+    let source_checksum: String?
+    let canonical_json: String?
+    let clarification_required: Bool
+    let clarification_questions: [SkillClarificationQuestion]
     /// From `routing_rules` — comma lists in SKILL become arrays; surfaced on MCP resources when `exposure_type` is `resource`.
     let use_when: [String]
     let avoid_when: [String]
@@ -325,6 +360,15 @@ struct CompiledSkillResponse: Content {
         case failure_modes = "failure_modes"
         case invoke_first = "invoke_first"
         case status = "status"
+        case canonical_schema_version = "canonical_schema_version"
+        case skill_id = "skill_id"
+        case kind, scope
+        case activation_mode = "activation_mode"
+        case enforcement, priority, version
+        case source_checksum = "source_checksum"
+        case canonical_json = "canonical_json"
+        case clarification_required = "clarification_required"
+        case clarification_questions = "clarification_questions"
         case body_diff_unified = "body_diff_unified"
         case body_diff_prior_release_id = "body_diff_prior_release_id"
     }

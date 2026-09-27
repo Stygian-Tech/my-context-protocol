@@ -120,6 +120,18 @@ func routes(_ app: Application) throws {
     protected.patch("projects", ":id", "releases", ":releaseId", "compiled-skills", ":compiledSkillId") { req in
         try await ProjectController.updateCompiledSkill(req: req)
     }
+    protected.post("projects", ":id", "releases", ":releaseId", "compiled-skills", ":compiledSkillId", "writeback") { req in
+        try await ProjectController.writeBackCompiledSkillMetadata(req: req)
+    }
+    protected.get("projects", ":id", "skill-usage") { req in
+        try await SkillUsageController.index(req: req)
+    }
+    protected.get("projects", ":id", "skill-runtime") { req in
+        try await ProjectController.runtimeSettings(req: req)
+    }
+    protected.patch("projects", ":id", "skill-runtime") { req in
+        try await ProjectController.updateRuntimeSettings(req: req)
+    }
     protected.get("projects", ":id", "api-keys") { req in
         try await ProjectController.listApiKeys(req: req)
     }

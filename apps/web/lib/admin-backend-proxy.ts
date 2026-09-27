@@ -1,15 +1,11 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { getBackendOrigin } from "@/lib/backend-origin";
 import { forwardBackendResponseCookies } from "@/lib/forward-backend-response-cookies";
 
 /** Server-side only: prefer non-public var to avoid client bundle assumptions; fall back to public URL. */
 export function getAdminBackendOrigin(): string {
-  const raw =
-    process.env.BACKEND_URL?.trim() ||
-    process.env.API_ORIGIN?.trim() ||
-    process.env.NEXT_PUBLIC_API_URL?.trim() ||
-    "http://localhost:8080";
-  return raw.replace(/\/$/, "");
+  return getBackendOrigin();
 }
 
 /**

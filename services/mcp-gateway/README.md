@@ -42,29 +42,29 @@ Sources/App/
 └── Utilities/     # Shared low-level helpers
 ```
 
-## Fly.io
+## Hosted environments
 
-First-time setup:
+Development and production run on isolated Railway environments with Railway Postgres. See the
+root `railway/README.md` and the runbooks under `docs/runbooks/`. The former Fly production app,
+Supabase database, and Vercel frontend were permanently removed after the Railway production
+cutover and are not rollback resources.
 
-```bash
-fly apps create my-context-protocol-dev-mcp-gateway
-fly apps create my-context-protocol-prod-mcp-gateway
-```
-
-Set secrets on each Fly app:
+Set production variables on the Railway Gateway service:
 
 ```bash
-fly secrets set \
-  APP_ENV=dev \
-  DATABASE_URL='postgres://...' \
-  DATABASE_INSECURE_TLS=1 \
+railway variable set --environment production --service Gateway \
+  APP_ENV=prod \
+  DATABASE_HOST='postgres.railway.internal' \
+  DATABASE_PORT=5432 \
+  DATABASE_USERNAME='postgres' \
+  DATABASE_PASSWORD='...' \
+  DATABASE_NAME='railway' \
   ENCRYPTION_KEY='...' \
-  CORS_ORIGIN='https://testing.mycontextprotocol.dev' \
-  FRONTEND_URL='https://testing.mycontextprotocol.dev' \
+  CORS_ORIGIN='https://mycontextprotocol.dev' \
+  FRONTEND_URL='https://mycontextprotocol.dev' \
   GITHUB_CLIENT_ID='...' \
   GITHUB_CLIENT_SECRET='...' \
-  GITHUB_OAUTH_REDIRECT_URI='https://api.testing.mycontextprotocol.dev/auth/github/callback' \
-  --app my-context-protocol-dev-mcp-gateway
+  GITHUB_OAUTH_REDIRECT_URI='https://api.mycontextprotocol.dev/auth/github/callback'
 ```
 
 `DATABASE_INSECURE_TLS=1` is for dev only. Production rejects disabled Postgres certificate verification.
@@ -90,64 +90,47 @@ claude mcp add --transport http my-context https://<project-host>/mcp
 
 Use Claude's fixed callback-port option only when you need a stable localhost redirect URI for local testing.
 
-For tenant custom domains, the gateway must create Fly edge certificates after DNS verification. Set a Fly token with certificate access and the gateway app name:
+For tenant custom domains, the gateway creates Railway custom domains after application ownership
+verification. Set a production-scoped Railway project token on Gateway:
 
 ```bash
-fly secrets set \
-  FLY_API_TOKEN='FlyV1...' \
-  FLY_CERTIFICATE_APP_NAME='my-context-protocol-dev-gateway' \
-  FLY_CERTIFICATE_OWNERSHIP_TXT_VALUE='app-12qq5w0' \
-  --app my-context-protocol-dev-gateway
+railway variable set --environment production --service Gateway \
+  RAILWAY_PROJECT_TOKEN='...'
 ```
 
-Use the value Fly shows for `TXT _fly-ownership.<hostname>` when running `fly certs setup <hostname>`.
-The dashboard includes that ownership TXT record in the tenant DNS validation flow before requesting a Fly certificate.
-
-Tenant DNS setup uses two TXT records plus one routing option:
-
-- `TXT _mcp-verify.<hostname>` proves project ownership to MyContextProtocol.
-- `TXT _fly-ownership.<hostname>` proves hostname ownership to Fly so the gateway can provision an edge certificate.
-- Routing can use either Fly-provided A/AAAA records or the Fly-provided CNAME target. Do not configure A/AAAA and CNAME records for the same hostname; DNS providers reject that combination.
-
-Without these runtime secrets, tenant DNS can route to Fly, but TLS for that custom hostname will fail before Vapor sees the request.
+The dashboard returns both the application ownership TXT record and Railway's required routing or
+ownership records. Without a project token, existing domains keep routing but creating a new tenant
+domain fails closed with HTTP 503.
 
 Verified custom domains remain stored when an account loses Pro, but runtime routing requires current Pro entitlement. Routing resumes automatically after the account regains Pro access.
 
-Deploy:
+Deploy production from the repository root:
 
 ```bash
-bash deploy.sh dev
-bash deploy.sh main
+bash scripts/railway-deploy-production.sh main Gateway "$(git rev-parse HEAD)"
 ```
 
-From the repo root:
-
-```bash
-bash scripts/fly-deploy-mcp-gateway.sh dev
-```
-
-GitHub Actions uses the root script and expects `FLY_API_TOKEN`, plus optional `FLY_MCP_GATEWAY_APP_DEV`, `FLY_MCP_GATEWAY_APP_PROD`, and `FLY_ORG` secrets.
-
-For production Supabase deploys, add a GitHub Actions secret named `SUPABASE_CA_PEM_BASE64` containing the base64-encoded Supabase server root certificate:
-
-```bash
-base64 -i supabase-ca.pem | tr -d '\n'
-```
-
-On `main` deploys, CI stages that value into Fly as the runtime secret `DATABASE_SSLROOTCERT_BASE64` before `fly deploy`; the app decodes it in memory and keeps Postgres certificate and hostname verification enabled.
+GitHub Actions uses the same script on `main` and expects a production-scoped
+`RAILWAY_PRODUCTION_TOKEN` secret in the protected `production` GitHub environment.
 
 ### Troubleshooting
 
-If Fly reports the app is not listening on `0.0.0.0:8080`, check machine logs:
+Check production deployment logs with:
 
 ```bash
-fly logs -a my-context-protocol-dev-gateway
+railway logs --environment production --service Gateway --deployment --lines 100
 ```
 
 Common startup failures:
 
-- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — for dev only, deploys can set `DATABASE_INSECURE_TLS=1`. Production rejects disabled certificate verification. For Supabase or another managed Postgres provider whose CA is not in the container OS trust store, download the provider database CA bundle and set it as a secret using one of `DATABASE_SSLROOTCERT_PEM`, `DATABASE_SSLROOTCERT_BASE64`, or a file path in `DATABASE_SSLROOTCERT` / URL `sslrootcert=/path`; verification and hostname checks stay enabled.
-- **Missing database config** — `APP_ENV=dev` requires `DATABASE_URL` or `SUPABASE_DB_URL` (or all discrete `DATABASE_*` fields). `USE_SQLITE=1` is for local file SQLite only, not Fly.
+- **Postgres TLS (`CERTIFICATE_VERIFY_FAILED`)** — Railway uses the discrete private-network
+  `DATABASE_*` fields documented above and must not also set `DATABASE_URL` or `SUPABASE_DB_URL`.
+  For another managed Postgres provider whose CA is not in the container trust store, set
+  `DATABASE_SSLROOTCERT_PEM`, `DATABASE_SSLROOTCERT_BASE64`, or a verified file path through
+  `DATABASE_SSLROOTCERT`; production rejects disabled certificate verification.
+- **Missing database config** — hosted Railway environments require all discrete
+  `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, and `DATABASE_NAME`
+  fields. `USE_SQLITE=1` is only for local file-backed SQLite.
 
 ## Docker / Compose
 

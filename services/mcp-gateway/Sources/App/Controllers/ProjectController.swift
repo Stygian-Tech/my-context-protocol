@@ -135,6 +135,18 @@ struct ProjectController {
             risk_level: cs.riskLevel,
             repo_specific: cs.repoSpecific,
             status: cs.status,
+            canonical_schema_version: cs.canonicalSchemaVersion,
+            skill_id: cs.skillId,
+            kind: cs.kind,
+            scope: cs.scope,
+            activation_mode: cs.activationMode,
+            enforcement: cs.enforcement,
+            priority: cs.priority,
+            version: cs.version,
+            source_checksum: cs.sourceChecksum,
+            canonical_json: cs.canonicalJson,
+            clarification_required: cs.clarificationRequired,
+            clarification_questions: SkillRuntimeJSON.decode([SkillClarificationQuestion].self, from: cs.clarificationJson) ?? [],
             use_when: h.useWhen ?? [],
             avoid_when: h.avoidWhen ?? [],
             failure_modes: h.failureModes ?? [],
@@ -212,7 +224,7 @@ struct ProjectController {
         let mcpUrl = McpUrlBuilder.publicMcpUrl(for: project)
         let catalogGenerated = try await McpCatalogMarkdown.buildGenerated(db: req.db, projectId: project.id!)
         let catalogMarkdown = try await McpCatalogMarkdown.build(db: req.db, projectId: project.id!)
-        let syntheticCatalogTool = Self.dashboardSyntheticCatalogTool()
+        let syntheticTools = Self.dashboardRuntimeTools()
 
         guard let releaseId = project.activeReleaseId else {
             return ProjectCatalogResponse(
@@ -223,7 +235,7 @@ struct ProjectController {
                 catalog_markdown: catalogMarkdown,
                 catalog_markdown_generated: catalogGenerated,
                 catalog_markdown_override: project.mcpCatalogMarkdownOverride,
-                tools: [syntheticCatalogTool],
+                tools: syntheticTools,
                 resources: [],
                 prompts: []
             )
@@ -285,7 +297,7 @@ struct ProjectController {
             catalog_markdown: catalogMarkdown,
             catalog_markdown_generated: catalogGenerated,
             catalog_markdown_override: project.mcpCatalogMarkdownOverride,
-            tools: [syntheticCatalogTool] + skillTools,
+            tools: syntheticTools + skillTools,
             resources: resources,
             prompts: prompts
         )
@@ -329,6 +341,18 @@ struct ProjectController {
             description: "Overview of this project’s MCP catalog—call first when unsure which skill to use.",
             input_schema_json: schemaJson
         )
+    }
+
+    private static func dashboardRuntimeTools() -> [ProjectCatalogTool] {
+        let catalog = dashboardSyntheticCatalogTool()
+        let runtime = MCPConstants.runtimeToolNames.map { name in
+            ProjectCatalogTool(
+                name: name,
+                description: "Portable skill runtime operation: \(name.replacingOccurrences(of: "_", with: " ")).",
+                input_schema_json: CapabilitySchemaBuilder.runtimeToolInputSchemaJson(name: name)
+            )
+        }
+        return [catalog] + runtime
     }
 
     static func create(req: Request) async throws -> ProjectResponse {
@@ -624,33 +648,21 @@ struct ProjectController {
         let project = try await requireProject(req, accountId: account.id!)
         let verified = project.customDomainVerifiedAt != nil
         let token = verified ? nil : project.customDomainVerificationToken
-        let certificate = await customDomainCertificateStatus(project: project, verified: verified, req: req)
-        let flyOwnershipRecord = project.customDomain.flatMap {
-            FlyCertificateService.ownershipTxtRecord(hostname: $0)
+        let platform = await customDomainPlatformStatus(project: project, req: req)
+        let verificationRecordName = project.customDomain.flatMap { host in
+            token == nil ? nil : customDomainVerificationRecordName(hostname: host)
         }
-        let flyOwnershipName = certificate?.dnsRequirements?.ownership?.name ?? flyOwnershipRecord?.name
-        let flyOwnershipValue = certificate?.dnsRequirements?.ownership?.value ?? flyOwnershipRecord?.value
         let instructions: String?
         if let host = project.customDomain, !host.isEmpty, let t = token, !t.isEmpty {
             var parts = ["Add a TXT record on \(customDomainVerificationRecordName(hostname: host)) with value: \(t)"]
-            if certificate?.dnsRequirements?.ownership == nil,
-               let flyOwnershipName, let flyOwnershipValue {
-                parts.append("Add a TXT record on \(flyOwnershipName) with value: \(flyOwnershipValue)")
-            }
-            appendFlyDNSInstructions(certificate?.dnsRequirements, hostname: host, to: &parts)
+            parts.append(contentsOf: dnsInstructions(platform?.dnsRecords ?? []))
             instructions = parts.joined(separator: "\n")
-        } else if verified, certificate?.status != .issued {
+        } else if verified, platform?.status != .issued {
             var parts: [String] = []
-            if let message = certificate?.message, !message.isEmpty {
+            if let message = platform?.message, !message.isEmpty {
                 parts.append(message)
             }
-            if certificate?.dnsRequirements?.ownership == nil,
-               let flyOwnershipName, let flyOwnershipValue {
-                parts.append("Add a TXT record on \(flyOwnershipName) with value: \(flyOwnershipValue)")
-            }
-            if let host = project.customDomain, !host.isEmpty {
-                appendFlyDNSInstructions(certificate?.dnsRequirements, hostname: host, to: &parts)
-            }
+            parts.append(contentsOf: dnsInstructions(platform?.dnsRecords ?? []))
             instructions = parts.isEmpty ? nil : parts.joined(separator: "\n")
         } else {
             instructions = nil
@@ -659,17 +671,18 @@ struct ProjectController {
             hostname: project.customDomain,
             verified: verified,
             verification_token: token,
-            verification_record_name: project.customDomain.flatMap { host in
-                token == nil ? nil : customDomainVerificationRecordName(hostname: host)
-            },
+            verification_record_name: verificationRecordName,
             instructions: instructions,
-            fly_ownership_verification_record_name: flyOwnershipName,
-            fly_ownership_verification_record_value: flyOwnershipValue,
-            fly_a_record_values: nilIfEmpty(certificate?.dnsRequirements?.a),
-            fly_aaaa_record_values: nilIfEmpty(certificate?.dnsRequirements?.aaaa),
-            fly_cname_record_value: certificate?.dnsRequirements?.cname,
-            certificate_status: certificate?.status.rawValue,
-            certificate_message: certificate?.message
+            ownership_verification_record_name: verificationRecordName,
+            ownership_verification_record_value: token,
+            fly_ownership_verification_record_name: nil,
+            fly_ownership_verification_record_value: nil,
+            fly_a_record_values: nil,
+            fly_aaaa_record_values: nil,
+            fly_cname_record_value: nil,
+            platform_dns_records: platform?.dnsRecords.map(CustomDomainDNSRecordResponse.init),
+            certificate_status: platform?.status.rawValue,
+            certificate_message: platform?.message
         )
     }
 
@@ -692,6 +705,14 @@ struct ProjectController {
         if let conflict = others.first(where: { $0.id != project.id }) {
             _ = conflict
             throw Abort(.conflict, reason: "Domain is already registered to another project")
+        }
+        let platform = await RailwayDomainService.ensureDomain(
+            hostname: raw,
+            client: req.client,
+            logger: req.logger
+        )
+        if platform.status == .failed || (platform.status == .notConfigured && AppEnvironment.deployKind() == .prod) {
+            throw Abort(.serviceUnavailable, reason: platform.message ?? "Railway domain provisioning is unavailable")
         }
         let token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         project.customDomain = raw
@@ -729,101 +750,71 @@ struct ProjectController {
                 throw Abort(.badRequest, reason: "TXT record not found or token mismatch. Add a TXT record on \(customDomainVerificationRecordName(hostname: host)) with the shown token and try again.")
             }
         }
-        if let flyOwnershipRecord = FlyCertificateService.ownershipTxtRecord(hostname: host) {
-            let flyOwnershipOk = try await DnsTxtVerifier.txtRecordsIncludeToken(
-                hostname: flyOwnershipRecord.name,
-                token: flyOwnershipRecord.value,
-                client: req.client
-            )
-            guard flyOwnershipOk else {
-                throw Abort(.badRequest, reason: "Fly ownership TXT record not found. Add a TXT record on \(flyOwnershipRecord.name) with value \(flyOwnershipRecord.value) and try again.")
-            }
+        let platform = await RailwayDomainService.ensureDomain(hostname: host, client: req.client, logger: req.logger)
+        guard platform.status != .notConfigured else {
+            throw Abort(.serviceUnavailable, reason: platform.message ?? "Railway domain provisioning is not configured")
+        }
+        guard platform.status != .failed else {
+            throw Abort(.badGateway, reason: platform.message ?? "Railway domain provisioning failed")
+        }
+        guard platform.ownershipVerified, platform.routingReady else {
+            let setup = dnsInstructions(platform.dnsRecords).joined(separator: " ")
+            throw Abort(.badRequest, reason: setup.isEmpty ? "Railway is still waiting for required DNS records." : setup)
         }
         if project.customDomainVerifiedAt == nil || project.customDomainVerificationToken != nil {
             project.customDomainVerifiedAt = project.customDomainVerifiedAt ?? Date()
             project.customDomainVerificationToken = nil
             try await project.save(on: req.db)
         }
-        let certificate = await FlyCertificateService.ensureCertificate(
-            hostname: host,
-            client: req.client,
-            logger: req.logger
-        )
         var instructions: [String] = []
-        if certificate.status != .issued, let message = certificate.message, !message.isEmpty {
-            instructions.append(message)
+        if platform.status != .issued {
+            if let message = platform.message, !message.isEmpty {
+                instructions.append(message)
+            }
+            instructions.append(contentsOf: dnsInstructions(platform.dnsRecords))
         }
-        appendFlyDNSInstructions(certificate.dnsRequirements, hostname: host, to: &instructions)
-        let flyOwnershipRecord = FlyCertificateService.ownershipTxtRecord(hostname: host)
-        let flyOwnershipName = certificate.dnsRequirements?.ownership?.name ?? flyOwnershipRecord?.name
-        let flyOwnershipValue = certificate.dnsRequirements?.ownership?.value ?? flyOwnershipRecord?.value
         return CustomDomainResponse(
             hostname: project.customDomain,
             verified: true,
             verification_token: nil,
             verification_record_name: nil,
             instructions: instructions.isEmpty ? nil : instructions.joined(separator: "\n"),
-            fly_ownership_verification_record_name: flyOwnershipName,
-            fly_ownership_verification_record_value: flyOwnershipValue,
-            fly_a_record_values: nilIfEmpty(certificate.dnsRequirements?.a),
-            fly_aaaa_record_values: nilIfEmpty(certificate.dnsRequirements?.aaaa),
-            fly_cname_record_value: certificate.dnsRequirements?.cname,
-            certificate_status: certificate.status.rawValue,
-            certificate_message: certificate.message
+            ownership_verification_record_name: nil,
+            ownership_verification_record_value: nil,
+            fly_ownership_verification_record_name: nil,
+            fly_ownership_verification_record_value: nil,
+            fly_a_record_values: nil,
+            fly_aaaa_record_values: nil,
+            fly_cname_record_value: nil,
+            platform_dns_records: platform.dnsRecords.map(CustomDomainDNSRecordResponse.init),
+            certificate_status: platform.status.rawValue,
+            certificate_message: platform.message
         )
     }
 
-    private static func appendFlyDNSInstructions(
-        _ requirements: FlyCertificateService.DNSRequirements?,
-        hostname: String,
-        to parts: inout [String]
-    ) {
-        guard let requirements else { return }
-        let hasAddressRouting = !requirements.a.isEmpty || !requirements.aaaa.isEmpty
-        let hasCnameRouting = requirements.cname != nil
-        if hasAddressRouting && hasCnameRouting {
-            parts.append("Choose one routing option for \(hostname): either A/AAAA records or a CNAME record. Do not create both for the same hostname.")
+    private static func customDomainPlatformStatus(
+        project: Project,
+        req: Request
+    ) async -> RailwayDomainService.Result? {
+        guard let host = project.customDomain,
+              !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
         }
-        if hasAddressRouting {
-            for value in requirements.a {
-                parts.append("Routing option: add an A record on \(hostname) pointing to: \(value)")
-            }
-            for value in requirements.aaaa {
-                parts.append("Routing option: add an AAAA record on \(hostname) pointing to: \(value)")
-            }
-        }
-        if let cname = requirements.cname {
-            parts.append("Routing option: add a CNAME record on \(hostname) pointing to: \(cname)")
-        }
-        if let ownership = requirements.ownership {
-            parts.append("Add a TXT record on \(ownership.name) with value: \(ownership.value)")
-        }
+        return await RailwayDomainService.checkDomainStatus(
+            hostname: host,
+            client: req.client,
+            logger: req.logger
+        )
     }
 
     private static func customDomainVerificationRecordName(hostname: String) -> String {
         "_mcp-verify.\(hostname.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased())"
     }
 
-    private static func nilIfEmpty(_ values: [String]?) -> [String]? {
-        guard let values, !values.isEmpty else { return nil }
-        return values
-    }
-
-    private static func customDomainCertificateStatus(
-        project: Project,
-        verified: Bool,
-        req: Request
-    ) async -> FlyCertificateService.Result? {
-        guard verified,
-              let host = project.customDomain,
-              !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
+    private static func dnsInstructions(_ records: [RailwayDomainService.DNSRecord]) -> [String] {
+        records.map { record in
+            "Add a \(record.type) record on \(record.name) with value: \(record.value)"
         }
-        return await FlyCertificateService.checkCertificateStatus(
-            hostname: host,
-            client: req.client,
-            logger: req.logger
-        )
     }
 
     static func listReleases(req: Request) async throws -> [ReleaseResponse] {
@@ -969,17 +960,29 @@ struct ProjectController {
     static func updateCompiledSkill(req: Request) async throws -> CompiledSkillResponse {
         let account = try requireAccount(req)
         let project = try await requireProject(req, accountId: account.id!)
+        let response = try await req.db.transaction { transaction in
+            try await updateCompiledSkill(req: req, project: project, db: transaction)
+        }
+        req.application.mcpCatalogNotifications.bumpCatalog(for: project.id!)
+        return response
+    }
+
+    private static func updateCompiledSkill(
+        req: Request,
+        project: Project,
+        db: Database
+    ) async throws -> CompiledSkillResponse {
         guard let releaseId = req.parameters.get("releaseId", as: UUID.self),
               let compiledSkillId = req.parameters.get("compiledSkillId", as: UUID.self) else {
             throw Abort(.badRequest, reason: "Invalid release or compiled skill ID")
         }
-        guard let release = try await Release.query(on: req.db)
+        guard let release = try await Release.query(on: db)
             .filter(\.$id == releaseId)
             .filter(\.$project.$id == project.id!)
             .first() else {
             throw Abort(.notFound, reason: "Release not found")
         }
-        guard let compiled = try await CompiledSkill.query(on: req.db)
+        guard let compiled = try await CompiledSkill.query(on: db)
             .filter(\.$id == compiledSkillId)
             .filter(\.$release.$id == releaseId)
             .first() else {
@@ -997,6 +1000,7 @@ struct ProjectController {
             let replace_schema: Bool?
             /// Replaces `capability_defs.schema_json` when `replace_schema` is true (must be valid JSON unless empty).
             let schema_json: String?
+            let runtime: SkillRuntimeOverridePatch?
         }
         let body = try req.content.decode(UpdateBody.self)
         let hadBodyDiff = compiled.bodyDiffUnified != nil
@@ -1022,22 +1026,64 @@ struct ProjectController {
             compiled.bodyDiffUnified = nil
             compiled.bodyDiffPriorReleaseId = nil
         }
-        try await compiled.save(on: req.db)
+        if let runtime = body.runtime,
+           var document = SkillRuntimeJSON.decode(CompiledSkillDocument.self, from: compiled.canonicalJson) {
+            if let value = runtime.kind { document.kind = value }
+            if let value = runtime.scope { document.scope = value }
+            if let value = runtime.activation { document.activation = value }
+            if let value = runtime.enforcement { document.enforcement = value }
+            if let value = runtime.priority { document.priority = min(100, max(0, value)) }
+            if let value = runtime.requires { document.requires = value }
+            if let value = runtime.conflictsWith { document.conflictsWith = value }
+            if let value = runtime.version { document.version = value }
+            if let value = runtime.lifecycle { document.lifecycle = value }
+            var remaining = Set(document.validation.missingFields)
+            if runtime.kind != nil { remaining.remove("kind") }
+            if runtime.scope != nil { remaining.remove("scope") }
+            if runtime.activation != nil { remaining.remove("activation") }
+            if runtime.enforcement != nil { remaining.remove("enforcement") }
+            if runtime.version != nil { remaining.remove("version") }
+            document.validation.missingFields = remaining.sorted()
+            document.validation.clarificationRequired = !remaining.isEmpty
+            compiled.kind = document.kind.rawValue; compiled.scope = document.scope.rawValue
+            compiled.activationMode = document.activation.mode.rawValue; compiled.enforcement = document.enforcement.rawValue
+            compiled.priority = document.priority; compiled.version = document.version
+            compiled.canonicalJson = SkillRuntimeJSON.encode(document)
+            compiled.clarificationRequired = document.validation.clarificationRequired
+            compiled.clarificationJson = SkillRuntimeJSON.encode(SkillCanonicalCompiler.questionsForRuntime(fields: remaining.sorted()))
+
+            let priorOverrides = try await SkillRuntimeOverride.query(on: db)
+                .filter(\.$project.$id == project.id!)
+                .filter(\.$skillId == document.id)
+                .all()
+            let existingOverride = priorOverrides.first { $0.scope == document.scope.rawValue }
+            for stale in priorOverrides where stale.id != existingOverride?.id {
+                try await stale.delete(on: db)
+            }
+            let overrideRow = existingOverride ?? SkillRuntimeOverride()
+            if existingOverride == nil { overrideRow.$project.id = project.id!; overrideRow.skillId = document.id; overrideRow.scope = document.scope.rawValue }
+            overrideRow.metadataJson = SkillRuntimeJSON.encode(runtime)
+            overrideRow.sourceChecksum = document.source.checksum
+            overrideRow.baseChecksum = document.source.checksum
+            overrideRow.isStale = false
+            try await overrideRow.save(on: db)
+        }
+        try await compiled.save(on: db)
         if bodyTextChanged, hadBodyDiff {
             release.skillBodyChangesCount = max(0, release.skillBodyChangesCount - 1)
-            try await release.save(on: req.db)
+            try await release.save(on: db)
         }
         if let routing = body.routing {
-            try await Self.applyRoutingPatch(compiledSkillId: compiled.id!, patch: routing, db: req.db)
+            try await Self.applyRoutingPatch(compiledSkillId: compiled.id!, patch: routing, db: db)
         }
         let exposureChanged = compiled.exposureType != exposureBefore
         let summaryChanged = compiled.summary != summaryBefore
         let routingChanged = body.routing != nil
-        let routingRule = try await RoutingRule.query(on: req.db)
+        let routingRule = try await RoutingRule.query(on: db)
             .filter(\.$compiledSkill.$id == compiled.id!)
             .first()
         let routingHints = RoutingHints.from(rule: routingRule)
-        let caps = try await CapabilityDef.query(on: req.db)
+        let caps = try await CapabilityDef.query(on: db)
             .filter(\.$compiledSkill.$id == compiled.id!)
             .all()
         let capType = compiled.exposureType == "guidance" ? "prompt" : compiled.exposureType
@@ -1061,7 +1107,7 @@ struct ProjectController {
         for cap in caps {
             cap.type = capType
             cap.schemaJson = newSchema
-            try await cap.save(on: req.db)
+            try await cap.save(on: db)
         }
 
         let routingHintsAfter = RoutingHints.from(rule: routingRule)
@@ -1095,12 +1141,170 @@ struct ProjectController {
                 compiled.status = autoStatus
             }
         }
-        try await compiled.save(on: req.db)
+        try await compiled.save(on: db)
 
-        if releaseId == project.activeReleaseId, let pid = project.id {
-            req.application.mcpCatalogNotifications.bumpCatalog(for: pid)
-        }
         return Self.compiledSkillResponse(compiled, schemaJson: newSchema, routingRule: routingRule)
+    }
+
+    static func writeBackCompiledSkillMetadata(req: Request) async throws -> SkillMetadataWritebackService.Result {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        guard let releaseId = req.parameters.get("releaseId", as: UUID.self),
+              let compiledSkillId = req.parameters.get("compiledSkillId", as: UUID.self),
+              let compiled = try await CompiledSkill.query(on: req.db).filter(\.$id == compiledSkillId)
+                .filter(\.$release.$id == releaseId).first() else { throw Abort(.notFound, reason: "Compiled skill not found") }
+        return try await SkillMetadataWritebackService.createDraftPullRequest(compiled: compiled, project: project, app: req.application, db: req.db)
+    }
+
+    struct RuntimeSettingsResponse: Content {
+        let telemetry_enabled: Bool
+        let telemetry_retention_days: Int
+        let semantic_enabled: Bool
+        let embedding_provider: String?
+        let embedding_model: String?
+        let feedback_issue_creation_enabled: Bool
+        let provider_preferences_json: String?
+        let assignments: [SkillAssignment]
+        let recent_events: [SkillRuntimeEvent]
+    }
+
+    static func runtimeSettings(req: Request) async throws -> RuntimeSettingsResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        let settings = try await runtimeSettingsRow(projectId: project.id!, db: req.db)
+        async let assignments = SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$priority, .descending).all()
+        async let events = recentRuntimeEvents(projectId: project.id!, retentionDays: settings.telemetryRetentionDays, db: req.db)
+        return try await runtimeSettingsResponse(settings, assignments: assignments, events: events)
+    }
+
+    static func updateRuntimeSettings(req: Request) async throws -> RuntimeSettingsResponse {
+        let account = try requireAccount(req)
+        let project = try await requireProject(req, accountId: account.id!)
+        struct AssignmentPatch: Content {
+            let skill_id: String
+            let scope: String
+            let activation_mode: String
+            let required: Bool
+            let priority: Int
+            let target_type: String?
+            let target_id: String?
+        }
+        struct Body: Content {
+            let telemetry_enabled: Bool?
+            let telemetry_retention_days: Int?
+            let semantic_enabled: Bool?
+            let embedding_provider: String?
+            let embedding_model: String?
+            let feedback_issue_creation_enabled: Bool?
+            let provider_preferences_json: String?
+            let assignments: [AssignmentPatch]?
+        }
+        let body = try req.content.decode(Body.self)
+        let normalizedAssignments: [(skillId: String, scope: String, activation: String, required: Bool, priority: Int, targetType: String, targetId: String)]?
+        if let patches = body.assignments {
+            let activeSkillIds: Set<String>
+            if let releaseId = project.activeReleaseId {
+                activeSkillIds = Set(try await CompiledSkill.query(on: req.db)
+                    .filter(\.$release.$id == releaseId)
+                    .filter(\.$status == "ready")
+                    .all()
+                    .compactMap { $0.skillId ?? $0.name })
+            } else {
+                activeSkillIds = []
+            }
+            var uniqueness = Set<String>()
+            normalizedAssignments = try patches.map { patch in
+                let skillId = patch.skill_id.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !skillId.isEmpty, skillId.count <= 128, activeSkillIds.contains(skillId) else {
+                    throw Abort(.badRequest, reason: "Assignments must reference a ready skill in the active release")
+                }
+                guard SkillScope(rawValue: patch.scope) != nil,
+                      SkillActivationMode(rawValue: patch.activation_mode) != nil else {
+                    throw Abort(.badRequest, reason: "Invalid assignment scope or activation mode")
+                }
+                guard (0...100).contains(patch.priority) else {
+                    throw Abort(.badRequest, reason: "Assignment priority must be between 0 and 100")
+                }
+                guard let targetType = patch.target_type?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      let targetId = patch.target_id?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !targetType.isEmpty, !targetId.isEmpty, targetId.count <= 512,
+                      targetType == patch.scope else {
+                    throw Abort(.badRequest, reason: "Assignment target type must match its scope and include an exact target identity")
+                }
+                if targetType == SkillScope.global.rawValue, targetId != "*", targetId != "global" {
+                    throw Abort(.badRequest, reason: "Global assignments must target `*` or `global`")
+                }
+                let identity = "\(skillId)\u{1f}\(patch.scope)\u{1f}\(targetType)\u{1f}\(targetId)"
+                guard uniqueness.insert(identity).inserted else {
+                    throw Abort(.badRequest, reason: "Duplicate assignment for skill, scope, and target identity")
+                }
+                return (skillId, patch.scope, patch.activation_mode, patch.required, patch.priority, targetType, targetId)
+            }
+        } else {
+            normalizedAssignments = nil
+        }
+        let settings = try await runtimeSettingsRow(projectId: project.id!, db: req.db)
+        if let value = body.telemetry_enabled { settings.telemetryEnabled = value }
+        if let value = body.telemetry_retention_days { settings.telemetryRetentionDays = min(365, max(1, value)) }
+        // Embedding controls are retained in the wire response for compatibility, but resolution
+        // is deterministic and never reads or writes embeddings.
+        settings.semanticEnabled = false
+        settings.embeddingProvider = nil
+        settings.embeddingModel = nil
+        if let value = body.feedback_issue_creation_enabled { settings.feedbackIssueCreationEnabled = value }
+        if let json = body.provider_preferences_json {
+            guard json.isEmpty || (try? JSONSerialization.jsonObject(with: Data(json.utf8))) != nil else { throw Abort(.badRequest, reason: "provider_preferences_json must be valid JSON") }
+            settings.providerPreferencesJson = json.isEmpty ? nil : json
+        }
+        try await req.db.transaction { transaction in
+            try await settings.save(on: transaction)
+            if let patches = normalizedAssignments {
+                try await SkillAssignment.query(on: transaction).filter(\.$project.$id == project.id!).delete()
+                for patch in patches {
+                    let row = SkillAssignment()
+                    row.$project.id = project.id!
+                    row.skillId = patch.skillId
+                    row.scope = patch.scope
+                    row.activationMode = patch.activation
+                    row.required = patch.required
+                    row.priority = patch.priority
+                    row.targetType = patch.targetType
+                    row.targetId = patch.targetId
+                    try await row.save(on: transaction)
+                }
+            }
+        }
+        let assignments = try await SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$priority, .descending).all()
+        let events = try await recentRuntimeEvents(projectId: project.id!, retentionDays: settings.telemetryRetentionDays, db: req.db)
+        req.application.mcpCatalogNotifications.bumpCatalog(for: project.id!)
+        return runtimeSettingsResponse(settings, assignments: assignments, events: events)
+    }
+
+    /// Enforce retention before the background cleanup runs, including when collection is disabled.
+    static func recentRuntimeEvents(projectId: UUID, retentionDays: Int, db: Database, now: Date = Date()) async throws -> [SkillRuntimeEvent] {
+        let cutoff = now.addingTimeInterval(-Double(max(1, retentionDays)) * 86_400)
+        return try await SkillRuntimeEvent.query(on: db)
+            .filter(\.$project.$id == projectId)
+            .filter(\.$createdAt >= cutoff)
+            .filter(\.$createdAt <= now)
+            .sort(\.$createdAt, .descending).limit(100).all()
+    }
+
+    private static func runtimeSettingsRow(projectId: UUID, db: Database) async throws -> ProjectRuntimeSettings {
+        if let existing = try await ProjectRuntimeSettings.query(on: db).filter(\.$project.$id == projectId).first() { return existing }
+        let settings = ProjectRuntimeSettings(); settings.$project.id = projectId
+        settings.telemetryEnabled = false; settings.telemetryRetentionDays = 30; settings.semanticEnabled = false
+        settings.embeddingProvider = nil; settings.embeddingModel = nil
+        settings.feedbackIssueCreationEnabled = false
+        try await settings.save(on: db); return settings
+    }
+
+    private static func runtimeSettingsResponse(_ settings: ProjectRuntimeSettings, assignments: [SkillAssignment], events: [SkillRuntimeEvent]) -> RuntimeSettingsResponse {
+        let scopedAssignments = assignments.filter { $0.targetType == $0.scope }
+        return .init(telemetry_enabled: settings.telemetryEnabled, telemetry_retention_days: settings.telemetryRetentionDays,
+              semantic_enabled: false, embedding_provider: nil,
+              embedding_model: nil, feedback_issue_creation_enabled: settings.feedbackIssueCreationEnabled,
+              provider_preferences_json: settings.providerPreferencesJson, assignments: scopedAssignments, recent_events: events)
     }
 
     private static func apiKeyResponse(_ k: ApiKey, projectId: UUID) -> ApiKeyResponse {

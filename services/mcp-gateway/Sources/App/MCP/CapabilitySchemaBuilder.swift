@@ -45,6 +45,242 @@ enum CapabilitySchemaBuilder {
         return #"{"type":"object","properties":{}}"#
     }
 
+    static func catalogToolInputSchemaJson() -> String {
+        let payload = ToolSchemaPayload(
+            type: "object",
+            properties: [
+                "mode": .init(
+                    type: "string",
+                    description: "Optional catalog mode: overview, route, or skill. Defaults to overview; task implies route and skill implies skill."
+                ),
+                "task": .init(
+                    type: "string",
+                    description: "Current user task. In route mode, the catalog ranks relevant skills and returns exact next MCP actions."
+                ),
+                "skill": .init(
+                    type: "string",
+                    description: "Skill slug, capability name, path, or ctx://skill/... URI. In skill mode, returns the full SKILL.md body."
+                ),
+                "limit": .init(
+                    type: "string",
+                    description: "Maximum route results to return. Defaults to 5."
+                )
+            ],
+            additionalProperties: false
+        )
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        if let data = try? enc.encode(payload), let s = String(data: data, encoding: .utf8) {
+            return s
+        }
+        return #"{"type":"object","properties":{}}"#
+    }
+
+    static func runtimeToolInputSchemaJson(name: String) -> String {
+        (try? encoderString(runtimeToolInputSchema(name: name))) ?? #"{"type":"object","properties":{}}"#
+    }
+
+    static func runtimeToolInputSchema(name: String) -> InputSchema {
+        switch name {
+        case MCPConstants.resolveContextToolName:
+            return InputSchema(
+                type: "object",
+                properties: [
+                    "request": stringSchema("Current user request or task."),
+                    "event": stringSchema("Optional canonical or freeform runtime event."),
+                    "context": runtimeContextSchema(),
+                    "user": stringSchema("Optional user identifier."),
+                    "organization": stringSchema("Optional organization name."),
+                    "workspace": stringSchema("Optional workspace name."),
+                    "repository": stringSchema("Optional owner/repository identifier."),
+                    "task": stringSchema("Optional stable task identifier for task-scoped assignments."),
+                    "current_skill_ids": InputSchema(
+                        type: "array",
+                        description: "Stable IDs for skills already active in the agent session.",
+                        items: InputSchema(type: "string", minLength: 1),
+                        uniqueItems: true
+                    ),
+                    "available_tools": InputSchema(
+                        type: "array",
+                        description: "Provider-neutral inventory of tools currently available to the agent.",
+                        items: runtimeToolInventoryItemSchema()
+                    ),
+                ],
+                required: ["request"],
+                additionalProperties: false
+            )
+        case MCPConstants.getSkillToolName:
+            return InputSchema(
+                type: "object",
+                properties: [
+                    "skill_id": stringSchema("Stable skill ID.", minLength: 1),
+                    "version": stringSchema("Optional exact semantic version.", minLength: 1),
+                    "path": stringSchema("Optional safe package-relative file path.", minLength: 1, maxLength: 1_024),
+                ],
+                required: ["skill_id"],
+                additionalProperties: false
+            )
+        case MCPConstants.reportSkillUsageToolName:
+            return InputSchema(
+                type: "object",
+                properties: [
+                    "report_id": stringSchema("Stable batch ID reused for retries.", minLength: 1, maxLength: 128),
+                    "trace_id": InputSchema(type: "string", description: "Optional originating resolution trace from this client.", format: "uuid"),
+                    "skills": InputSchema(
+                        type: "array", description: "Actual uses or consciously considered skips; omit unknown outcomes.",
+                        items: InputSchema(type: "object", properties: [
+                            "skill_id": stringSchema("Stable skill ID.", minLength: 1, maxLength: 128),
+                            "version": stringSchema("Observed exact version.", minLength: 1, maxLength: 512),
+                            "release_id": InputSchema(type: "string", description: "Optional originating release.", format: "uuid"),
+                            "checksum": stringSchema("Observed content checksum; resolves ambiguous versions.", minLength: 1, maxLength: 128),
+                            "outcome": InputSchema(type: "string", enumValues: [.string("used"), .string("skipped")]),
+                            "skip_reason": InputSchema(type: "string", description: "Required only for skipped outcomes; no free-text explanations.", enumValues: ["not_relevant", "redundant", "instruction_conflict", "missing_capability", "task_changed", "other"].map(JSONValue.string)),
+                        ], required: ["skill_id", "version", "outcome"], additionalProperties: false),
+                        minItems: 1, maxItems: 100
+                    ),
+                ], required: ["report_id", "skills"], additionalProperties: false
+            )
+        case MCPConstants.reportSkillFeedbackToolName:
+            return InputSchema(
+                type: "object",
+                properties: [
+                    "skill_id": stringSchema("Stable skill ID.", minLength: 1),
+                    "version": stringSchema("Observed skill version.", minLength: 1),
+                    "category": InputSchema(
+                        type: "string",
+                        description: "Feedback category.",
+                        enumValues: [
+                            "missing_guidance", "ambiguous_instruction", "incorrect_instruction", "conflict",
+                            "missing_capability", "poor_discovery", "outdated_content", "other",
+                        ].map(JSONValue.string)
+                    ),
+                    "summary": stringSchema("Concise problem summary.", minLength: 1, maxLength: 2_000),
+                    "evidence": stringSchema("Reproducible evidence for the observed skill version.", minLength: 1, maxLength: 8_000),
+                    "suggested_change": stringSchema("Optional suggested improvement.", maxLength: 8_000),
+                    "create_issue": InputSchema(
+                        type: "boolean",
+                        description: "Request authorized external issue creation. The server still returns a draft for the harness to execute."
+                    ),
+                ],
+                required: ["skill_id", "version", "category", "summary", "evidence"],
+                additionalProperties: false
+            )
+        default:
+            return InputSchema(type: "object", properties: [:], additionalProperties: false)
+        }
+    }
+
+    static func runtimeToolOutputSchema(name: String) -> InputSchema {
+        switch name {
+        case MCPConstants.resolveContextToolName:
+            return InputSchema(
+                type: "object",
+                properties: [
+                    "schemaVersion": InputSchema(type: "integer", minimum: 1),
+                    "traceId": InputSchema(type: "string", format: "uuid"),
+                    "activeSkills": arrayOfObjectsSchema(),
+                    "suggestedTaskSkills": arrayOfObjectsSchema(),
+                    "capabilityBindings": arrayOfObjectsSchema(),
+                    "missingRequirements": InputSchema(type: "array", items: InputSchema(type: "string")),
+                    "conflicts": arrayOfObjectsSchema(),
+                    "missingContext": InputSchema(type: "array", items: InputSchema(type: "string")),
+                    "eventCanonical": InputSchema(type: "boolean"),
+                    "nextActions": arrayOfObjectsSchema(),
+                    "resolutionTrace": arrayOfObjectsSchema(),
+                ],
+                required: [
+                    "schemaVersion", "traceId", "activeSkills", "suggestedTaskSkills", "capabilityBindings",
+                    "missingRequirements", "conflicts", "missingContext", "nextActions", "resolutionTrace",
+                ],
+                additionalProperties: false
+            )
+        case MCPConstants.getSkillToolName:
+            return InputSchema(
+                type: "object",
+                properties: [
+                    "schemaVersion": InputSchema(type: "integer", minimum: 1),
+                    "kind": InputSchema(type: "string", enumValues: [.string("skill"), .string("file")]),
+                    "id": stringSchema("Stable skill ID."),
+                    "version": stringSchema("Exact skill version."),
+                    "releaseId": InputSchema(type: "string", format: "uuid"),
+                    "checksum": stringSchema("SHA-256 content checksum."),
+                    "mediaType": stringSchema("Resource media type."),
+                    "resourceUri": stringSchema("Stable ctx resource URI."),
+                    "source": InputSchema(type: "object", additionalProperties: true),
+                ],
+                required: ["schemaVersion", "kind", "id", "version", "checksum", "mediaType", "resourceUri", "source"],
+                additionalProperties: true
+            )
+        case MCPConstants.reportSkillUsageToolName:
+            return InputSchema(type: "object", properties: [
+                "status": InputSchema(type: "string", enumValues: ["recorded", "already_recorded", "collection_disabled"].map(JSONValue.string)),
+                "recorded_count": InputSchema(type: "integer", minimum: 0),
+            ], required: ["status", "recorded_count"], additionalProperties: false)
+        case MCPConstants.reportSkillFeedbackToolName:
+            return InputSchema(
+                type: "object",
+                properties: [
+                    "schemaVersion": InputSchema(type: "integer", minimum: 1),
+                    "feedbackId": InputSchema(type: "string", format: "uuid"),
+                    "effectStatus": InputSchema(type: "string", enumValues: [.string("draft")]),
+                    "issueDraft": InputSchema(type: "object", additionalProperties: true),
+                    "creationAuthorized": InputSchema(type: "boolean"),
+                    "message": InputSchema(type: "string"),
+                ],
+                required: ["schemaVersion", "feedbackId", "effectStatus", "issueDraft", "creationAuthorized", "message"],
+                additionalProperties: false
+            )
+        default:
+            return InputSchema(type: "object", properties: [:])
+        }
+    }
+
+    private static func stringSchema(
+        _ description: String,
+        minLength: Int? = nil,
+        maxLength: Int? = nil
+    ) -> InputSchema {
+        InputSchema(type: "string", description: description, minLength: minLength, maxLength: maxLength)
+    }
+
+    private static func runtimeContextSchema() -> InputSchema {
+        InputSchema(
+            type: "object",
+            properties: [
+                "user": stringSchema("Optional user identifier."),
+                "organization": stringSchema("Optional organization name."),
+                "workspace": stringSchema("Optional workspace name."),
+                "repository": stringSchema("Optional owner/repository identifier."),
+                "task": stringSchema("Optional stable task identifier for task-scoped assignments."),
+            ],
+            additionalProperties: false
+        )
+    }
+
+    private static func runtimeToolInventoryItemSchema() -> InputSchema {
+        InputSchema(
+            type: "object",
+            properties: [
+                "server": stringSchema("MCP server name.", minLength: 1),
+                "name": stringSchema("Tool name.", minLength: 1),
+                "description": stringSchema("Optional tool description."),
+                "inputSchema": stringSchema("Optional serialized tool input schema."),
+                "provider": stringSchema("Optional provider name."),
+            ],
+            required: ["server", "name"],
+            additionalProperties: false
+        )
+    }
+
+    private static func arrayOfObjectsSchema() -> InputSchema {
+        InputSchema(type: "array", items: InputSchema(type: "object", additionalProperties: true))
+    }
+
+    private static func encoderString<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return String(data: try encoder.encode(value), encoding: .utf8) ?? "{}"
+    }
+
     private struct ToolSchemaPayload: Encodable {
         let type: String
         let properties: [String: Prop]

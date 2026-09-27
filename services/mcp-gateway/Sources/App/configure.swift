@@ -65,7 +65,7 @@ public func configure(_ app: Application) async throws {
     let corsConfig = CORSMiddleware.Configuration(
         allowedOrigin: allowedOrigin,
         allowedMethods: [.GET, .POST, .PUT, .OPTIONS, .DELETE, .PATCH],
-        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith],
+        allowedHeaders: [.accept, .authorization, .contentType, .origin, .xRequestedWith, .init("MCP-Protocol-Version")],
         allowCredentials: true
     )
     app.middleware.use(CORSMiddleware(configuration: corsConfig), at: .beginning)
@@ -236,10 +236,14 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateMcpOauthAccessTokens())
     app.migrations.add(StripLegacySkillPrefixFromMcpWireNames())
     app.migrations.add(AddStripeStatusCheckedAt())
+    app.migrations.add(AddPortableSkillRuntime())
+    app.migrations.add(HardenPortableSkillRuntime())
+    app.migrations.add(AddSkillUsageAnalytics())
 
     try await app.autoMigrate()
 
     app.lifecycle.use(AdminAnalyticsRollupLifecycle())
+    app.lifecycle.use(SkillUsageRetentionLifecycle())
     app.lifecycle.use(StripeReconciliationLifecycle())
     app.lifecycle.use(LocalDevFixtureLifecycle())
 
