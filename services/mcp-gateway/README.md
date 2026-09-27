@@ -128,6 +128,9 @@ Common startup failures:
   For another managed Postgres provider whose CA is not in the container trust store, set
   `DATABASE_SSLROOTCERT_PEM`, `DATABASE_SSLROOTCERT_BASE64`, or a verified file path through
   `DATABASE_SSLROOTCERT`; production rejects disabled certificate verification.
+  Railway Postgres presents a self-signed certificate that only names `localhost`, so production
+  sets `DATABASE_SSLROOTCERT_PEM` to that database's `root.crt` plus `DATABASE_TLS_PINNED_CA=1`:
+  the pinned CA becomes the only trust root and hostname matching is skipped.
 - **Missing database config** — hosted Railway environments require all discrete
   `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, and `DATABASE_NAME`
   fields. `USE_SQLITE=1` is only for local file-backed SQLite.

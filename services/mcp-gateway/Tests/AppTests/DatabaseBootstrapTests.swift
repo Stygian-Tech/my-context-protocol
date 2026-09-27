@@ -218,6 +218,68 @@ struct DatabaseBootstrapTests {
         }
     }
 
+    @Test("pinned Postgres CA trusts only the configured root and skips hostname matching")
+    func pinnedPostgresCATrustsOnlyConfiguredRoot() throws {
+        try TestProcessEnvGate.runSync {
+        let (apply, restore) = temporaryEnv([
+            "DATABASE_TLS_PINNED_CA": "1",
+            "DATABASE_SSLROOTCERT": nil,
+            "DATABASE_SSLROOTCERT_PEM": postgresTestCertificatePEM,
+            "DATABASE_SSLROOTCERT_BASE64": nil,
+        ])
+        apply()
+        defer { restore() }
+
+        let config = try DatabaseBootstrap.verifiedPostgresTLSConfiguration()
+        #expect(config.certificateVerification == .noHostnameVerification)
+        #expect(config.additionalTrustRoots.isEmpty)
+        if case .certificates(let certs) = config.trustRoots {
+            #expect(certs.count == 1)
+        } else {
+            Issue.record("Expected the pinned CA to replace the system trust store")
+        }
+        _ = try DatabaseBootstrap.verifiedPostgresSSLContext()
+        }
+    }
+
+    @Test("pinned Postgres CA requires a configured root")
+    func pinnedPostgresCARequiresRoot() throws {
+        TestProcessEnvGate.runSync {
+        let (apply, restore) = temporaryEnv([
+            "DATABASE_TLS_PINNED_CA": "1",
+            "DATABASE_SSLROOTCERT": nil,
+            "DATABASE_SSLROOTCERT_PEM": nil,
+            "DATABASE_SSLROOTCERT_BASE64": nil,
+        ])
+        apply()
+        defer { restore() }
+
+        #expect(throws: DatabaseBootstrapError.invalidPostgresTLSRoot(
+            reason: "DATABASE_TLS_PINNED_CA requires DATABASE_SSLROOTCERT, DATABASE_SSLROOTCERT_PEM, or DATABASE_SSLROOTCERT_BASE64"
+        )) {
+            try DatabaseBootstrap.verifiedPostgresTLSConfiguration()
+        }
+        }
+    }
+
+    @Test("without pinning, Postgres TLS keeps full verification")
+    func unpinnedPostgresTLSKeepsFullVerification() throws {
+        try TestProcessEnvGate.runSync {
+        let (apply, restore) = temporaryEnv([
+            "DATABASE_TLS_PINNED_CA": nil,
+            "DATABASE_SSLROOTCERT": nil,
+            "DATABASE_SSLROOTCERT_PEM": postgresTestCertificatePEM,
+            "DATABASE_SSLROOTCERT_BASE64": nil,
+        ])
+        apply()
+        defer { restore() }
+
+        let config = try DatabaseBootstrap.verifiedPostgresTLSConfiguration()
+        #expect(config.certificateVerification == .fullVerification)
+        #expect(config.additionalTrustRoots.count == 1)
+        }
+    }
+
     @Test("production rejects loopback Postgres URL hosts")
     func prodRejectsLoopbackPostgresURLHosts() throws {
         try TestProcessEnvGate.runSync {
