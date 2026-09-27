@@ -51,14 +51,61 @@ fi
 REMOTE_SHA="$(git rev-parse "refs/remotes/origin/$EXPECTED_BRANCH")"
 [ "$REMOTE_SHA" = "$EXPECTED_SHA" ] || fail "The requested SHA is not the current origin/$EXPECTED_BRANCH tip."
 
+command -v jq >/dev/null 2>&1 || fail "Install jq before deploying."
+
+WAIT_TIMEOUT_SECONDS="${RAILWAY_DEPLOY_TIMEOUT_SECONDS:-1200}"
+POLL_SECONDS="${RAILWAY_DEPLOY_POLL_SECONDS:-10}"
+
+list_deployments() {
+  railway deployment list \
+    --project "$PROJECT_ID" \
+    --environment "$TARGET_ENVIRONMENT" \
+    --service "$1" \
+    --limit 10 \
+    --json
+}
+
+# `railway up --ci` returns once the image is pushed, before the healthcheck passes.
+# Block until the new deployment is SUCCESS so a failing service stops the rollout.
+wait_for_deployment() {
+  local service="$1" message="$2" previous_ids="$3"
+  local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS)) status=""
+
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    status="$(list_deployments "$service" | jq -r \
+      --arg message "$message" \
+      --argjson previous "$previous_ids" \
+      'map(select(.meta.cliMessage == $message and (.id as $id | $previous | index($id) | not))) | first | .status // ""')"
+
+    case "$status" in
+      SUCCESS)
+        echo "${TARGET_ENVIRONMENT} ${service} deployment is healthy."
+        return 0
+        ;;
+      FAILED|CRASHED|REMOVED|SKIPPED)
+        fail "${TARGET_ENVIRONMENT} ${service} deployment ended as ${status}; stopping the rollout."
+        ;;
+    esac
+    sleep "$POLL_SECONDS"
+  done
+
+  fail "Timed out after ${WAIT_TIMEOUT_SECONDS}s waiting for ${TARGET_ENVIRONMENT} ${service} (last status: ${status:-not found})."
+}
+
 deploy_service() {
   local service="$1"
+  local message="${TARGET_ENVIRONMENT} ${service} ${EXPECTED_SHA}"
+  local previous_ids
+  previous_ids="$(list_deployments "$service" | jq -c 'map(.id)')"
+
   railway up "$ROOT" \
     --ci \
     --project "$PROJECT_ID" \
     --environment "$TARGET_ENVIRONMENT" \
     --service "$service" \
-    --message "${TARGET_ENVIRONMENT} ${service} ${EXPECTED_SHA}"
+    --message "$message"
+
+  wait_for_deployment "$service" "$message" "$previous_ids"
 }
 
 case "$SELECTION" in
