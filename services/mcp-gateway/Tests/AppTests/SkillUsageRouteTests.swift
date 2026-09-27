@@ -150,9 +150,7 @@ struct SkillUsageRouteTests {
             let patch: [String: Any] = ["telemetry_enabled": true, "assignments": savedAssignments]
             try await app.testing().test(.PATCH, path, beforeRequest: { request in
                 request.headers.replaceOrAdd(name: .cookie, value: cookie)
-                if let origin = AppFrontendURL.allowedOriginBases().first {
-                    request.headers.replaceOrAdd(name: .origin, value: origin)
-                }
+                request.headers.replaceOrAdd(name: .origin, value: skillUsageRouteFrontendOrigin)
                 request.headers.contentType = .json
                 request.body = ByteBuffer(data: try JSONSerialization.data(withJSONObject: patch))
             }, afterResponse: { response in
@@ -170,12 +168,17 @@ struct SkillUsageRouteTests {
     }
 }
 
+private let skillUsageRouteFrontendOrigin = "https://app.example.com"
+
 private func withSkillUsageRouteApp(_ run: @Sendable @escaping (Application) async throws -> Void) async throws {
     try await TestProcessEnvGate.run {
-        let keys = ["USE_MEMORY_SESSIONS", "DISABLE_SKILL_USAGE_RETENTION_SCHEDULER"]
+        let keys = ["USE_MEMORY_SESSIONS", "DISABLE_SKILL_USAGE_RETENTION_SCHEDULER", "FRONTEND_URL", "CORS_ORIGIN"]
         let saved = Dictionary(uniqueKeysWithValues: keys.map { ($0, ProcessInfo.processInfo.environment[$0]) })
         setenv("USE_MEMORY_SESSIONS", "1", 1)
         setenv("DISABLE_SKILL_USAGE_RETENTION_SCHEDULER", "1", 1)
+        // Browser mutations are origin-checked; pin the frontend origin so CI and local .env agree.
+        setenv("FRONTEND_URL", skillUsageRouteFrontendOrigin, 1)
+        unsetenv("CORS_ORIGIN")
         defer {
             for key in keys {
                 if let value = saved[key] ?? nil { setenv(key, value, 1) }
