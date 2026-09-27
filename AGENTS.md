@@ -8,6 +8,7 @@
 - Backend code lives under `services/mcp-gateway/Sources/App`; stale references to `Sources/MyContextProtocol`, `services/backend`, or `services/frontend` should be corrected when touched.
 - Development and production run on Railway with isolated Web, Gateway, and Postgres environments. The former Fly, Supabase, and Vercel production resources were permanently removed after the Railway cutover.
 - CI is designed to run on GitHub Actions through `.github/workflows/ci.yml`, `scripts/ci.sh`, and `scripts/ci-detect-changes.sh`; Depot workflows are legacy and should not be reintroduced.
+- Railway deploys through its GitHub integration (`dev` → Development, `main` → Production, Wait for CI on); do not reintroduce Actions deploy jobs or `railway up` deploy scripts.
 - The frontend was merged into this repository by git subtree from the archived `Stygian-Tech/my-context-protocol-frontend` history.
 - `mcp-server-kit` is the canonical external Swift package for reusable MCP protocol primitives. Local two-repo development may use a sibling checkout; GitHub Actions and Railway remote builds require a published Git revision.
 - The internal MCP agent guide is maintained outside this open-source repo. Do not add Notion URLs or re-add an MCP agent guide file without an explicit request.
