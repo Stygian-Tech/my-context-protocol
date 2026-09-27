@@ -55,10 +55,24 @@ struct MCPAgentVisibilityTests {
         #expect(!copy.contains("`list_capabilities`"))
     }
 
+    @Test func usageReportingInstructionsRequireConsentAndConsciousOutcomes() {
+        let disabled = MCPAgentCopy.initializeInstructions(projectName: "Example", projectDashboardURL: nil)
+        let enabled = MCPAgentCopy.initializeInstructions(projectName: "Example", projectDashboardURL: nil, telemetryEnabled: true)
+        #expect(!disabled.contains("`report_skill_usage`"))
+        #expect(enabled.contains("one best-effort `report_skill_usage` batch"))
+        #expect(enabled.contains("Missing reports remain unknown"))
+        #expect(enabled.contains("Reporting failure must not prevent task completion"))
+        let schema = CapabilitySchemaBuilder.runtimeToolInputSchema(name: "report_skill_usage")
+        #expect(schema.required == ["report_id", "skills"])
+        #expect(schema.properties?["skills"]?.maxItems == 100)
+        #expect(schema.properties?["skills"]?.items?.additionalProperties == false)
+        #expect(schema.properties?["skills"]?.items?.properties?["skip_reason"]?.enumValues?.count == 6)
+    }
+
     @Test func publicAndReservedRuntimeToolNamesAreStable() {
-        #expect(MCPConstants.runtimeToolNames == ["resolve_context", "get_skill", "report_skill_feedback"])
+        #expect(MCPConstants.runtimeToolNames == ["resolve_context", "get_skill", "report_skill_feedback", "report_skill_usage"])
         #expect(Set(MCPConstants.hiddenRuntimeToolAliases) == ["mycontext_catalog", "discover_skills", "list_capabilities"])
-        #expect(MCPConstants.callableRuntimeToolNames.count == 6)
+        #expect(MCPConstants.callableRuntimeToolNames.count == 7)
         for name in MCPConstants.callableRuntimeToolNames {
             #expect(MCPConstants.isReservedRuntimeToolName(name))
         }

@@ -11,6 +11,7 @@ enum SkillRuntimeToolHandlers {
         let description: String
         let instructions: String
         let version: String
+        let releaseId: UUID
         let checksum: String
         let mediaType: String
         let resourceUri: String
@@ -23,6 +24,7 @@ enum SkillRuntimeToolHandlers {
         let kind: String
         let id: String
         let version: String
+        let releaseId: UUID
         let path: String
         let checksum: String
         let mediaType: String
@@ -38,15 +40,18 @@ enum SkillRuntimeToolHandlers {
         name: String,
         arguments: [String: JSONValue],
         db: Database,
-        projectId: UUID
+        projectId: UUID,
+        clientIdentity: String = "unknown",
+        source: String? = nil
     ) async throws -> ToolHandlerOutput {
         switch name {
-        case MCPConstants.resolveContextToolName: return try await resolve(arguments, db: db, projectId: projectId)
-        case MCPConstants.getSkillToolName: return try await getSkill(arguments, db: db, projectId: projectId)
+        case MCPConstants.resolveContextToolName: return try await resolve(arguments, db: db, projectId: projectId, clientIdentity: clientIdentity, source: name)
+        case MCPConstants.getSkillToolName: return try await getSkill(arguments, db: db, projectId: projectId, clientIdentity: clientIdentity, source: name)
+        case MCPConstants.reportSkillUsageToolName: return try await reportUsage(arguments, db: db, projectId: projectId, clientIdentity: clientIdentity)
         case MCPConstants.reportSkillFeedbackToolName: return try await reportFeedback(arguments, db: db, projectId: projectId)
-        case MCPConstants.catalogToolName: return try await legacyCatalog(arguments, db: db, projectId: projectId)
-        case "discover_skills": return try await legacyDiscover(arguments, db: db, projectId: projectId)
-        case "list_capabilities": return try await legacyListCapabilities(arguments, db: db, projectId: projectId)
+        case MCPConstants.catalogToolName: return try await legacyCatalog(arguments, db: db, projectId: projectId, clientIdentity: clientIdentity, source: name)
+        case "discover_skills": return try await legacyDiscover(arguments, db: db, projectId: projectId, clientIdentity: clientIdentity, source: name)
+        case "list_capabilities": return try await legacyListCapabilities(arguments, db: db, projectId: projectId, clientIdentity: clientIdentity, source: name)
         default: throw ToolHandlerError.unknownTool(name: name)
         }
     }
@@ -54,7 +59,9 @@ enum SkillRuntimeToolHandlers {
     private static func resolve(
         _ arguments: [String: JSONValue],
         db: Database,
-        projectId: UUID
+        projectId: UUID,
+        clientIdentity: String = "unknown",
+        source: String? = nil
     ) async throws -> ToolHandlerOutput {
         guard let request = nonempty(string(arguments["request"])) else {
             throw Abort(.badRequest, reason: "request is required")
@@ -76,7 +83,12 @@ enum SkillRuntimeToolHandlers {
             context: context,
             currentSkillIds: decode([String].self, currentSkillArgument) ?? [],
             tools: decode([RuntimeToolInventoryItem].self, toolsArgument) ?? [],
-            db: db
+            db: db,
+            clientIdentity: clientIdentity,
+            source: source ?? "resolve_context",
+            resultLimit: source == MCPConstants.catalogToolName && (string(arguments["mode"])?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "route" || nonempty(string(arguments["task"])) != nil)
+                ? legacyLimit(arguments["limit"]) : nil,
+            deliversSkills: source != "list_capabilities"
         )
         return output(response)
     }
@@ -98,20 +110,24 @@ enum SkillRuntimeToolHandlers {
     private static func legacyDiscover(
         _ arguments: [String: JSONValue],
         db: Database,
-        projectId: UUID
+        projectId: UUID,
+        clientIdentity: String = "unknown",
+        source: String? = nil
     ) async throws -> ToolHandlerOutput {
         var normalized = arguments
         normalized["request"] = .string(
             nonempty(string(arguments["query"]))
                 ?? "Discover the project skills relevant to the current task"
         )
-        return try await resolve(normalized, db: db, projectId: projectId)
+        return try await resolve(normalized, db: db, projectId: projectId, clientIdentity: clientIdentity, source: source)
     }
 
     private static func getSkill(
         _ arguments: [String: JSONValue],
         db: Database,
-        projectId: UUID
+        projectId: UUID,
+        clientIdentity: String = "unknown",
+        source: String? = nil
     ) async throws -> ToolHandlerOutput {
         guard let skillId = boundedString(arguments["skill_id"], field: "skill_id", max: 128) else {
             throw Abort(.badRequest, reason: "skill_id is required")
@@ -130,7 +146,7 @@ enum SkillRuntimeToolHandlers {
             )
             let text = String(data: file.content, encoding: .utf8)
             let response = SkillFileResponse(
-                kind: "file", id: skillId, version: document.version, path: path,
+                kind: "file", id: skillId, version: document.version, releaseId: row.$release.id, path: path,
                 checksum: file.checksum, mediaType: file.contentType ?? "application/octet-stream",
                 byteCount: file.byteCount, resourceUri: resourceUri, text: text,
                 blob: text == nil ? file.content.base64EncodedString() : nil,
@@ -141,6 +157,7 @@ enum SkillRuntimeToolHandlers {
                 description: "Package file for \(skillId)@\(document.version)",
                 mimeType: file.contentType ?? "application/octet-stream", size: file.byteCount
             ))
+            await SkillUsageInstrumentation.delivered(row, path: path, projectId: projectId, clientIdentity: clientIdentity, source: source ?? "get_skill", db: db)
             return output(response, additionalContent: [link])
         }
         let files = try await SkillPackageResourceService.files(
@@ -151,7 +168,7 @@ enum SkillRuntimeToolHandlers {
         )
         let response = CanonicalSkillResponse(
             kind: "skill", id: document.id, name: document.name, description: document.description,
-            instructions: document.instructions, version: document.version, checksum: document.source.checksum,
+            instructions: document.instructions, version: document.version, releaseId: row.$release.id, checksum: document.source.checksum,
             mediaType: "text/markdown",
             resourceUri: SkillPackageResourceService.uri(skillId: skillId, version: document.version),
             source: document.source, files: files
@@ -163,13 +180,16 @@ enum SkillRuntimeToolHandlers {
                 mimeType: file.mediaType, size: file.byteCount
             ))
         }
+        await SkillUsageInstrumentation.delivered(row, projectId: projectId, clientIdentity: clientIdentity, source: source ?? "get_skill", db: db)
         return output(response, additionalContent: links)
     }
 
     private static func legacyListCapabilities(
         _ arguments: [String: JSONValue],
         db: Database,
-        projectId: UUID
+        projectId: UUID,
+        clientIdentity: String = "unknown",
+        source: String? = nil
     ) async throws -> ToolHandlerOutput {
         let skillId = nonempty(string(arguments["skill_id"]))
         var normalized = arguments
@@ -177,7 +197,7 @@ enum SkillRuntimeToolHandlers {
         if let skillId {
             normalized["current_skill_ids"] = .array([.string(skillId)])
         }
-        let resolved = try await resolve(normalized, db: db, projectId: projectId)
+        let resolved = try await resolve(normalized, db: db, projectId: projectId, clientIdentity: clientIdentity, source: source)
         guard case .object(let response) = resolved.structuredContent else { return resolved }
         let bindings = response["capabilityBindings"] ?? .array([])
         var capabilities: Set<String> = []
@@ -201,13 +221,15 @@ enum SkillRuntimeToolHandlers {
     private static func legacyCatalog(
         _ arguments: [String: JSONValue],
         db: Database,
-        projectId: UUID
+        projectId: UUID,
+        clientIdentity: String = "unknown",
+        source: String? = nil
     ) async throws -> ToolHandlerOutput {
         let mode = nonempty(string(arguments["mode"]))?.lowercased()
         if mode == "skill" || nonempty(string(arguments["skill"])) != nil {
             var normalized = arguments
             normalized["skill_id"] = .string(normalizedSkillId(string(arguments["skill"]) ?? ""))
-            let skill = try await getSkill(normalized, db: db, projectId: projectId)
+            let skill = try await getSkill(normalized, db: db, projectId: projectId, clientIdentity: clientIdentity, source: source)
             guard case .object(let document) = skill.structuredContent else { return skill }
             let name = document["name"]?.stringValue ?? document["id"]?.stringValue ?? "Skill"
             let instructions = document["instructions"]?.stringValue ?? skill.text
@@ -220,7 +242,7 @@ enum SkillRuntimeToolHandlers {
         var normalized = arguments
         let request = nonempty(string(arguments["task"])) ?? "List the project skills relevant to the current task"
         normalized["request"] = .string(request)
-        let resolved = try await resolve(normalized, db: db, projectId: projectId)
+        let resolved = try await resolve(normalized, db: db, projectId: projectId, clientIdentity: clientIdentity, source: source)
         let limited = mode == "route" || nonempty(string(arguments["task"])) != nil
             ? legacyLimitedResolution(resolved, rawLimit: arguments["limit"])
             : resolved
@@ -231,6 +253,23 @@ enum SkillRuntimeToolHandlers {
             text: "\(title)\n\nResolved by `resolve_context`.\n\n```json\n\(limited.text)\n```",
             structuredContent: limited.structuredContent
         )
+    }
+
+    private static func reportUsage(
+        _ arguments: [String: JSONValue], db: Database, projectId: UUID, clientIdentity: String
+    ) async throws -> ToolHandlerOutput {
+        let allowed = Set(["report_id", "trace_id", "skills"])
+        let itemAllowed = Set(["skill_id", "version", "release_id", "checksum", "outcome", "skip_reason"])
+        guard Set(arguments.keys).isSubset(of: allowed),
+              case .array(let skills)? = arguments["skills"], !skills.isEmpty, skills.count <= 100,
+              skills.allSatisfy({ item in
+                  guard case .object(let fields) = item else { return false }
+                  return Set(fields.keys).isSubset(of: itemAllowed)
+              }),
+              let input = decode(SkillUsageReportInput.self, .object(arguments)) else {
+            throw Abort(.badRequest, reason: "Expected report_id, optional trace_id, and 1–100 skill outcomes; explanatory notes are not accepted")
+        }
+        return output(try await SkillUsageService.report(projectId: projectId, clientIdentity: clientIdentity, input: input, db: db))
     }
 
     private static func reportFeedback(
@@ -336,17 +375,21 @@ enum SkillRuntimeToolHandlers {
         return try? JSONDecoder().decode(type, from: data)
     }
 
-    private static func legacyLimitedResolution(
-        _ output: ToolHandlerOutput,
-        rawLimit: JSONValue?
-    ) -> ToolHandlerOutput {
+    private static func legacyLimit(_ value: JSONValue?) -> Int {
         let raw: Int?
-        switch rawLimit {
+        switch value {
         case .integer(let value): raw = value
         case .string(let value): raw = Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
         default: raw = nil
         }
-        let limit = min(max(raw ?? 5, 1), 20)
+        return min(max(raw ?? 5, 1), 20)
+    }
+
+    private static func legacyLimitedResolution(
+        _ output: ToolHandlerOutput,
+        rawLimit: JSONValue?
+    ) -> ToolHandlerOutput {
+        let limit = legacyLimit(rawLimit)
         guard case .object(var response) = output.structuredContent else { return output }
         var remaining = limit
         var selectedSkillIds = Set<String>()

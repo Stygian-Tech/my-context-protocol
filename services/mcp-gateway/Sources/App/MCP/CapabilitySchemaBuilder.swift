@@ -120,6 +120,26 @@ enum CapabilitySchemaBuilder {
                 required: ["skill_id"],
                 additionalProperties: false
             )
+        case MCPConstants.reportSkillUsageToolName:
+            return InputSchema(
+                type: "object",
+                properties: [
+                    "report_id": stringSchema("Stable batch ID reused for retries.", minLength: 1, maxLength: 128),
+                    "trace_id": InputSchema(type: "string", description: "Optional originating resolution trace from this client.", format: "uuid"),
+                    "skills": InputSchema(
+                        type: "array", description: "Actual uses or consciously considered skips; omit unknown outcomes.",
+                        items: InputSchema(type: "object", properties: [
+                            "skill_id": stringSchema("Stable skill ID.", minLength: 1, maxLength: 128),
+                            "version": stringSchema("Observed exact version.", minLength: 1, maxLength: 512),
+                            "release_id": InputSchema(type: "string", description: "Optional originating release.", format: "uuid"),
+                            "checksum": stringSchema("Observed content checksum; resolves ambiguous versions.", minLength: 1, maxLength: 128),
+                            "outcome": InputSchema(type: "string", enumValues: [.string("used"), .string("skipped")]),
+                            "skip_reason": InputSchema(type: "string", description: "Required only for skipped outcomes; no free-text explanations.", enumValues: ["not_relevant", "redundant", "instruction_conflict", "missing_capability", "task_changed", "other"].map(JSONValue.string)),
+                        ], required: ["skill_id", "version", "outcome"], additionalProperties: false),
+                        minItems: 1, maxItems: 100
+                    ),
+                ], required: ["report_id", "skills"], additionalProperties: false
+            )
         case MCPConstants.reportSkillFeedbackToolName:
             return InputSchema(
                 type: "object",
@@ -182,6 +202,7 @@ enum CapabilitySchemaBuilder {
                     "kind": InputSchema(type: "string", enumValues: [.string("skill"), .string("file")]),
                     "id": stringSchema("Stable skill ID."),
                     "version": stringSchema("Exact skill version."),
+                    "releaseId": InputSchema(type: "string", format: "uuid"),
                     "checksum": stringSchema("SHA-256 content checksum."),
                     "mediaType": stringSchema("Resource media type."),
                     "resourceUri": stringSchema("Stable ctx resource URI."),
@@ -190,6 +211,11 @@ enum CapabilitySchemaBuilder {
                 required: ["schemaVersion", "kind", "id", "version", "checksum", "mediaType", "resourceUri", "source"],
                 additionalProperties: true
             )
+        case MCPConstants.reportSkillUsageToolName:
+            return InputSchema(type: "object", properties: [
+                "status": InputSchema(type: "string", enumValues: ["recorded", "already_recorded", "collection_disabled"].map(JSONValue.string)),
+                "recorded_count": InputSchema(type: "integer", minimum: 0),
+            ], required: ["status", "recorded_count"], additionalProperties: false)
         case MCPConstants.reportSkillFeedbackToolName:
             return InputSchema(
                 type: "object",

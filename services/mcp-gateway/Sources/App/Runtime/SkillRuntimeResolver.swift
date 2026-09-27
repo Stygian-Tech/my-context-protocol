@@ -1,4 +1,3 @@
-import Crypto
 import Fluent
 import Foundation
 
@@ -34,6 +33,7 @@ struct CapabilityBindingResult: Codable, Sendable {
 struct ResolvedSkillResult: Codable, Sendable {
     var id: String
     var version: String
+    var releaseId: UUID
     var kind: String
     var scope: String
     var enforcement: String
@@ -86,7 +86,11 @@ enum SkillRuntimeResolver {
         context: RuntimeContext = .init(),
         currentSkillIds: [String] = [],
         tools: [RuntimeToolInventoryItem] = [],
-        db: Database
+        db: Database,
+        clientIdentity: String = "unknown",
+        source: String = "resolve_context",
+        resultLimit: Int? = nil,
+        deliversSkills: Bool = true
     ) async throws -> SkillResolutionResponse {
         let traceId = UUID()
         guard let project = try await Project.find(projectId, on: db), let releaseId = project.activeReleaseId else {
@@ -161,7 +165,7 @@ enum SkillRuntimeResolver {
             let reason = isCurrent ? "already_active" : assigned ? "explicit_assignment" : activationReason(document.activation.mode)
             let instructions = document.instructions.utf8.count <= inlineLimit ? document.instructions : nil
             let result = ResolvedSkillResult(
-                id: document.id, version: document.version, kind: document.kind.rawValue,
+                id: document.id, version: document.version, releaseId: releaseId, kind: document.kind.rawValue,
                 scope: controllingAssignment?.scope ?? document.scope.rawValue,
                 enforcement: controllingAssignment?.required == true ? SkillEnforcement.required.rawValue : document.enforcement.rawValue,
                 priority: controllingAssignment?.priority ?? document.priority,
@@ -183,10 +187,16 @@ enum SkillRuntimeResolver {
 
         active.sort { ordered($0.0, $1.0) }
         suggested.sort { ordered($0.0, $1.0) }
+        let resolverActiveIds = Set(active.map { $0.0.id })
+        let evaluatedSelections = active + suggested
+        if let resultLimit {
+            active = Array(active.prefix(resultLimit))
+            suggested = Array(suggested.prefix(max(0, resultLimit - active.count)))
+        }
         let selected = active + suggested
         let missing = Array(Set(bindings.filter(\.missing).map(\.capability))).sorted()
-        let selectedIds = Set(selected.map { $0.1.id })
-        let conflicts = selected.flatMap { pair in
+        let selectedIds = Set(evaluatedSelections.map { $0.1.id })
+        let conflicts = evaluatedSelections.flatMap { pair in
             pair.1.conflictsWith.filter(selectedIds.contains).map { ResolutionConflict(skillId: pair.1.id, conflictsWith: $0, unresolved: true) }
         }
         let missingContext = [
@@ -233,13 +243,40 @@ enum SkillRuntimeResolver {
             ))
         }
 
+        if await SkillUsageInstrumentation.collectionEnabled(projectId: projectId, db: db) {
+            nextActions.append(.init(
+                order: nextActions.count + 1, type: "report_usage_at_task_completion", skillId: nil,
+                capability: nil, instruction: MCPAgentCopy.usageReportingInstructions, resourceUri: nil
+            ))
+        }
         let response = SkillResolutionResponse(
             traceId: traceId, activeSkills: active.map(\.0), suggestedTaskSkills: suggested.map(\.0),
             capabilityBindings: bindings, missingRequirements: missing, conflicts: conflicts,
             missingContext: missingContext, eventCanonical: event.map(canonicalEvents.contains),
             nextActions: nextActions, resolutionTrace: trace
         )
-        try await recordTelemetry(response, request: request, projectId: projectId, db: db)
+        var observations = [SkillUsageObservation(traceId: traceId, source: source)]
+        let activeIds = Set(active.map { $0.0.id })
+        let suggestedIds = Set(suggested.map { $0.0.id })
+        let traceBySkill = Dictionary(trace.compactMap { step in step.skillId.map { ($0, step) } }, uniquingKeysWith: { first, _ in first })
+        let inlineIds = Set(selected.filter { $0.0.contentIncluded }.map { $0.0.id })
+        for row in rows {
+            let skillId = row.skillId ?? row.name
+            if let step = traceBySkill[skillId] {
+                // Resolver decisions describe evaluation, even when compatibility results are limited.
+                let measurement: SkillUsageMeasurement = step.outcome == "excluded"
+                    ? .resolverExcluded
+                    : resolverActiveIds.contains(skillId) ? .resolverSelected : .resolverSuggested
+                observations.append(.init(skill: row, measurement: measurement, source: source, traceId: traceId, reason: step.reason))
+            }
+            if deliversSkills, activeIds.contains(skillId) || suggestedIds.contains(skillId) {
+                observations.append(.init(skill: row, measurement: .surfaced, source: source, traceId: traceId))
+                if inlineIds.contains(skillId) {
+                    observations.append(.init(skill: row, measurement: .instructionsDelivered, source: source, traceId: traceId))
+                }
+            }
+        }
+        await SkillUsageService.record(projectId: projectId, clientIdentity: clientIdentity, events: observations, db: db, logger: db.logger)
         return response
     }
 
@@ -348,17 +385,4 @@ enum SkillRuntimeResolver {
         )
     }
 
-    private static func recordTelemetry(_ response: SkillResolutionResponse, request: String, projectId: UUID, db: Database) async throws {
-        guard let settings = try await ProjectRuntimeSettings.query(on: db).filter(\.$project.$id == projectId).first(), settings.telemetryEnabled else { return }
-        let cutoff = Date().addingTimeInterval(-Double(settings.telemetryRetentionDays) * 86_400)
-        try await SkillRuntimeEvent.query(on: db).filter(\.$project.$id == projectId).filter(\.$createdAt < cutoff).delete()
-        let hash = SHA256.hash(data: Data(request.utf8)).map { String(format: "%02x", $0) }.joined()
-        for skill in response.activeSkills + response.suggestedTaskSkills {
-            let event = SkillRuntimeEvent()
-            event.$project.id = projectId; event.traceId = response.traceId; event.eventType = "skill_selected"
-            event.skillId = skill.id; event.reasonCode = skill.selectionReason; event.score = skill.score
-            event.requestHash = hash; event.detailJson = "{}"
-            try await event.save(on: db)
-        }
-    }
 }

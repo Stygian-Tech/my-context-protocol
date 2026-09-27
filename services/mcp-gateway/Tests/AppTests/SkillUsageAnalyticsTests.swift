@@ -76,6 +76,9 @@ struct SkillUsageAnalyticsTests {
             let first = try await SkillUsageService.report(projectId: fixture.project.id!, clientIdentity: "a", input: input, db: app.db)
             let retry = try await SkillUsageService.report(projectId: fixture.project.id!, clientIdentity: "a", input: input, db: app.db)
             #expect(first.status == "recorded" && retry.status == "already_recorded")
+            let reservation = try #require(try await SkillUsageReport.query(on: app.db).filter(\.$project.$id == fixture.project.id!).first())
+            #expect(reservation.reportId != input.report_id)
+            #expect(reservation.reportId.count == 64)
             let conflicting = SkillUsageReportInput(report_id: "batch-1", trace_id: nil, skills: [.init(skill_id: "review", version: "1.0.0", release_id: nil, checksum: nil, outcome: "used", skip_reason: nil)])
             await #expect(throws: Abort.self) { try await SkillUsageService.report(projectId: fixture.project.id!, clientIdentity: "a", input: conflicting, db: app.db) }
             let invalid = SkillUsageReportInput(report_id: "invalid", trace_id: nil, skills: [.init(skill_id: "foreign", version: "1.0.0", release_id: nil, checksum: nil, outcome: "used", skip_reason: nil)])

@@ -31,7 +31,9 @@ enum MCPAgentCopy {
         return parts.joined(separator: "\n\n")
     }
 
-    static func initializeInstructions(projectName: String, projectDashboardURL: String?) -> String {
+    static let usageReportingInstructions = "At task completion, send one best-effort `report_skill_usage` batch with a stable report_id and exact skill versions and their returned releaseId as release_id, optionally linking the originating trace_id. Report only skills actually used or consciously considered and skipped; use a categorized skip_reason without explanatory notes. Never label every returned skill as skipped or infer private deliberation. Missing reports remain unknown. Reporting failure must not prevent task completion."
+
+    static func initializeInstructions(projectName: String, projectDashboardURL: String?, telemetryEnabled: Bool = false) -> String {
         var lines: [String] = [
             "You are connected to MyContextProtocol project \"\(projectName)\".",
             "Start by calling `\(MCPConstants.resolveContextToolName)` with the current user request and the tools available in your session. It returns active and suggested skills, conflicts, provenance, capability bindings, and a resolution trace.",
@@ -39,6 +41,7 @@ enum MCPAgentCopy {
             "Projects with the explicit legacy compiled-tools switch may additionally expose per-skill tools using the SKILL.md package slug (no `skill:` prefix).",
             "Prefer tools for callable procedures; use resources for long markdown context (`resources/read` with `ctx://skill/...` URIs); prompts expose reusable guidance templates.",
         ]
+        if telemetryEnabled { lines.append(usageReportingInstructions) }
         if let dash = projectDashboardURL, !dash.isEmpty {
             lines.append("Project dashboard: \(dash)")
         }

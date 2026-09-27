@@ -109,13 +109,15 @@ enum SkillUsageService {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let normalized = SkillUsageReportInput(report_id: input.report_id, trace_id: input.trace_id, skills: input.skills.sorted { reportItemSortKey($0) < reportItemSortKey($1) })
         let digest = SHA256.hash(data: try encoder.encode(normalized)).map { String(format: "%02x", $0) }.joined()
+        // Treat caller-chosen IDs as opaque: retain a digest rather than potentially sensitive text.
+        let reportKey = SHA256.hash(data: Data(input.report_id.utf8)).map { String(format: "%02x", $0) }.joined()
         do {
             return try await db.transaction { transaction in
                 guard let settings = try await ProjectRuntimeSettings.query(on: transaction).filter(\.$project.$id == projectId).first(), settings.telemetryEnabled else {
                     return .init(status: "collection_disabled", recorded_count: 0)
                 }
                 let cutoff = Date().addingTimeInterval(-Double(max(1, settings.telemetryRetentionDays)) * 86400)
-                if let existing = try await existingReport(projectId: projectId, client: clientIdentity, reportId: input.report_id, cutoff: cutoff, db: transaction) {
+                if let existing = try await existingReport(projectId: projectId, client: clientIdentity, reportId: reportKey, cutoff: cutoff, db: transaction) {
                     return try duplicate(existing, digest: digest)
                 }
                 if let traceId = input.trace_id {
@@ -155,9 +157,9 @@ enum SkillUsageService {
                 }
                 // Remove an expired deduplication key before reserving the new report.
                 try await SkillUsageReport.query(on: transaction).filter(\.$project.$id == projectId).filter(\.$clientIdentity == clientIdentity)
-                    .filter(\.$reportId == input.report_id).filter(\.$createdAt < cutoff).delete()
+                    .filter(\.$reportId == reportKey).filter(\.$createdAt < cutoff).delete()
                 let report = SkillUsageReport(); report.$project.id = projectId; report.clientIdentity = clientIdentity
-                report.reportId = input.report_id; report.payloadHash = digest; report.recordedCount = observations.count
+                report.reportId = reportKey; report.payloadHash = digest; report.recordedCount = observations.count
                 try await report.create(on: transaction)
                 let rows = observations.map { event(projectId: projectId, clientIdentity: clientIdentity, observation: $0) }
                 try await rows.create(on: transaction)
@@ -168,7 +170,7 @@ enum SkillUsageService {
             if error is Abort { throw error }
             let settings = try await ProjectRuntimeSettings.query(on: db).filter(\.$project.$id == projectId).first()
             let cutoff = Date().addingTimeInterval(-Double(max(1, settings?.telemetryRetentionDays ?? 30)) * 86400)
-            if let existing = try await existingReport(projectId: projectId, client: clientIdentity, reportId: input.report_id, cutoff: cutoff, db: db) {
+            if let existing = try await existingReport(projectId: projectId, client: clientIdentity, reportId: reportKey, cutoff: cutoff, db: db) {
                 return try duplicate(existing, digest: digest)
             }
             throw error

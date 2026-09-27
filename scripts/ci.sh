@@ -89,7 +89,7 @@ swift_checks() {
     SUPABASE_DB_URL="" \
     DISABLE_ADMIN_ANALYTICS_ROLLUP_SCHEDULER=1 \
     DISABLE_STRIPE_RECONCILIATION_SCHEDULER=1 \
-    swift test --skip-update \
+    swift test --disable-automatic-resolution \
       --enable-swift-testing --disable-xctest \
       --no-parallel \
       -Xswiftc -warnings-as-errors
