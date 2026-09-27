@@ -104,6 +104,11 @@ final class SkillRuntimeEvent: Model, Content, @unchecked Sendable {
     @OptionalField(key: "score") var score: Double?
     @OptionalField(key: "request_hash") var requestHash: String?
     @Field(key: "detail_json") var detailJson: String
+    @OptionalField(key: "release_id") var releaseId: UUID?
+    @OptionalField(key: "skill_version") var skillVersion: String?
+    @OptionalField(key: "source_checksum") var sourceChecksum: String?
+    @OptionalField(key: "client_identity") var clientIdentity: String?
+    @OptionalField(key: "source") var source: String?
     @Timestamp(key: "created_at", on: .create) var createdAt: Date?
     init() {}
 }
