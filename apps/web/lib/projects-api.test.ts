@@ -48,6 +48,7 @@ import {
   updateProjectCatalogMarkdown,
   verifyProjectCustomDomain,
   fetchProjectSkillRuntime,
+  fetchProjectSkillUsage,
   updateProjectSkillRuntime,
   writeBackCompiledSkillMetadata,
 } from "./projects-api";
@@ -60,6 +61,14 @@ afterEach(() => {
 });
 
 describe("projects-api", () => {
+  it("fetchProjectSkillUsage defaults to seven days and encodes filters", async () => {
+    get.mockResolvedValue({ skills: [] });
+    await fetchProjectSkillUsage("p");
+    expect(get).toHaveBeenLastCalledWith("/projects/p/skill-usage?window=7d");
+    await fetchProjectSkillUsage("p/1", { window: "30d", page: 2, page_size: 25, sort: "surfaced", direction: "asc", skill_id: "skill & one" });
+    expect(get).toHaveBeenLastCalledWith("/projects/p%2F1/skill-usage?window=30d&page=2&page_size=25&sort=surfaced&direction=asc&skill_id=skill+%26+one");
+  });
+
   it("fetchProjects unwraps array or .projects", async () => {
     get.mockResolvedValueOnce([{ id: "1" }]);
     expect(await fetchProjects()).toEqual([{ id: "1" }]);

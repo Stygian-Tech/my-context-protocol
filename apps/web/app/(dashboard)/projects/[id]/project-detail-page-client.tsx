@@ -15,6 +15,7 @@ import { CustomDomainSection } from "@/components/dashboard/custom-domain-sectio
 import { McpCatalogSection } from "@/components/dashboard/mcp-catalog-section";
 import { ProjectOverviewMetrics } from "@/components/dashboard/project-overview-metrics";
 import { SkillRuntimeSection } from "@/components/dashboard/skill-runtime-section";
+import { SkillUsageSection } from "@/components/dashboard/skill-usage-section";
 import { useAuth } from "@/contexts/auth-context";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -168,7 +169,8 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
         <TabsContent value="releases">
           <ReleaseTable projectId={projectId} />
         </TabsContent>
-        <TabsContent value="runtime">
+        <TabsContent value="runtime" className="space-y-5">
+          <SkillUsageSection key={projectId} projectId={projectId} />
           <SkillRuntimeSection projectId={projectId} />
         </TabsContent>
         <TabsContent value="api-keys">

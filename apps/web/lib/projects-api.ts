@@ -15,6 +15,8 @@ import type {
   ProjectDashboardSummary,
   ProjectSkillRuntime,
   SkillRuntimeAssignment,
+  ProjectSkillUsage,
+  SkillUsageQuery,
 } from "./types";
 import type {
   AccountDashboardTimeseries,
@@ -251,6 +253,16 @@ export async function writeBackCompiledSkillMetadata(projectId: string, releaseI
 
 export async function fetchProjectSkillRuntime(projectId: string): Promise<ProjectSkillRuntime> {
   return api.get<ProjectSkillRuntime>(`/projects/${projectId}/skill-runtime`);
+}
+
+export async function fetchProjectSkillUsage(projectId: string, params: SkillUsageQuery = {}): Promise<ProjectSkillUsage> {
+  const query = new URLSearchParams({ window: params.window ?? "7d" });
+  if (params.page != null) query.set("page", String(params.page));
+  if (params.page_size != null) query.set("page_size", String(params.page_size));
+  if (params.sort) query.set("sort", params.sort);
+  if (params.direction) query.set("direction", params.direction);
+  if (params.skill_id) query.set("skill_id", params.skill_id);
+  return api.get<ProjectSkillUsage>(`/projects/${encodeURIComponent(projectId)}/skill-usage?${query}`);
 }
 
 export async function updateProjectSkillRuntime(

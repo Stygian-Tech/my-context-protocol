@@ -226,6 +226,59 @@ export interface ProjectSkillRuntime {
   recent_events: SkillRuntimeEvent[];
 }
 
+export type SkillUsageWindow = "24h" | "7d" | "30d";
+export type SkillUsageSort = "activity" | "skill_id" | "surfaced" | "instructions_delivered" | "agent_reported_used" | "agent_reported_skipped";
+export interface SkillUsageQuery {
+  window?: SkillUsageWindow;
+  page?: number;
+  page_size?: number;
+  sort?: SkillUsageSort;
+  direction?: "asc" | "desc";
+  skill_id?: string;
+}
+export interface SkillUsageCounts {
+  surfaced: number;
+  instructions_delivered: number;
+  supporting_file_read: number;
+  resolver_selected: number;
+  resolver_suggested: number;
+  resolver_excluded: number;
+  agent_reported_used: number;
+  agent_reported_skipped: number;
+  legacy_resolver_selected: number;
+}
+export interface SkillUsageVersion {
+  release_id?: string | null;
+  version?: string | null;
+  checksum?: string | null;
+  counts: SkillUsageCounts;
+}
+export interface SkillUsageReason { reason: string; count: number }
+export interface SkillUsageRow {
+  skill_id: string;
+  name: string;
+  is_current: boolean;
+  last_activity?: string | null;
+  counts: SkillUsageCounts;
+  /** Detail arrays are populated only when filtering by skill_id. */
+  versions: SkillUsageVersion[];
+  resolver_exclusion_reasons: SkillUsageReason[];
+  agent_skip_reasons: SkillUsageReason[];
+}
+export interface ProjectSkillUsage {
+  collection_enabled: boolean;
+  retention_days: number;
+  requested_window: SkillUsageWindow;
+  effective_from: string;
+  effective_to: string;
+  reporting_coverage: "partial";
+  historical_measurements: "legacy_resolver_only";
+  page: number;
+  page_size: number;
+  total: number;
+  skills: SkillUsageRow[];
+}
+
 export interface DashboardMethodCount {
   method: string;
   count: number;

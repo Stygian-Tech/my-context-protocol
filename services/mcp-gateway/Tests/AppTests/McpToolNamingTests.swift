@@ -9,6 +9,34 @@ import VaporTesting
 
 @Suite("MCP tool naming (colon-free wire names)", .serialized)
 struct McpToolNamingTests {
+    @Test("usage identity separates OAuth users and survives access-token rotation")
+    func usageIdentity() async throws {
+        try await withMcpToolNamingApp { app in
+            let req = Request(application: app, method: .POST, url: URI(path: "/mcp"),
+                version: .http1_1, headers: [:], remoteAddress: nil, logger: app.logger,
+                on: app.eventLoopGroup.next())
+            let projectId = UUID(), clientId = UUID(), accountId = UUID()
+            func token(account: UUID?, client: UUID? = nil, subject: String = "user") -> McpOAuthAccessToken {
+                McpOAuthAccessToken(id: UUID(), tokenHash: "unused-test-hash", projectId: projectId,
+                    clientId: client ?? clientId, accountId: account, subjectType: subject, scope: "mcp",
+                    expiresAt: Date().addingTimeInterval(60))
+            }
+            req.storage[McpOAuthAccessTokenRecordKey.self] = token(account: accountId)
+            let original = MCPController.skillUsageClientIdentity(req: req)
+            #expect(original != nil)
+            req.storage[McpOAuthAccessTokenRecordKey.self] = token(account: accountId)
+            #expect(MCPController.skillUsageClientIdentity(req: req) == original)
+            req.storage[McpOAuthAccessTokenRecordKey.self] = token(account: UUID())
+            #expect(MCPController.skillUsageClientIdentity(req: req) != original)
+            req.storage[McpOAuthAccessTokenRecordKey.self] = token(account: accountId, client: UUID())
+            #expect(MCPController.skillUsageClientIdentity(req: req) != original)
+            req.storage[McpOAuthAccessTokenRecordKey.self] = token(account: nil)
+            #expect(MCPController.skillUsageClientIdentity(req: req) == nil)
+            req.storage[McpOAuthAccessTokenRecordKey.self] = token(account: nil, subject: "service")
+            #expect(MCPController.skillUsageClientIdentity(req: req) != nil)
+        }
+    }
+
     @Test("Streamable HTTP headers validate versions, accepts, and origins")
     func streamableHTTPHeaders() async throws {
         try await withMcpToolNamingApp { app in
@@ -614,6 +642,142 @@ struct McpToolNamingTests {
             #expect(feedback.contains("draft"))
             #expect(feedback.contains("\"structuredContent\""))
             #expect(try await SkillFeedbackRecord.query(on: app.db).count() == 1)
+
+            // Delivery metrics are opt-in even when all compatibility paths are exercised.
+            #expect(try await SkillRuntimeEvent.query(on: app.db).count() == 0)
+            let settings = ProjectRuntimeSettings()
+            settings.$project.id = project.id!; settings.telemetryEnabled = true
+            settings.telemetryRetentionDays = 30; settings.semanticEnabled = false
+            settings.feedbackIssueCreationEnabled = false
+            settings.providerPreferencesJson = #"{"legacy_compiled_tools_enabled":true}"#
+            try await settings.save(on: app.db)
+            for (type, schema) in [
+                ("resource", CapabilitySchemaBuilder.resourceMetaJson(skillName: document.id)),
+                ("prompt", CapabilitySchemaBuilder.promptMetaJson()),
+                ("tool", CapabilitySchemaBuilder.toolInputSchemaJson(description: nil, summary: nil)),
+            ] {
+                try await CapabilityDef(compiledSkillId: compiled.id!, capabilityName: document.id,
+                    type: type, schemaJson: schema, sideEffectLevel: "read").save(on: app.db)
+            }
+            func count(_ measurement: SkillUsageMeasurement) async throws -> Int {
+                try await SkillRuntimeEvent.query(on: app.db).filter(\.$eventType == measurement.rawValue).count()
+            }
+            func rpc(_ method: String, params: [String: JSONValue] = [:], key: String? = nil) async throws -> String {
+                let encoded = SkillRuntimeJSON.encode(JSONValue.object([
+                    "jsonrpc": .string("2.0"), "id": .integer(70), "method": .string(method), "params": .object(params),
+                ]))
+                var response = ""
+                try await app.testing().test(.POST, "/mcp", body: ByteBuffer(string: encoded), beforeRequest: { req in
+                    req.headers.replaceOrAdd(name: "X-API-Key", value: key ?? rawKey)
+                    req.headers.replaceOrAdd(name: .contentType, value: "application/json")
+                    req.headers.replaceOrAdd(name: "MCP-Protocol-Version", value: "2025-11-25")
+                }, afterResponse: { response = $0.body.string })
+                return response
+            }
+            for method in ["tools/list", "resources/list", "prompts/list"] {
+                _ = try await rpc(method)
+            }
+            #expect(try await count(.surfaced) == 3)
+            #expect(try await count(.instructionsDelivered) == 0)
+            _ = try await Self.postRuntimeCall(name: "get_skill", arguments: ["skill_id": document.id], rawKey: rawKey, app: app)
+            _ = try await Self.postRuntimeCall(name: "mycontext_catalog", arguments: ["mode": "skill", "skill": document.id], rawKey: rawKey, app: app)
+            _ = try await Self.postRuntimeCall(name: document.id, arguments: [:], rawKey: rawKey, app: app)
+            _ = try await rpc("resources/read", params: ["uri": .string("ctx://skill/" + document.id)])
+            _ = try await rpc("prompts/get", params: ["name": .string(document.id)])
+            #expect(try await count(.instructionsDelivered) == 5)
+            _ = try await Self.postRuntimeCall(name: "get_skill", arguments: ["skill_id": document.id, "path": "references/guide.md"], rawKey: rawKey, app: app)
+            _ = try await rpc("resources/read", params: ["uri": .string("ctx://skill/" + document.id + "/file/references/guide.md")])
+            #expect(try await count(.supportingFileRead) == 2)
+            #expect(try await count(.instructionsDelivered) == 5)
+            _ = try await Self.postRuntimeCall(name: "get_skill", arguments: ["skill_id": "missing"], rawKey: rawKey, app: app)
+            _ = try await rpc("resources/read", params: ["uri": .string("ctx://skill/" + document.id + "/file/missing.md")])
+            #expect(try await count(.instructionsDelivered) == 5)
+            #expect(try await count(.supportingFileRead) == 2)
+            _ = try await Self.postRuntimeCall(name: "list_capabilities", arguments: ["skill_id": document.id], rawKey: rawKey, app: app)
+            #expect(try await count(.instructionsDelivered) == 5)
+            #expect(try await count(.surfaced) == 3)
+            let enabledResolve = try await Self.postRuntimeCall(name: "resolve_context",
+                argumentsJson: #"{"request":"preserve follow-up issue","current_skill_ids":["incidental-issues"]}"#,
+                rawKey: rawKey, app: app)
+            #expect(enabledResolve.contains("report_usage_at_task_completion"))
+            #expect(try await count(.instructionsDelivered) == 6)
+            #expect(try await count(.surfaced) == 4)
+            #expect(try await count(.resolverSelected) == 2)
+            let envelope = try #require(JSONSerialization.jsonObject(with: Data(enabledResolve.utf8)) as? [String: Any])
+            let result = try #require(envelope["result"] as? [String: Any])
+            let structured = try #require(result["structuredContent"] as? [String: Any])
+            let trace = try #require(structured["traceId"] as? String)
+            let report = #"{"report_id":"task-batch-1","trace_id":"\#(trace)","skills":[{"skill_id":"incidental-issues","version":"1.0.0","outcome":"skipped","skip_reason":"task_changed"}]}"#
+            let firstReport = try await Self.postRuntimeCall(name: "report_skill_usage", argumentsJson: report, rawKey: rawKey, app: app)
+            #expect(firstReport.contains("\"status\":\"recorded\""))
+            let duplicateReport = try await Self.postRuntimeCall(name: "report_skill_usage", argumentsJson: report, rawKey: rawKey, app: app)
+            #expect(duplicateReport.contains("already_recorded"))
+            #expect(try await count(.agentReportedSkipped) == 1)
+            #expect(try await count(.agentReportedUsed) == 0)
+            let otherRawKey = "mcp_otherusageclient00000000000000"
+            try await ApiKey(projectId: project.id!, name: "other client", keyPrefix: String(otherRawKey.prefix(12)),
+                keyHash: Self.sha256Hex(otherRawKey), status: "active").save(on: app.db)
+            let foreignTrace = try await Self.postRuntimeCall(name: "report_skill_usage", argumentsJson: report,
+                rawKey: otherRawKey, app: app, expectedStatus: .badRequest)
+            #expect(foreignTrace.contains("Resolution trace is unavailable"))
+            let notes = try await Self.postRuntimeCall(name: "report_skill_usage",
+                argumentsJson: #"{"report_id":"notes","skills":[{"skill_id":"incidental-issues","version":"1.0.0","outcome":"used","notes":"private rationale"}]}"#,
+                rawKey: rawKey, app: app, expectedStatus: .badRequest)
+            #expect(notes.contains("explanatory notes are not accepted"))
+            let events = try await SkillRuntimeEvent.query(on: app.db).all()
+            #expect(events.allSatisfy { $0.clientIdentity == RequestLogClientResolver.storedApiKeyReference(apiKeyId: key.id!) })
+            #expect(events.filter { $0.skillId != nil }.allSatisfy { $0.skillVersion == "1.0.0" && $0.sourceChecksum == "abc" && $0.releaseId == release.id })
+
+            // Actual page membership, rather than the full catalog, determines surfaced counts.
+            for index in 0..<51 {
+                let sibling = CompiledSkill(releaseId: release.id!, skillPackageId: pkg.id!, path: pkg.path,
+                    name: "sibling-\(index)", summary: "Sibling", skillBody: "Sibling instructions",
+                    exposureType: "resource", riskLevel: "low", repoSpecific: false, status: "ready")
+                var siblingDocument = document
+                siblingDocument.id = sibling.name; siblingDocument.name = sibling.name
+                siblingDocument.scope = .global; siblingDocument.activation.mode = .always
+                siblingDocument.conflictsWith = index == 0 ? ["sibling-1"] : []
+                sibling.skillId = sibling.name; sibling.version = document.version; sibling.sourceChecksum = "abc"
+                sibling.canonicalJson = SkillRuntimeJSON.encode(siblingDocument)
+                try await sibling.save(on: app.db)
+                for (type, schema) in [
+                    ("resource", CapabilitySchemaBuilder.resourceMetaJson(skillName: sibling.name)),
+                    ("prompt", CapabilitySchemaBuilder.promptMetaJson()),
+                    ("tool", CapabilitySchemaBuilder.toolInputSchemaJson(description: nil, summary: nil)),
+                ] {
+                    try await CapabilityDef(compiledSkillId: sibling.id!, capabilityName: sibling.name,
+                        type: type, schemaJson: schema, sideEffectLevel: "read").save(on: app.db)
+                }
+            }
+            for method in ["tools/list", "resources/list", "prompts/list"] {
+                let before = try await count(.surfaced)
+                let firstPage = try await rpc(method)
+                let pageEnvelope = try #require(JSONSerialization.jsonObject(with: Data(firstPage.utf8)) as? [String: Any])
+                let pageResult = try #require(pageEnvelope["result"] as? [String: Any])
+                let cursor = try #require(pageResult["nextCursor"] as? String)
+                let firstCount = method == "tools/list" ? 46 : 50
+                #expect(try await count(.surfaced) == before + firstCount)
+                _ = try await rpc(method, params: ["cursor": .string(cursor)])
+                #expect(try await count(.surfaced) == before + 52)
+                _ = try await rpc(method, params: ["cursor": .string("invalid")])
+                #expect(try await count(.surfaced) == before + 52)
+            }
+            let beforeRouteSurfaced = try await count(.surfaced)
+            let beforeRouteDelivered = try await count(.instructionsDelivered)
+            let limitedRoute = try await Self.postRuntimeCall(name: "mycontext_catalog", arguments: ["mode": "route", "limit": "1"], rawKey: rawKey, app: app)
+            #expect(limitedRoute.contains("\"conflictsWith\":\"sibling-1\""))
+            #expect(try await count(.surfaced) == beforeRouteSurfaced + 1)
+            #expect(try await count(.instructionsDelivered) == beforeRouteDelivered + 1)
+            #expect(try await count(.resolverExcluded) == 1)
+            #expect(try await count(.agentReportedSkipped) == 1) // Resolver exclusion is never an agent skip.
+            let beforeDisableCount = try await SkillRuntimeEvent.query(on: app.db).count()
+            settings.telemetryEnabled = false
+            try await settings.save(on: app.db)
+            let disabledReport = try await Self.postRuntimeCall(name: "report_skill_usage", argumentsJson: report, rawKey: rawKey, app: app)
+            #expect(disabledReport.contains("collection_disabled"))
+            _ = try await Self.postRuntimeCall(name: "get_skill", arguments: ["skill_id": document.id], rawKey: rawKey, app: app)
+            #expect(try await SkillRuntimeEvent.query(on: app.db).count() == beforeDisableCount)
+
         }
     }
 

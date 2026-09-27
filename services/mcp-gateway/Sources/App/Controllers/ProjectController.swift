@@ -1173,7 +1173,7 @@ struct ProjectController {
         let project = try await requireProject(req, accountId: account.id!)
         let settings = try await runtimeSettingsRow(projectId: project.id!, db: req.db)
         async let assignments = SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$priority, .descending).all()
-        async let events = SkillRuntimeEvent.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$createdAt, .descending).limit(100).all()
+        async let events = recentRuntimeEvents(projectId: project.id!, retentionDays: settings.telemetryRetentionDays, db: req.db)
         return try await runtimeSettingsResponse(settings, assignments: assignments, events: events)
     }
 
@@ -1275,9 +1275,19 @@ struct ProjectController {
             }
         }
         let assignments = try await SkillAssignment.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$priority, .descending).all()
-        let events = try await SkillRuntimeEvent.query(on: req.db).filter(\.$project.$id == project.id!).sort(\.$createdAt, .descending).limit(100).all()
+        let events = try await recentRuntimeEvents(projectId: project.id!, retentionDays: settings.telemetryRetentionDays, db: req.db)
         req.application.mcpCatalogNotifications.bumpCatalog(for: project.id!)
         return runtimeSettingsResponse(settings, assignments: assignments, events: events)
+    }
+
+    /// Enforce retention before the background cleanup runs, including when collection is disabled.
+    static func recentRuntimeEvents(projectId: UUID, retentionDays: Int, db: Database, now: Date = Date()) async throws -> [SkillRuntimeEvent] {
+        let cutoff = now.addingTimeInterval(-Double(max(1, retentionDays)) * 86_400)
+        return try await SkillRuntimeEvent.query(on: db)
+            .filter(\.$project.$id == projectId)
+            .filter(\.$createdAt >= cutoff)
+            .filter(\.$createdAt <= now)
+            .sort(\.$createdAt, .descending).limit(100).all()
     }
 
     private static func runtimeSettingsRow(projectId: UUID, db: Database) async throws -> ProjectRuntimeSettings {

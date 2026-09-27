@@ -5,10 +5,11 @@ enum MCPConstants {
     static let catalogToolName = "mycontext_catalog"
     static let resolveContextToolName = "resolve_context"
     static let getSkillToolName = "get_skill"
+    static let reportSkillUsageToolName = "report_skill_usage"
     static let reportSkillFeedbackToolName = "report_skill_feedback"
 
     /// The only runtime tools advertised to agents by default.
-    static let runtimeToolNames = [resolveContextToolName, getSkillToolName, reportSkillFeedbackToolName]
+    static let runtimeToolNames = [resolveContextToolName, getSkillToolName, reportSkillFeedbackToolName, reportSkillUsageToolName]
 
     /// Compatibility names remain callable for one release, but are intentionally omitted from `tools/list`.
     static let hiddenRuntimeToolAliases = [catalogToolName, "discover_skills", "list_capabilities"]

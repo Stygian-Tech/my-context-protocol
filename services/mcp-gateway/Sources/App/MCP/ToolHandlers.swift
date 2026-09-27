@@ -23,10 +23,11 @@ struct ToolHandlers {
         name: String,
         arguments: [String: JSONValue],
         db: Database,
-        projectId: UUID
+        projectId: UUID,
+        clientIdentity: String = "unknown"
     ) async throws -> ToolHandlerOutput {
         if MCPConstants.callableRuntimeToolNames.contains(name) {
-            return try await SkillRuntimeToolHandlers.handle(name: name, arguments: arguments, db: db, projectId: projectId)
+            return try await SkillRuntimeToolHandlers.handle(name: name, arguments: arguments, db: db, projectId: projectId, clientIdentity: clientIdentity)
         }
         // Legacy colon-prefixed names are no longer accepted on the wire.
         if name.contains(":") {
@@ -35,7 +36,7 @@ struct ToolHandlers {
         guard try await legacyCompiledToolsEnabled(db: db, projectId: projectId) else {
             throw ToolHandlerError.unknownTool(name: name)
         }
-        return try await handleCompiledTool(name: name, arguments: arguments, db: db, projectId: projectId)
+        return try await handleCompiledTool(name: name, arguments: arguments, db: db, projectId: projectId, clientIdentity: clientIdentity)
     }
 
     static func legacyCompiledToolsEnabled(db: Database, projectId: UUID) async throws -> Bool {
@@ -54,7 +55,8 @@ struct ToolHandlers {
         name: String,
         arguments: [String: JSONValue],
         db: Database,
-        projectId: UUID
+        projectId: UUID,
+        clientIdentity: String = "unknown"
     ) async throws -> ToolHandlerOutput {
         let project = try await Project.find(projectId, on: db)
         guard let releaseId = project?.activeReleaseId else {
@@ -95,6 +97,7 @@ struct ToolHandlers {
             lines.append("")
             lines.append("---")
             lines.append(body)
+            await SkillUsageInstrumentation.delivered(compiled, projectId: projectId, clientIdentity: clientIdentity, source: "compiled_tool", db: db)
         }
         return .text(lines.joined(separator: "\n"))
     }
