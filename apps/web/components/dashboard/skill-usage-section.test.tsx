@@ -97,4 +97,26 @@ describe("SkillUsageSection", () => {
     await render(); await loaded(); await click(skill.name.trim()); await waitFor(() => expect(host.textContent).toContain("Could not load skill details."));
     expect(host.querySelector("table")).not.toBeNull(); expect(host.textContent).toContain("Retry Details");
   });
+  it("renders snake_case runtime events and resubmits saved assignments unchanged", async () => {
+    const assignment = { id: "a1", skill_id: "review", scope: "repository" as const, activation_mode: "always" as const, target_type: "repository" as const, target_id: "stygian/app", required: true, priority: 50 };
+    const runtime = {
+      telemetry_enabled: false, telemetry_retention_days: 30, semantic_enabled: false, feedback_issue_creation_enabled: false,
+      assignments: [assignment],
+      recent_events: [
+        { id: "e1", trace_id: "trace-legacy", event_type: "selected", skill_id: "review", reason_code: "explicit_assignment" },
+        { id: "e2", trace_id: "trace-delivery", event_type: "instruction_delivery", skill_id: null, reason_code: null },
+      ],
+    };
+    vi.mocked(fetchProjectSkillRuntime).mockResolvedValue(runtime);
+    vi.mocked(updateProjectSkillRuntime).mockResolvedValue({ ...runtime, telemetry_enabled: true });
+    await act(async () => { root.render(<QueryClientProvider client={client}><SkillRuntimeSection projectId="p" /></QueryClientProvider>); });
+    await waitFor(() => expect(host.textContent).toContain("Recent Runtime Events"));
+    expect(host.textContent).toContain("trace-legacy"); expect(host.textContent).toContain("selected: review"); expect(host.textContent).toContain("explicit_assignment");
+    expect(host.textContent).toContain("trace-delivery"); expect(host.textContent).toContain("instruction_delivery: runtime");
+    expect(host.textContent).toContain("repository: stygian/app");
+    await act(async () => host.querySelector<HTMLInputElement>("#runtime-skill-telemetry")!.click());
+    await click("Save Runtime");
+    await waitFor(() => expect(updateProjectSkillRuntime).toHaveBeenCalled());
+    expect(vi.mocked(updateProjectSkillRuntime).mock.calls[0][1]).toMatchObject({ telemetry_enabled: true, assignments: [assignment] });
+  });
 });

@@ -95,7 +95,7 @@ export function SkillRuntimeSection({ projectId }: { projectId: string }) {
       <div className="flex items-center gap-3"><Button type="button" onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save Runtime"}</Button>{save.error ? <p className="text-destructive text-xs">Could not save runtime settings.</p> : null}</div>
 
       <div className="space-y-2 border-t pt-4">
-        <h4 className="text-sm font-medium">Recent Resolution Events</h4>
+        <h4 className="text-sm font-medium">Recent Runtime Events</h4>
         {query.data.recent_events.length === 0 ? <p className="text-muted-foreground text-xs">No opted-in runtime events have been recorded.</p> : query.data.recent_events.slice(0, 25).map((event) => (
           <div key={event.id ?? `${event.trace_id}-${event.skill_id}`} className="grid gap-1 rounded-md border px-3 py-2 text-xs md:grid-cols-[12rem_1fr_10rem]">
             <code>{event.trace_id}</code><span>{event.event_type}: {event.skill_id ?? "runtime"}</span><span className="text-muted-foreground">{event.reason_code ?? "—"}</span>
