@@ -3,11 +3,24 @@
 Railway hosts both active environments. Development cut over on 2026-08-09, and production cut over
 on 2026-08-10. Each environment has its own Web, Gateway, and Postgres instances.
 
-| Service | Config-as-code file | Development branch | Production branch |
-| --- | --- | --- | --- |
-| Gateway | `/railway/gateway.json` | `dev` | `main` |
-| Web | `/railway/web.json` | `dev` | `main` |
-| Postgres | Railway-managed Postgres | n/a | n/a |
+| Service | Development branch | Production branch |
+| --- | --- | --- |
+| Gateway | `dev` | `main` |
+| Web | `dev` | `main` |
+| Postgres | n/a | n/a |
+
+Service source, build, and deploy settings, the Postgres database and volume, and the names of every
+service variable are defined in [`.railway/railway.ts`](../.railway/railway.ts) (Railway Config as
+Code). `railway config apply` deletes anything that file does not declare, so add new variables to it
+before setting them in the dashboard. Domains are not managed there. To change settings:
+
+```bash
+railway link --project 3647f696-1766-459a-ac3f-0482e5a1f26c --environment dev
+railway config plan
+railway config apply
+```
+
+Repeat with `--environment production` after the Development change is verified.
 
 Keep each repository-backed service root directory at `/`. The Gateway Dockerfile is intentionally
 located at the repository root because Railway builds it from the monorepo root. Set Gateway

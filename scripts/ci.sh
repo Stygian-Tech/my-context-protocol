@@ -42,9 +42,6 @@ run_logged() {
 header "Bun workspace install"
 bun install --frozen-lockfile
 
-header "Railway config"
-jq empty railway/gateway.json railway/web.json
-
 # ---------------------------------------------------------------------------
 # Frontend checks (parallel sub-jobs)
 # ---------------------------------------------------------------------------
