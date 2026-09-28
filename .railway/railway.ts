@@ -55,6 +55,9 @@ export default defineRailway((ctx, project) => {
       healthcheckPath: "/health",
       healthcheckTimeout: 600,
       restartPolicyType: "ALWAYS",
+      // Keep the Gateway awake: its retention, billing and analytics schedulers only run while
+      // the process is up, and MCP clients should not pay a cold start.
+      sleepApplication: false,
     },
     env: preserved(isProduction ? [...gatewayVariables, ...productionOnlyGatewayVariables] : gatewayVariables),
   });
@@ -71,6 +74,7 @@ export default defineRailway((ctx, project) => {
       healthcheckPath: "/",
       healthcheckTimeout: 300,
       restartPolicyType: "ALWAYS",
+      sleepApplication: false,
     },
     env: preserved(webVariables),
   });
