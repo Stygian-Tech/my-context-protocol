@@ -909,6 +909,9 @@ private func withMcpToolNamingApp(
         let (apply, restore) = mcpToolNamingTemporaryEnv([
             "USE_SQLITE": "1",
             "USE_MEMORY_SESSIONS": "1",
+            // The retention scheduler prunes once at boot; its deletes race this suite's inserts and
+            // lock the shared in-memory SQLite database.
+            "DISABLE_SKILL_USAGE_RETENTION_SCHEDULER": "1",
             "MCP_OAUTH_ENABLED": "0",
             "FRONTEND_URL": "http://localhost:3000",
             "DATABASE_URL": nil,
