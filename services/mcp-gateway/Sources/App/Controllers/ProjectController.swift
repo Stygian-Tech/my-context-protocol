@@ -1164,8 +1164,54 @@ struct ProjectController {
         let embedding_model: String?
         let feedback_issue_creation_enabled: Bool
         let provider_preferences_json: String?
-        let assignments: [SkillAssignment]
-        let recent_events: [SkillRuntimeEvent]
+        let assignments: [RuntimeAssignmentResponse]
+        let recent_events: [RuntimeEventResponse]
+    }
+
+    /// Browser shape for a saved assignment. Encoding the Fluent model directly leaks camelCase
+    /// property names, which the dashboard cannot read or resubmit.
+    struct RuntimeAssignmentResponse: Content, Equatable {
+        let id: String?
+        let skill_id: String
+        let scope: String
+        let activation_mode: String
+        let target_type: String
+        let target_id: String
+        let required: Bool
+        let priority: Int
+
+        init(_ assignment: SkillAssignment) {
+            id = assignment.id?.uuidString
+            skill_id = assignment.skillId
+            scope = assignment.scope
+            activation_mode = assignment.activationMode
+            target_type = assignment.targetType
+            target_id = assignment.targetId
+            required = assignment.required
+            priority = assignment.priority
+        }
+    }
+
+    /// Browser shape for a diagnostic runtime event. Omits client identity, request hashes,
+    /// detail JSON, and release attribution, which stay server-side.
+    struct RuntimeEventResponse: Content, Equatable {
+        let id: String?
+        let trace_id: String
+        let event_type: String
+        let skill_id: String?
+        let reason_code: String?
+        let score: Double?
+        let created_at: String?
+
+        init(_ event: SkillRuntimeEvent) {
+            id = event.id?.uuidString
+            trace_id = event.traceId.uuidString
+            event_type = event.eventType
+            skill_id = event.skillId
+            reason_code = event.reasonCode
+            score = event.score
+            created_at = event.createdAt.map { ProjectController.formatDate($0) }
+        }
     }
 
     static func runtimeSettings(req: Request) async throws -> RuntimeSettingsResponse {
@@ -1304,7 +1350,9 @@ struct ProjectController {
         return .init(telemetry_enabled: settings.telemetryEnabled, telemetry_retention_days: settings.telemetryRetentionDays,
               semantic_enabled: false, embedding_provider: nil,
               embedding_model: nil, feedback_issue_creation_enabled: settings.feedbackIssueCreationEnabled,
-              provider_preferences_json: settings.providerPreferencesJson, assignments: scopedAssignments, recent_events: events)
+              provider_preferences_json: settings.providerPreferencesJson,
+              assignments: scopedAssignments.map(RuntimeAssignmentResponse.init),
+              recent_events: events.map(RuntimeEventResponse.init))
     }
 
     private static func apiKeyResponse(_ k: ApiKey, projectId: UUID) -> ApiKeyResponse {
