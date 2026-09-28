@@ -104,14 +104,8 @@ domain fails closed with HTTP 503.
 
 Verified custom domains remain stored when an account loses Pro, but runtime routing requires current Pro entitlement. Routing resumes automatically after the account regains Pro access.
 
-Deploy production from the repository root:
-
-```bash
-bash scripts/railway-deploy-production.sh main Gateway "$(git rev-parse HEAD)"
-```
-
-GitHub Actions uses the same script on `main` and expects a production-scoped
-`RAILWAY_PRODUCTION_TOKEN` secret in the protected `production` GitHub environment.
+Production deploys through Railway's GitHub integration: merge `dev` into `main`, and Railway
+builds `main` once CI passes. See [`railway/README.md`](../../railway/README.md).
 
 ### Troubleshooting
 

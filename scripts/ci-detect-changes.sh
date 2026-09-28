@@ -61,7 +61,7 @@ filter_changed() {
 
 filter_changed web \
   'apps/web/**' \
-  'railway/web.json' \
+  '.railway/**' \
   'packages/**' \
   'package.json' \
   'bun.lock' \
@@ -72,7 +72,7 @@ filter_changed web \
 
 filter_changed mcp_gateway \
   'services/mcp-gateway/**' \
-  'railway/gateway.json' \
+  '.railway/**' \
   'scripts/ci.sh' \
   'scripts/ci-detect-changes.sh' \
   '.github/workflows/ci.yml'

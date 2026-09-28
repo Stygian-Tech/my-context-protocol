@@ -3,11 +3,24 @@
 Railway hosts both active environments. Development cut over on 2026-08-09, and production cut over
 on 2026-08-10. Each environment has its own Web, Gateway, and Postgres instances.
 
-| Service | Config-as-code file | Development branch | Production branch |
-| --- | --- | --- | --- |
-| Gateway | `/railway/gateway.json` | `dev` | `main` |
-| Web | `/railway/web.json` | `dev` | `main` |
-| Postgres | Railway-managed Postgres | n/a | n/a |
+| Service | Development branch | Production branch |
+| --- | --- | --- |
+| Gateway | `dev` | `main` |
+| Web | `dev` | `main` |
+| Postgres | n/a | n/a |
+
+Service source, build, and deploy settings, the Postgres database and volume, and the names of every
+service variable are defined in [`.railway/railway.ts`](../.railway/railway.ts) (Railway Config as
+Code). `railway config apply` deletes anything that file does not declare, so add new variables to it
+before setting them in the dashboard. Domains are not managed there. To change settings:
+
+```bash
+railway link --project 3647f696-1766-459a-ac3f-0482e5a1f26c --environment dev
+railway config plan
+railway config apply
+```
+
+Repeat with `--environment production` after the Development change is verified.
 
 Keep each repository-backed service root directory at `/`. The Gateway Dockerfile is intentionally
 located at the repository root because Railway builds it from the monorepo root. Set Gateway
@@ -29,15 +42,15 @@ Set Web's server-only `BACKEND_URL` to `http://gateway.railway.internal:8080` in
 Keep `NEXT_PUBLIC_API_URL` on the public API origin because browser requests cannot use Railway's
 private network.
 
-GitHub Actions deploys the exact tested `dev` SHA to Development after pushes to `dev`. Production
-deploys are manual workflow dispatches from `main`, run through the protected `production` GitHub
-environment, and require its production-scoped Railway token. The scripts fail closed unless HEAD,
-the GitHub event SHA, and the current remote branch tip all match. Gateway deploys before Web.
+Deploys use Railway's GitHub integration. Gateway and Web are connected to
+`Stygian-Tech/my-context-protocol` on `dev` in Development and `main` in Production, with
+**Wait for CI** enabled, so Railway deploys a pushed commit only after its GitHub checks pass.
+Each service's `watchPatterns` decide whether a commit rebuilds it; a commit that touches none of
+them shows as `SKIPPED`. Railway keeps the previous deployment serving until the new one passes its
+healthcheck. Gateway and Web deploy independently, so keep Gateway changes backward-compatible with
+the currently deployed Web. Promote to Production by merging `dev` into `main`.
 
-Store the Development token as `RAILWAY_DEVELOPMENT_TOKEN` and the Production token as
-`RAILWAY_PRODUCTION_TOKEN`. Keep each token scoped to this project and its corresponding
-environment. Do not share database references, tokens, or public-origin variables between
-environments.
+Do not share database references, tokens, or public-origin variables between environments.
 
 Railway terminates TLS for the product wildcard and tenant custom domains. The Gateway provisions
 tenant domains through Railway's API when `RAILWAY_PROJECT_TOKEN` is set on the Gateway service;
@@ -47,7 +60,7 @@ and production runbooks under `docs/runbooks/` for guarded database-copy and DNS
 ## Tenant custom-domain TLS
 
 For each environment, set a project token as the Gateway runtime secret `RAILWAY_PROJECT_TOKEN`.
-The GitHub Actions deployment secrets above do **not** configure this runtime secret. Never reuse
+Never reuse
 the Production token in Development. The Gateway sends project tokens using Railway's
 `Project-Access-Token` header; account/workspace `RAILWAY_API_TOKEN` bearer authentication is
 supported, but prefer the narrower project/environment-scoped token.
