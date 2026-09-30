@@ -11,4 +11,4 @@
 | Development deployment | Merge to `dev` | Railway GitHub integration deploys `dev` after CI passes |
 | Production deployment | Merge `dev` into `main` | Railway GitHub integration deploys `main` after CI passes |
 
-CI uses `scripts/ci-detect-changes.sh` for path detection and `scripts/ci.sh` as the shared local/GitHub entrypoint.
+CI uses `scripts/ci.sh` as the shared local/GitHub entrypoint.

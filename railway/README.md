@@ -22,6 +22,10 @@ railway config apply
 
 Repeat with `--environment production` after the Development change is verified.
 
+`railway config plan` always lists `sleepApplication: null → false` for Gateway and Web in both
+environments. Railway reports the field as unset rather than `false` once serverless is off, so the
+declared value never matches and the line is expected noise, not a pending change.
+
 Keep each repository-backed service root directory at `/`. The Gateway Dockerfile is intentionally
 located at the repository root because Railway builds it from the monorepo root. Set Gateway
 database fields to the corresponding `${{Postgres.PG*}}` reference variables so runtime traffic

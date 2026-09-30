@@ -21,17 +21,28 @@ export function assertStripeRedirectUrl(urlString: string): void {
   }
 }
 
-export function assertGitHubInstallUrl(urlString: string): void {
-  const host = hostnameOf(urlString);
-  if (!host || !GITHUB_INSTALL_HOSTS.includes(host)) {
-    throw new Error("untrusted_github_url");
-  }
+/** Allow GitHub itself, or the authenticated installer for this exact project. */
+export function assertGitHubInstallUrl(
+  urlString: string,
+  context?: { origin: string; projectId: string }
+): void {
   try {
-    const u = new URL(urlString);
-    if (u.protocol !== "https:" && u.protocol !== "http:") {
+    const url = new URL(urlString);
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password) {
       throw new Error("untrusted_github_url");
     }
+    if (GITHUB_INSTALL_HOSTS.includes(url.hostname.toLowerCase())) return;
+
+    const projects = url.searchParams.getAll("project_id");
+    if (
+      context &&
+      url.origin === new URL(context.origin).origin &&
+      url.pathname === "/api/auth/github/app/install" &&
+      projects.length === 1 &&
+      projects[0].toLowerCase() === context.projectId.toLowerCase()
+    ) return;
   } catch {
     throw new Error("untrusted_github_url");
   }
+  throw new Error("untrusted_github_url");
 }

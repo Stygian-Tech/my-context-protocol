@@ -15,25 +15,6 @@ permissions:
   contents: read
 
 jobs:
-  changes:
-    name: Detect changed paths
-    runs-on: ubuntu-latest
-    outputs:
-      web: ${{ steps.filter.outputs.web }}
-      mcp_gateway: ${{ steps.filter.outputs.mcp_gateway }}
-      packages: ${{ steps.filter.outputs.packages }}
-      ci: ${{ steps.filter.outputs.ci }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Detect changed paths
-        id: filter
-        env:
-          GITHUB_EVENT_PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash scripts/ci-detect-changes.sh
-
   ci:
     name: Test and build
     runs-on: macos-latest

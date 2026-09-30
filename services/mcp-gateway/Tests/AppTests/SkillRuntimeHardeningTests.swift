@@ -307,10 +307,15 @@ struct SkillRuntimeHardeningTests {
     @Test("Package support files are persisted with bounded relative paths and checksums")
     func packageFilePersistence() async throws {
         try await TestProcessEnvGate.run {
-            let keys = ["USE_SQLITE", "USE_MEMORY_SESSIONS", "DATABASE_URL", "SUPABASE_DB_URL"]
+            let keys = [
+                "USE_SQLITE", "USE_MEMORY_SESSIONS", "DATABASE_URL", "SUPABASE_DB_URL",
+                "DISABLE_SKILL_USAGE_RETENTION_SCHEDULER",
+            ]
             let saved = Dictionary(uniqueKeysWithValues: keys.map { ($0, ProcessInfo.processInfo.environment[$0]) })
             setenv("USE_SQLITE", "1", 1)
             setenv("USE_MEMORY_SESSIONS", "1", 1)
+            // The retention scheduler prunes once at boot and can lock the in-memory database.
+            setenv("DISABLE_SKILL_USAGE_RETENTION_SCHEDULER", "1", 1)
             unsetenv("DATABASE_URL")
             unsetenv("SUPABASE_DB_URL")
             defer {
