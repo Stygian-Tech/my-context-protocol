@@ -208,6 +208,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project-dashboard-summary", projectId] });
       queryClient.invalidateQueries({ queryKey: ["account-dashboard-summary"] });
+      resumedRepository.current = null;
       setShowForm(false);
       setRepoFilter("");
       reset({ full_name: "", branch: "main" });
@@ -399,6 +400,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
                   type="button"
                   variant="outline"
                   onClick={() => {
+                    resumedRepository.current = null;
                     setShowForm(false);
                     setRepoFilter("");
                     reset({ full_name: "", branch: "main" });
