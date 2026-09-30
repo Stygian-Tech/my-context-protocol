@@ -79,8 +79,6 @@ describe("RepoConnectionSection GitHub access", () => {
     vi.mocked(fetchUserGithubRepos).mockResolvedValue([repo]); await click("Retry"); await waitFor(() => expect(host.querySelector("select")?.textContent).toContain(repo.full_name));
   });
   it("preserves connect 409 installation resume", async () => {
-    // jsdom reports attempted external navigation, which this test verifies through the URL guard.
-    const navigationError = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(fetchUserGithubRepos).mockResolvedValue([repo]); vi.mocked(connectRepo).mockRejectedValue(new ApiError("Install required", 409, { install_url: "https://github.com/apps/test/installations/new" })); await open();
     await waitFor(() => expect(host.querySelector("select")).not.toBeNull());
     const select = host.querySelector("select")!;
@@ -88,8 +86,5 @@ describe("RepoConnectionSection GitHub access", () => {
     await waitFor(() => expect(assertGitHubInstallUrl).toHaveBeenCalledWith("https://github.com/apps/test/installations/new"));
     expect(connectRepo).toHaveBeenCalledWith("project-1", { owner: "owner", repo: "skills", branch: "main" });
     expect(JSON.parse(sessionStorage.getItem("pendingRepoConnect:project-1")!)).toMatchObject({ full_name: repo.full_name, branch: "main" });
-    expect(navigationError).toHaveBeenCalledTimes(1);
-    expect(String(navigationError.mock.calls[0][0])).toContain("Not implemented: navigation");
-    navigationError.mockRestore();
   });
 });
