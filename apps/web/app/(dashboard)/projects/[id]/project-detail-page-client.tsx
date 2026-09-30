@@ -27,7 +27,10 @@ export function ProjectDetailPageClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const tab = searchParams.get("tab") ?? "overview";
+  // Legacy connect callbacks omit tab; mount the repository flow to consume the callback.
+  const tab = searchParams.get("github_app_installed") === "1"
+    ? "repo"
+    : searchParams.get("tab") ?? "overview";
   const tabList = useMemo(
     () => ["overview", "repo", "releases", "runtime", "api-keys", "logs"] as const,
     []

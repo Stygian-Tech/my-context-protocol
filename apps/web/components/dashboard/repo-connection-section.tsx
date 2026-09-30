@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -59,6 +59,8 @@ function reposErrorMessage(err: unknown): string {
 
 export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps) {
   const [showForm, setShowForm] = useState(false);
+  const resumedRepository = useRef<string | null>(null);
+  const [installUrl, setInstallUrl] = useState("");
   const [repoFilter, setRepoFilter] = useState("");
   const [syncError, setSyncError] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -102,6 +104,14 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
   /* eslint-disable-next-line react-hooks/incompatible-library -- form watch for dependent UI */
   const fullName = watch("full_name");
 
+  useEffect(() => {
+    const params = new URLSearchParams({
+      project_id: projectId,
+      return_to: `${window.location.origin}/projects/${encodeURIComponent(projectId)}?tab=repo`,
+    });
+    setInstallUrl(`/api/auth/github/app/install?${params}`);
+  }, [projectId]);
+
   // Refresh access after installation, even when no repository was selected yet.
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -120,6 +130,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
           branch: string;
         };
         sessionStorage.removeItem(pendingConnectKey);
+        resumedRepository.current = parsed.full_name;
         setShowForm(true);
         reset({ full_name: parsed.full_name, branch: parsed.branch || "main" });
       } catch {
@@ -134,6 +145,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
       }
     }
 
+    params.set("tab", "repo");
     params.delete("github_app_installed");
     params.delete("resume_owner");
     params.delete("resume_repo");
@@ -144,6 +156,9 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
 
   useEffect(() => {
     if (!reposQuery.data?.length || !fullName) return;
+    // Preserve an explicitly chosen branch when installation resumes a connection.
+    if (resumedRepository.current === fullName) return;
+    resumedRepository.current = null;
     const row = reposQuery.data.find((r) => r.full_name === fullName);
     if (row) {
       setValue("branch", row.default_branch || "main");
@@ -402,7 +417,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
             <Button
               variant="outline"
               nativeButton={false}
-              render={<a href={`/api/auth/github/app/install?project_id=${encodeURIComponent(projectId)}`} />}
+              render={<a href={installUrl} />}
             >
               Configure GitHub Access
             </Button>
