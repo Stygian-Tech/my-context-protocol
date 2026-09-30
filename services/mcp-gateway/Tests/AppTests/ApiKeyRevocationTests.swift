@@ -212,6 +212,9 @@ private func withApiKeyRevocationApp(
         let (apply, restore) = apiKeyRevocationTemporaryEnv([
             "USE_SQLITE": "1",
             "USE_MEMORY_SESSIONS": "1",
+            // The retention scheduler prunes once at boot; its deletes race this suite's writes
+            // and lock the shared in-memory SQLite database.
+            "DISABLE_SKILL_USAGE_RETENTION_SCHEDULER": "1",
             "MCP_OAUTH_ENABLED": "0",
             "FRONTEND_URL": "http://localhost:3000",
             "DATABASE_URL": nil,

@@ -56,7 +56,7 @@ struct McpPingRouteTests {
         var saved: [String: String?] = [:]
         let keys = [
             "USE_SQLITE", "USE_MEMORY_SESSIONS", "MCP_OAUTH_ENABLED", "FRONTEND_URL",
-            "DATABASE_URL", "SUPABASE_DB_URL",
+            "DATABASE_URL", "SUPABASE_DB_URL", "DISABLE_SKILL_USAGE_RETENTION_SCHEDULER",
         ]
         for k in keys {
             saved[k] = ProcessInfo.processInfo.environment[k]
@@ -64,6 +64,8 @@ struct McpPingRouteTests {
         let apply: () -> Void = {
             setenv("USE_SQLITE", "1", 1)
             setenv("USE_MEMORY_SESSIONS", "1", 1)
+            // The retention scheduler prunes once at boot and can lock the in-memory database.
+            setenv("DISABLE_SKILL_USAGE_RETENTION_SCHEDULER", "1", 1)
             setenv("MCP_OAUTH_ENABLED", "0", 1)
             setenv("FRONTEND_URL", "http://localhost:3000", 1)
             setenv("DATABASE_URL", "", 1)

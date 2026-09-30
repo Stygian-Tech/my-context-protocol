@@ -458,6 +458,10 @@ private func withHardeningApp(
 ) async throws {
     try await TestProcessEnvGate.run {
         let prevEnv = AppEnvironment._testOverrideAppEnv
+        // The retention scheduler prunes once at boot; its deletes race this suite's writes and
+        // lock the shared in-memory SQLite database.
+        var env = env
+        env["DISABLE_SKILL_USAGE_RETENTION_SCHEDULER"] = "1"
         let (apply, restore) = hardeningTemporaryEnv(env)
         AppEnvironment._testOverrideAppEnv = appEnv
         apply()
