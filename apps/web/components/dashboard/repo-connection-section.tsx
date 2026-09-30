@@ -102,11 +102,15 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
   /* eslint-disable-next-line react-hooks/incompatible-library -- form watch for dependent UI */
   const fullName = watch("full_name");
 
-  // After GitHub App install, resume the connect form and strip callback query params.
+  // Refresh access after installation, even when no repository was selected yet.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("github_app_installed") !== "1") return;
+
+    void queryClient.invalidateQueries({ queryKey: ["github-repos"], refetchType: "none" });
+    setShowForm(true);
+    setRepoFilter("");
 
     const stored = sessionStorage.getItem(pendingConnectKey);
     if (stored) {
@@ -134,9 +138,9 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
     params.delete("resume_owner");
     params.delete("resume_repo");
     const qs = params.toString();
-    const path = window.location.pathname + (qs ? `?${qs}` : "");
+    const path = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
     window.history.replaceState({}, "", path);
-  }, [projectId, pendingConnectKey, reset]);
+  }, [projectId, pendingConnectKey, queryClient, reset]);
 
   useEffect(() => {
     if (!reposQuery.data?.length || !fullName) return;
@@ -297,8 +301,9 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
           )}
           {reposQuery.isSuccess && reposQuery.data.length === 0 && (
             <p className="text-muted-foreground mb-4 text-sm">
-              No repositories found for this account. Create a repo on GitHub or check
-              organization access, then try again.
+              No repositories are accessible to MyContextProtocol yet. Configure GitHub
+              access to install the app or grant access to the repository containing your
+              skills, then refresh the list.
             </p>
           )}
           {reposQuery.isSuccess && reposQuery.data.length > 0 && (
@@ -393,6 +398,25 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
               </div>
             </form>
           )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<a href={`/api/auth/github/app/install?project_id=${encodeURIComponent(projectId)}`} />}
+            >
+              Configure GitHub Access
+            </Button>
+            {reposQuery.isSuccess && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={reposQuery.isFetching}
+                onClick={() => reposQuery.refetch()}
+              >
+                {reposQuery.isFetching ? "Refreshing…" : "Refresh Repositories"}
+              </Button>
+            )}
+          </div>
           {reposQuery.isSuccess && reposQuery.data.length === 0 && (
             <div className="flex gap-2 pt-2">
               <Button
