@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ReleaseStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import { shortCommitLabel } from "@/lib/commit-display";
 import { pluralEn } from "@/lib/pluralize";
 import { formatLocalDateTime } from "@/lib/format-local-time";
@@ -97,6 +98,15 @@ function statusVariant(status: ReleaseStatus) {
 }
 
 export function ReleaseTable({ projectId }: ReleaseTableProps) {
+  // Reset dialog, mutation and error state when navigating between projects.
+  return <ProjectReleaseTable key={projectId} projectId={projectId} />;
+}
+
+function ProjectReleaseTable({ projectId }: ReleaseTableProps) {
+  const [activationErrors, setActivationErrors] = useState<Record<string, {
+    message: string;
+    needsMetadataReview: boolean;
+  }>>({});
   const queryClient = useQueryClient();
   const pathname = usePathname();
   const router = useRouter();
@@ -225,6 +235,27 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
 
   const activateMutation = useMutation({
     mutationFn: (releaseId: string) => activateRelease(projectId, releaseId),
+    onMutate: (releaseId) => {
+      setActivationErrors((current) => {
+        const next = { ...current };
+        delete next[releaseId];
+        return next;
+      });
+    },
+    onError: (error, releaseId) => {
+      const detail = error instanceof ApiError
+        ? formatApiErrorDetail(error.body).trim()
+        : "";
+      setActivationErrors((current) => ({
+        ...current,
+        [releaseId]: {
+          message: detail || "Could not activate this release. Try again.",
+          needsMetadataReview:
+            error instanceof ApiError && error.status === 400 &&
+            detail.includes("compiled skills") && detail.includes("ready"),
+        },
+      }));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["releases", projectId] });
       queryClient.invalidateQueries({
@@ -281,7 +312,9 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
             const mcWarn = release.mcp_metadata_warning_skills ?? 0;
             const hasMcpMetadataIssues = mcBlock > 0 || mcWarn > 0;
             // Top-align only when content is tall or multi-part; warn-only MCP uses align-middle so the card centers in the row.
-            const useTopErrorCell = Boolean(errSummary) || mcBlock > 0;
+            const activationError = activationErrors[release.id];
+            const useTopErrorCell =
+              Boolean(errSummary) || mcBlock > 0 || Boolean(activationError);
             const bodyChanges = release.skill_body_changes_count ?? 0;
 
             return (
@@ -336,6 +369,27 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                   )}
                 >
                   <div className="flex flex-col items-start gap-2 text-left">
+                    {activationError ? (
+                      <div
+                        role="alert"
+                        className="w-full space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-sm text-destructive"
+                      >
+                        <p className="whitespace-pre-wrap break-words">
+                          <span className="font-medium">Activation failed.</span>{" "}
+                          {activationError.message}
+                        </p>
+                        {activationError.needsMetadataReview ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openMcpToFirstBlockingSkill(release.id)}
+                          >
+                            Review MCP Metadata
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {errSummary ? (
                       <button
                         type="button"
@@ -393,7 +447,8 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
                     ) : null}
                     {!errSummary &&
                     release.status !== "failed" &&
-                    !hasMcpMetadataIssues ? (
+                    !hasMcpMetadataIssues &&
+                    !activationError ? (
                       <span className="text-muted-foreground text-sm">—</span>
                     ) : null}
                   </div>
