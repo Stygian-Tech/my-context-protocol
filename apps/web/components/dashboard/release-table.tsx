@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -103,6 +103,11 @@ export function ReleaseTable({ projectId }: ReleaseTableProps) {
 }
 
 function ProjectReleaseTable({ projectId }: ReleaseTableProps) {
+  const metadataNavigationGeneration = useRef(0);
+  useEffect(() => () => {
+    // Invalidate pending metadata navigation before this project leaves the page.
+    metadataNavigationGeneration.current += 1;
+  }, []);
   const [activationErrors, setActivationErrors] = useState<Record<string, {
     message: string;
     needsMetadataReview: boolean;
@@ -130,12 +135,14 @@ function ProjectReleaseTable({ projectId }: ReleaseTableProps) {
   } | null>(null);
 
   function openMcpToFirstBlockingSkill(releaseId: string) {
+    const generation = metadataNavigationGeneration.current;
     void (async () => {
       try {
         const list = await queryClient.fetchQuery({
           queryKey: ["compiled-skills", projectId, releaseId],
           queryFn: () => fetchCompiledSkills(projectId, releaseId),
         });
+        if (generation !== metadataNavigationGeneration.current) return;
         const firstRed = list.find((s) => metadataHealthTier(s) === "red");
         setMcpInitialFocus(
           firstRed
@@ -158,6 +165,7 @@ function ProjectReleaseTable({ projectId }: ReleaseTableProps) {
           });
         }
       } catch {
+        if (generation !== metadataNavigationGeneration.current) return;
         setMcpInitialFocus(null);
         setMetaReleaseId(releaseId);
         setMetaOpen(true);
