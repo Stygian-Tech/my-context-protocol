@@ -8,12 +8,14 @@ import { activateRelease, fetchCompiledSkills, fetchReleases } from "@/lib/proje
 import type { CompiledSkill, Release } from "@/lib/types";
 import { ReleaseTable } from "./release-table";
 
+const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
+
 vi.mock("@/lib/projects-api", () => ({
   activateRelease: vi.fn(), fetchReleases: vi.fn(), fetchCompiledSkills: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/projects/project-1",
-  useRouter: () => ({ replace: vi.fn() }),
+  useRouter: () => navigation,
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("./release-skill-metadata-dialog", () => ({
@@ -149,5 +151,23 @@ describe("ReleaseTable activation feedback", () => {
     expect(host.querySelector('[role="alert"]')).toBeNull();
     expect(host.textContent).not.toContain("Old project failure");
     expect([...row(0).querySelectorAll("button")].find((button) => button.textContent === "Activate")?.disabled).toBe(false);
+  });
+
+  it("does not navigate or reopen old metadata when a lookup finishes after changing projects", async () => {
+    let resolveSkills!: (skills: CompiledSkill[]) => void;
+    const pendingSkills = new Promise<CompiledSkill[]>((resolve) => { resolveSkills = resolve; });
+    vi.mocked(fetchCompiledSkills).mockReturnValueOnce(pendingSkills);
+    vi.mocked(activateRelease).mockRejectedValue(new ApiError("Bad Request", 400, { reason: "All compiled skills must be ready before activation" }));
+    await render(); await click(0);
+    await waitFor(() => expect(row(0).textContent).toContain("Review MCP Metadata"));
+    await click(0, "Review MCP Metadata");
+    expect(fetchCompiledSkills).toHaveBeenCalledWith("project-1", "release-1");
+    vi.mocked(fetchReleases).mockResolvedValue([release("release-1", "project-2"), release("release-2", "project-2")]);
+    await render("project-2");
+    await act(async () => resolveSkills([{ id: "old-blocked-skill", status: "not_publishable", summary: "" } as CompiledSkill]));
+    await waitFor(() => expect(client.isFetching({ queryKey: ["compiled-skills", "project-1", "release-1"] })).toBe(0));
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem("mcp-deep-link-from-ui")).toBeNull();
+    expect(host.querySelector('[data-testid="metadata-dialog"]')).toBeNull();
   });
 });
