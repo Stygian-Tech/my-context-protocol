@@ -962,6 +962,10 @@ private func withMcpOAuthApp(
     try await TestProcessEnvGate.run {
         let prev = AppEnvironment._testOverrideAppEnv
         AppEnvironment._testOverrideAppEnv = "local"
+        // The retention scheduler prunes once at boot; its deletes race this suite's writes and
+        // lock the shared in-memory SQLite database.
+        var env = env
+        env["DISABLE_SKILL_USAGE_RETENTION_SCHEDULER"] = "1"
         let (apply, restore) = mcpOAuthTemporaryEnv(env)
         apply()
         defer {
