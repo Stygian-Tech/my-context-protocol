@@ -6,14 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RepoConnectionSection } from "./repo-connection-section";
 import { connectRepo, fetchRepoConnection, fetchUserGithubRepos } from "@/lib/projects-api";
 import { ApiError } from "@/lib/api";
-import { assertGitHubInstallUrl } from "@/lib/trusted-redirect";
+import * as trustedRedirect from "@/lib/trusted-redirect";
 vi.mock("@/lib/projects-api", () => ({
   fetchRepoConnection: vi.fn(),
   fetchUserGithubRepos: vi.fn(),
   connectRepo: vi.fn(),
   triggerSync: vi.fn(),
 }));
-vi.mock("@/lib/trusted-redirect", () => ({ assertGitHubInstallUrl: vi.fn() }));
 // Exercise the connection flow independently of popup positioning.
 vi.mock("@/components/ui/select", () => ({
   Select: ({ value, onValueChange, children }: {
@@ -49,6 +48,7 @@ describe("RepoConnectionSection GitHub access", () => {
   let root: Root;
   let client: QueryClient;
   beforeEach(() => {
+    vi.spyOn(trustedRedirect, "assertGitHubInstallUrl");
     window.history.replaceState({}, "", "/projects/project-1");
     sessionStorage.clear();
     vi.mocked(fetchRepoConnection).mockResolvedValue(null);
@@ -139,7 +139,8 @@ describe("RepoConnectionSection GitHub access", () => {
   });
   it("preserves connect 409 installation resume", async () => {
     vi.mocked(fetchUserGithubRepos).mockResolvedValue([repo]);
-    vi.mocked(connectRepo).mockRejectedValue(new ApiError("Install required", 409, { install_url: "https://github.com/apps/test/installations/new" }));
+    const installUrl = `${window.location.origin}/api/auth/github/app/install?project_id=project-1&owner=owner&repo=skills&return_to=${encodeURIComponent(`${window.location.origin}/projects/project-1`)}`;
+    vi.mocked(connectRepo).mockRejectedValue(new ApiError("Install required", 409, { install_url: installUrl }));
     await open();
     await waitFor(() => expect(host.querySelector("select")).not.toBeNull());
     const select = host.querySelector("select")!;
@@ -148,8 +149,28 @@ describe("RepoConnectionSection GitHub access", () => {
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await click("Connect");
-    await waitFor(() => expect(assertGitHubInstallUrl).toHaveBeenCalledWith("https://github.com/apps/test/installations/new"));
+    await waitFor(() => expect(trustedRedirect.assertGitHubInstallUrl).toHaveBeenCalledWith(installUrl, { origin: window.location.origin, projectId: "project-1" }));
     expect(connectRepo).toHaveBeenCalledWith("project-1", { owner: "owner", repo: "skills", branch: "main" });
     expect(JSON.parse(sessionStorage.getItem("pendingRepoConnect:project-1")!)).toMatchObject({ full_name: repo.full_name, branch: "main" });
   });
+  it.each([
+    "https://attacker.example/api/auth/github/app/install?project_id=project-1",
+    "/api/auth/github/app/install?project_id=another-project",
+    "/api/auth/github/app/callback?project_id=project-1",
+  ])("rejects an untrusted 409 installer without saving pending selection: %s", async (target) => {
+    const installUrl = new URL(target, window.location.origin).href;
+    vi.mocked(fetchUserGithubRepos).mockResolvedValue([repo]);
+    vi.mocked(connectRepo).mockRejectedValue(new ApiError("Install required", 409, { install_url: installUrl }));
+    await open();
+    await waitFor(() => expect(host.querySelector("select")).not.toBeNull());
+    const select = host.querySelector("select")!;
+    await act(async () => {
+      select.value = repo.full_name;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await click("Connect");
+    await waitFor(() => expect(host.textContent).toContain("Could not connect that repository."));
+    expect(sessionStorage.getItem("pendingRepoConnect:project-1")).toBeNull();
+  });
+
 });

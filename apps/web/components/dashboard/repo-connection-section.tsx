@@ -182,7 +182,7 @@ export function RepoConnectionSection({ projectId }: RepoConnectionSectionProps)
           const installUrl = (err.body as { install_url?: string }).install_url;
           if (installUrl) {
             if (typeof window !== "undefined") {
-              assertGitHubInstallUrl(installUrl);
+              assertGitHubInstallUrl(installUrl, { origin: window.location.origin, projectId });
               sessionStorage.setItem(
                 pendingConnectKey,
                 JSON.stringify({
