@@ -31,8 +31,9 @@ struct FluentSessionDriver: SessionDriver {
                     existing.payload = encoded
                     return existing.update(on: request.db).transform(to: sessionID)
                 }
-                let row = AppSessionRecord(sessionKey: sessionID.string, payload: encoded)
-                return row.save(on: request.db).transform(to: sessionID)
+                // A concurrent logout may have deleted this session after the request
+                // loaded it. Only createSession may create rows; never revive revoked data.
+                return request.eventLoop.makeFailedFuture(Abort(.unauthorized, reason: "Session expired"))
             }
     }
 
