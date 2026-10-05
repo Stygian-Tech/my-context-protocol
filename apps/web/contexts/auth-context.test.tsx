@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +12,11 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(), logout: vi.fn(), getGitHubLoginUrl: vi.fn() }));
 const oldUser = { id: "old", login: "old-user", plan: "free" } as User;
 let auth: ReturnType<typeof useAuth>;
-function Consumer() { auth = useAuth(); return <span>{auth.user?.login ?? "signed-out"}</span>; }
+function Consumer() {
+  const value = useAuth();
+  useEffect(() => { auth = value; }, [value]);
+  return <span>{value.user?.login ?? "signed-out"}</span>;
+}
 
 describe("AuthProvider account changes", () => {
   let host: HTMLDivElement;
