@@ -48,6 +48,10 @@ struct AuthController {
     }
 
     static func githubInitiate(req: Request) async throws -> Response {
+        let prompt = req.query[String.self, at: "prompt"]
+        if let prompt, prompt != "select_account" {
+            throw Abort(.badRequest, reason: "Unsupported GitHub sign-in prompt")
+        }
         guard let clientId = Environment.get("GITHUB_CLIENT_ID"), !clientId.isEmpty else {
             throw Abort(.internalServerError, reason: "GITHUB_CLIENT_ID not configured")
         }
@@ -81,6 +85,9 @@ struct AuthController {
             URLQueryItem(name: "state", value: state),
             URLQueryItem(name: "scope", value: githubOAuthScope),
         ]
+        if let prompt {
+            components.queryItems?.append(URLQueryItem(name: "prompt", value: prompt))
+        }
         guard let url = components.url else {
             throw Abort(.internalServerError, reason: "Invalid OAuth URL")
         }
