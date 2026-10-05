@@ -5,9 +5,11 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   getCurrentUser,
   getGitHubLoginUrl,
@@ -19,7 +21,7 @@ import type { User } from "@/lib/types";
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  loginWithGitHub: (returnTo?: string) => void;
+  loginWithGitHub: (returnTo?: string, selectAccount?: boolean) => void;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -40,21 +42,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const authGeneration = useRef(0);
+  const signingOut = useRef(false);
 
   const loadUser = useCallback(async () => {
+    if (signingOut.current) return;
+    const generation = ++authGeneration.current;
     try {
       const u = await getCurrentUser();
-      // Use functional update: never overwrite existing user with null from a concurrent loadUser
-      setUser((prev) => (u !== null ? u : prev ?? null));
+      if (generation !== authGeneration.current) return;
+      setUser(u);
       // Recovery: redirect immediately when we have user + auth_failed, before any effect re-run
       if (u && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("error") === "auth_failed") {
         window.location.replace("/");
         return;
       }
     } catch {
-      setUser((prev) => (prev ?? null));
+      if (generation === authGeneration.current) setUser(null);
     } finally {
-      setIsLoading(false);
+      if (generation === authGeneration.current) setIsLoading(false);
     }
   }, []);
 
@@ -82,14 +89,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Only fetch when we don't already have a user. Prevents a subsequent loadUser()
-    // (from effect re-run after router.replace) from overwriting valid user with null.
-    if (!authToken && !user) {
+    if (!authToken) {
       queueMicrotask(() => {
         void loadUser();
       });
     }
-  }, [loadUser, user]);
+  }, [loadUser]);
 
   // Recovery: when we have user but URL has auth_failed, do full-page nav so dashboard
   // loads fresh with session cookie (avoids React/Next.js layout transition losing state).
@@ -102,16 +107,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
-  const loginWithGitHub = useCallback((returnTo = "/") => {
+  const loginWithGitHub = useCallback((returnTo = "/", selectAccount = false) => {
     returnTo = safeReturnPath(returnTo);
-    window.location.href = getGitHubLoginUrl(returnTo);
+    window.location.href = getGitHubLoginUrl(returnTo, selectAccount);
   }, []);
 
   const logout = useCallback(async () => {
-    await apiLogout();
-    setUser(null);
-    router.push("/login");
-  }, [router]);
+    if (signingOut.current) return;
+    signingOut.current = true;
+    ++authGeneration.current;
+    try {
+      await apiLogout();
+      setUser(null);
+      setIsLoading(false);
+      queryClient.clear();
+      router.replace("/login?select_account=1");
+    } finally {
+      signingOut.current = false;
+    }
+  }, [router, queryClient]);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, loginWithGitHub, logout, refreshUser: loadUser }}>
