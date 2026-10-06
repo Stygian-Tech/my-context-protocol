@@ -570,6 +570,7 @@ Dashboard APIs:
 
 - `GET|PATCH /projects/:id/skill-runtime` reads or updates scoped assignments, semantic settings, provider preferences, feedback authorization, telemetry consent, and recent trace events.
 - `PATCH /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId` accepts a `runtime` sidecar patch alongside existing MCP metadata.
+- An `activation` object requires a valid `mode`; omitted `intents`, `events`, `tags`, and `examples` default to empty arrays. Supplied list fields must be arrays of strings. The dashboard preserves existing event, tag, and example lists when editing other runtime metadata.
 - `POST /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId/writeback` creates a branch and draft GitHub pull request; it never pushes the default branch.
 
 Detailed runtime telemetry is disabled by default, stores hashes and coarse events rather than prompts or source code, and is pruned using the configured retention period (30 days by default).

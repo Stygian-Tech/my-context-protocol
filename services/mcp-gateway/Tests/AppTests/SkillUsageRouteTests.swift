@@ -7,6 +7,61 @@ import VaporTesting
 
 @Suite("Skill usage dashboard route", .serialized)
 struct SkillUsageRouteTests {
+    @Test("Metadata save accepts partial activation lists and persists clarified runtime")
+    func metadataActivationSave() async throws {
+        try await withSkillUsageRouteApp { app in
+            let suffix = UUID().uuidString.lowercased()
+            let owner = Account(githubId: Int64.random(in: 100_000_000...900_000_000), login: "metadata-" + suffix)
+            try await owner.save(on: app.db)
+            let project = Project(accountId: owner.id!, name: "Metadata route", slug: suffix, subdomain: suffix)
+            try await project.save(on: app.db)
+            let release = Release(projectId: project.id!, commitSha: "metadata-test", status: "ready")
+            try await release.save(on: app.db)
+            let package = SkillPackage(releaseId: release.id!, path: "review/SKILL.md", name: "review")
+            try await package.save(on: app.db)
+            let document = CompiledSkillDocument(
+                schemaVersion: 1, id: "review", name: "Review", description: "Review code",
+                kind: .reference, scope: .task,
+                activation: SkillActivation(mode: .explicit, intents: [], events: [], tags: [], examples: []),
+                enforcement: .required, priority: 50, requires: [], conflictsWith: [], instructions: "Review code",
+                source: SkillSource(repository: nil, path: package.path, revision: "metadata-test", checksum: "abc"),
+                version: "0.0.0", lifecycle: nil,
+                validation: SkillValidationState(clarificationRequired: true,
+                    missingFields: ["kind", "scope", "activation", "enforcement", "version"], warnings: [])
+            )
+            let skill = CompiledSkill(releaseId: release.id!, skillPackageId: package.id!, path: package.path,
+                name: "Review", exposureType: "tool", riskLevel: "low", repoSpecific: false, status: "ready")
+            skill.canonicalJson = SkillRuntimeJSON.encode(document)
+            try await skill.save(on: app.db)
+            let path = "/projects/\(project.id!)/releases/\(release.id!)/compiled-skills/\(skill.id!)"
+            let sessionRequest = Request(application: app, method: .GET, url: URI(path: path),
+                version: .http1_1, headers: [:], remoteAddress: nil, logger: app.logger,
+                on: app.eventLoopGroup.next())
+            let sessionId = try await app.sessions.driver.createSession(["accountId": owner.id!.uuidString], for: sessionRequest).get()
+            let cookie = "\(app.sessions.configuration.cookieName)=\(sessionId.string)"
+            try await app.testing().test(.PATCH, path, beforeRequest: { request in
+                request.headers.replaceOrAdd(name: .cookie, value: cookie)
+                request.headers.replaceOrAdd(name: .origin, value: skillUsageRouteFrontendOrigin)
+                request.headers.contentType = .json
+                request.body = ByteBuffer(string: #"{"exposure_type":"tool","risk_level":"low","status":"ready","runtime":{"kind":"reference","scope":"task","activation":{"mode":"explicit","intents":[]},"enforcement":"required","priority":50,"version":"1.0.0"}}"#)
+            }, afterResponse: { response in
+                #expect(response.status == .ok)
+            })
+            let saved = try #require(try await CompiledSkill.find(skill.id!, on: app.db))
+            let canonical = try #require(SkillRuntimeJSON.decode(CompiledSkillDocument.self, from: saved.canonicalJson))
+            #expect(!saved.clarificationRequired)
+            #expect(!canonical.validation.clarificationRequired)
+            #expect(canonical.validation.missingFields.isEmpty)
+            #expect(canonical.activation == document.activation)
+            #expect(canonical.version == "1.0.0")
+            let override = try #require(try await SkillRuntimeOverride.query(on: app.db)
+                .filter(\.$project.$id == project.id!).filter(\.$skillId == "review").first())
+            let metadata = try #require(SkillRuntimeJSON.decode(SkillRuntimeOverridePatch.self, from: override.metadataJson))
+            #expect(metadata.activation == document.activation)
+            #expect(metadata.version == "1.0.0")
+        }
+    }
+
     @Test("Browser sessions enforce project ownership and validate analytics queries")
     func authorizationAndQueries() async throws {
         try await withSkillUsageRouteApp { app in
