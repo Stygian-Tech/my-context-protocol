@@ -22,6 +22,7 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const returnTo = safeReturnPath(searchParams.get("redirect") ?? "/");
   const loginError = loginErrorMessage(searchParams.get("error"));
+  const selectAccount = searchParams.get("select_account") === "1";
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -75,12 +76,19 @@ function LoginContent() {
             </p>
           ) : null}
           <Button
-            onClick={() => loginWithGitHub(returnTo)}
+            onClick={() => loginWithGitHub(returnTo, selectAccount)}
             className="w-full"
             variant="outline"
           >
             <GithubIcon className="mr-2 h-4 w-4" aria-hidden />
             Sign in with GitHub
+          </Button>
+          <Button
+            onClick={() => loginWithGitHub(returnTo, true)}
+            className="w-full"
+            variant="ghost"
+          >
+            Choose Another GitHub Account
           </Button>
         </CardContent>
       </Card>

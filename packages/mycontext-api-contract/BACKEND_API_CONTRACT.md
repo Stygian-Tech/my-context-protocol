@@ -34,6 +34,7 @@ GET /auth/github?return_to=<url>
 
 - `return_to`: Full URL to redirect the user after successful login (e.g. `http://localhost:3000/` or `http://localhost:3000/projects`). If omitted, the backend uses `FRONTEND_URL` or `CORS_ORIGIN` + `/` when configured.
 - When `FRONTEND_URL` / `CORS_ORIGIN` are set, `return_to` must match one of those origins (open-redirect protection).
+- Optional `prompt=select_account` asks GitHub to show its account chooser. Other prompt values return `400 Bad Request`.
 - No auth required.
 - Backend redirects to GitHub OAuth with a **signed** `state` parameter (HMAC via `ENCRYPTION_KEY`) so the post-login redirect does not rely on in-memory sessions or sticky load balancers.
 - Requires `GITHUB_OAUTH_REDIRECT_URI` and `ENCRYPTION_KEY` (32-byte base64) to be configured.
@@ -94,6 +95,7 @@ POST /auth/logout
 
 - Requires valid session cookie.
 - Invalidates the session.
+- A request that loaded the session before logout cannot recreate it after deletion.
 
 **Response:** `200 OK` or `204 No Content`. Body is ignored.
 
@@ -568,6 +570,7 @@ Dashboard APIs:
 
 - `GET|PATCH /projects/:id/skill-runtime` reads or updates scoped assignments, semantic settings, provider preferences, feedback authorization, telemetry consent, and recent trace events.
 - `PATCH /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId` accepts a `runtime` sidecar patch alongside existing MCP metadata.
+- An `activation` object requires a valid `mode`; omitted `intents`, `events`, `tags`, and `examples` default to empty arrays. Supplied list fields must be arrays of strings. The dashboard preserves existing event, tag, and example lists when editing other runtime metadata.
 - `POST /projects/:id/releases/:releaseId/compiled-skills/:compiledSkillId/writeback` creates a branch and draft GitHub pull request; it never pushes the default branch.
 
 Detailed runtime telemetry is disabled by default, stores hashes and coarse events rather than prompts or source code, and is pruned using the configured retention period (30 days by default).
