@@ -15,6 +15,27 @@ struct SkillActivation: Codable, Equatable, Sendable {
     var events: [String]
     var tags: [String]
     var examples: [String]
+
+    enum CodingKeys: String, CodingKey { case mode, intents, events, tags, examples }
+
+    init(mode: SkillActivationMode, intents: [String], events: [String], tags: [String], examples: [String]) {
+        self.mode = mode
+        self.intents = intents
+        self.events = events
+        self.tags = tags
+        self.examples = examples
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try values.decode(SkillActivationMode.self, forKey: .mode)
+        // Activation lists are optional in metadata requests and source policies. Only
+        // omitted keys receive defaults so malformed supplied values still fail validation.
+        intents = try values.contains(.intents) ? values.decode([String].self, forKey: .intents) : []
+        events = try values.contains(.events) ? values.decode([String].self, forKey: .events) : []
+        tags = try values.contains(.tags) ? values.decode([String].self, forKey: .tags) : []
+        examples = try values.contains(.examples) ? values.decode([String].self, forKey: .examples) : []
+    }
 }
 
 struct SkillRequirement: Codable, Equatable, Sendable {

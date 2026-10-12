@@ -9,6 +9,7 @@ import {
 } from "@/lib/projects-api";
 import { ApiError, formatApiErrorDetail } from "@/lib/api";
 import type { CompiledSkill } from "@/lib/types";
+import { skillActivationPayload } from "@/lib/skill-activation-payload";
 import {
   Dialog,
   DialogContent,
@@ -267,10 +268,7 @@ function SkillEditorRow({
         payload.runtime = {
           kind: runtimeKind,
           scope: runtimeScope,
-          activation: {
-            mode: runtimeActivation,
-            intents: listFromMultiline(useWhenText),
-          },
+          activation: skillActivationPayload(skill.canonical_json, runtimeActivation, listFromMultiline(useWhenText)),
           enforcement: runtimeEnforcement,
           priority: runtimePriority,
           version: runtimeVersion.trim() || "0.0.0",

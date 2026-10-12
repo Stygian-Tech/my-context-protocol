@@ -1,7 +1,7 @@
 import { api, ApiError } from "./api";
 import type { User } from "./types";
 
-export function getGitHubLoginUrl(returnTo = "/"): string {
+export function getGitHubLoginUrl(returnTo = "/", selectAccount = false): string {
   const baseUrl =
     typeof window !== "undefined" ? "/api" : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
   const appUrl =
@@ -9,7 +9,7 @@ export function getGitHubLoginUrl(returnTo = "/"): string {
       ? window.location.origin
       : process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const returnUrl = `${appUrl}${returnTo.startsWith("/") ? returnTo : `/${returnTo}`}`;
-  return `${baseUrl.replace(/\/$/, "")}/auth/github?return_to=${encodeURIComponent(returnUrl)}`;
+  return `${baseUrl.replace(/\/$/, "")}/auth/github?return_to=${encodeURIComponent(returnUrl)}${selectAccount ? "&prompt=select_account" : ""}`;
 }
 
 export async function logout(): Promise<void> {

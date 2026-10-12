@@ -7,6 +7,7 @@ import { fetchProjectSkillUsage } from "@/lib/projects-api";
 import type { SkillUsageCounts, SkillUsageReason, SkillUsageSort, SkillUsageWindow } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChevronDownIcon } from "lucide-react";
 
 const metrics: { key: keyof SkillUsageCounts; label: string; sort?: SkillUsageSort }[] = [
   { key: "surfaced", label: "Surfaced", sort: "surfaced" },
@@ -57,9 +58,12 @@ export function SkillUsageSection({ projectId }: { projectId: string }) {
         <p className="text-muted-foreground mt-1 max-w-3xl text-sm">Observed delivery and resolver activity are separate from agent-reported use. Agent reports provide partial coverage: a missing report is unknown, never a skipped skill.</p>
       </div>
       <label className="flex items-center gap-2 text-sm">Time Window
-        <select aria-label="Skill usage time window" className="bg-background rounded-md border px-3 py-2" value={window} onChange={(event) => { setWindow(event.target.value as SkillUsageWindow); setPage(1); setExpanded(null); }}>
-          <option value="24h">Last 24 Hours</option><option value="7d">Last 7 Days</option><option value="30d">Last 30 Days</option>
-        </select>
+        <span className="relative inline-flex">
+          <select aria-label="Skill usage time window" className="bg-background appearance-none rounded-md border py-2 pl-3 pr-9 focus-visible:outline-2 focus-visible:outline-offset-2" value={window} onChange={(event) => { setWindow(event.target.value as SkillUsageWindow); setPage(1); setExpanded(null); }}>
+            <option value="24h">Last 24 Hours</option><option value="7d">Last 7 Days</option><option value="30d">Last 30 Days</option>
+          </select>
+          <ChevronDownIcon aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        </span>
       </label>
     </div>
     {query.isLoading ? <div role="status" aria-label="Loading skill usage"><Skeleton className="h-48 w-full" /></div> : null}

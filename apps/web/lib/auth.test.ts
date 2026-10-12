@@ -74,6 +74,11 @@ describe("getGitHubLoginUrl (browser)", () => {
     expect(u.startsWith("/api/auth/github?return_to=")).toBe(true);
     expect(u).toContain(encodeURIComponent("https://app.example.com/settings"));
   });
+
+  it("requests an account picker only when explicitly selected", () => {
+    expect(getGitHubLoginUrl("/account", true)).toContain("&prompt=select_account");
+    expect(getGitHubLoginUrl("/account")).not.toContain("prompt=");
+  });
 });
 
 describe("auth api wrappers", () => {
