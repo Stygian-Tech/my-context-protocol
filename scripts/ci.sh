@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared local/GitHub CI entrypoint.
-# Runs Go CLI checks, frontend checks (typecheck, lint, test, build) and Swift checks (test, release build)
-# in parallel. If either side fails its checks, the whole script exits non-zero immediately.
+# Runs Go CLI checks, then frontend checks (typecheck, lint, test, build) and Swift
+# checks (test, release build) in parallel. Any failed check makes the script fail.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

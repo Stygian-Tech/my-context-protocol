@@ -103,7 +103,7 @@ func browserLogin(ctx context.Context, client *Client, noBrowser bool, diagnosti
 	if session == "" {
 		return "", fmt.Errorf("authorization did not return a session cookie")
 	}
-	if origin := resp.Header.Get("X-Context-Frontend-Origin"); origin != "" {
+	if origin := resp.Header.Get("X-Context-Frontend-Origin"); origin != "" && client.WebOrigin == "" {
 		if validated, e := validateURL(origin); e == nil {
 			client.WebOrigin = validated
 		}

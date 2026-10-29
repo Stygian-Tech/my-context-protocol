@@ -190,6 +190,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		if p.URL != "" && p.URL != origin {
 			p.Session = ""
 			p.Project = ""
+			p.WebURL = ""
 		}
 		p.URL = origin
 		if v := o.get("web-url"); v != "" {

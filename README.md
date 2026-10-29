@@ -69,7 +69,7 @@ GitHub Actions is the source of truth for CI. The single workflow at `.github/wo
 bash scripts/ci.sh
 ```
 
-The workflow runs the Bun/Turbo workspace checks and the Swift tests/builds for `services/mcp-gateway`. Railway's GitHub integration deploys `dev` to Development and `main` to Production once those checks pass.
+The workflow runs Go CLI format, vet, tests, and build, the Bun/Turbo workspace checks, and the Swift tests/builds for `services/mcp-gateway`. Railway's GitHub integration deploys `dev` to Development and `main` to Production once those checks pass.
 
 ### Deployment
 

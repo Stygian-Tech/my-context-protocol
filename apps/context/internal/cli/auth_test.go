@@ -24,8 +24,12 @@ func (w loginWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 func TestBrowserLogin(t *testing.T) {
-	for _, wrongCookie := range []bool{false, true} {
-		t.Run(fmt.Sprint(wrongCookie), func(t *testing.T) {
+	for _, tc := range []struct {
+		missing bool
+		web     string
+	}{{false, ""}, {true, ""}, {false, "https://override.example"}} {
+		wrongCookie := tc.missing
+		t.Run(fmt.Sprint(wrongCookie, tc.web), func(t *testing.T) {
 			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/auth/confirm":
@@ -53,9 +57,14 @@ func TestBrowserLogin(t *testing.T) {
 			urls := make(chan string, 1)
 			result := make(chan error, 1)
 			client := newClient(gateway.URL, "", time.Second)
+			client.WebOrigin = tc.web
+			expectedOrigin := tc.web
+			if expectedOrigin == "" {
+				expectedOrigin = "https://frontend.example"
+			}
 			go func() {
 				session, err := browserLogin(ctx, client, true, loginWriter{urls})
-				if !wrongCookie && (session != "credential" || client.WebOrigin != "https://frontend.example") {
+				if !wrongCookie && (session != "credential" || client.WebOrigin != expectedOrigin) {
 					result <- fmt.Errorf("bad credentials or frontend origin")
 					return
 				}

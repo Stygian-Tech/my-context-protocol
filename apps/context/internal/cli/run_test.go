@@ -117,7 +117,7 @@ func TestProfileAndOriginCredentialIsolation(t *testing.T) {
 	}))
 	defer server.Close()
 	c := Config{Profiles: map[string]Profile{
-		"default": {URL: "https://other.example", Session: "other-secret", Project: "other-project"},
+		"default": {URL: "https://other.example", WebURL: "https://old.example", Session: "other-secret", Project: "other-project"},
 		"work":    {URL: server.URL, Session: "work-secret", Project: "work-project"},
 	}}
 	if err := saveConfig(path, c); err != nil {
@@ -135,7 +135,7 @@ func TestProfileAndOriginCredentialIsolation(t *testing.T) {
 		t.Fatal(errs)
 	}
 	c, err := loadConfig(path)
-	if err != nil || c.Profiles["default"].Session != "" || c.Profiles["default"].Project != "" || c.Profiles["work"].Session != "work-secret" {
+	if err != nil || c.Profiles["default"].Session != "" || c.Profiles["default"].Project != "" || c.Profiles["default"].WebURL != "" || c.Profiles["work"].Session != "work-secret" {
 		t.Fatalf("config=%+v err=%v", c, err)
 	}
 }
