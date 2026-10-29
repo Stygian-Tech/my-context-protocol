@@ -10,10 +10,21 @@ Requires Go 1.23 or newer. From this repository:
 
 ```sh
 cd apps/context
-make install                     # installs context into GOBIN or GOPATH/bin
+make install                     # installs ~/.local/bin/context (must be on PATH)
 # Or: make build                 # produces bin/context
 context version
 ```
+
+After a successful install, `context` is available from any working directory.
+The installer checks that its destination is on `PATH` before building. If needed,
+run `export PATH="$HOME/.local/bin:$PATH"`, add that line to `~/.zshrc` (or your
+shell's startup file), and rerun `make install`. No shell configuration is edited
+automatically. A custom destination is supported with `make install BINDIR=/path/on/PATH`
+or `PREFIX=/prefix` (installs into `/prefix/bin`); use an absolute destination
+whose exact spelling appears as a `PATH` entry.
+
+`go install ./cmd/context` remains available for Go users who already have
+`GOBIN` or `GOPATH/bin` on their `PATH`.
 
 Build a versioned binary with `make build VERSION=0.1.0`. Cross compilation uses
 normal Go tooling, for example `GOOS=linux GOARCH=amd64 go build -o bin/context-linux-amd64 ./cmd/context`.
