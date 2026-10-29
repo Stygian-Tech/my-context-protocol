@@ -3,7 +3,7 @@ VERSION ?= dev
 PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 build:
-	go build -trimpath -ldflags "-X main.version=$(VERSION)" -o bin/context ./cmd/context
+	go build -trimpath -ldflags "-X main.version=$(VERSION)" -o bin/myctx ./cmd/myctx
 test:
 	go test -race -cover ./...
 check:

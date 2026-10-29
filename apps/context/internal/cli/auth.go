@@ -49,7 +49,7 @@ func browserLogin(ctx context.Context, client *Client, noBrowser bool, diagnosti
 			once.Do(func() {
 				results <- loginResult{err: fmt.Errorf("GitHub authorization was declined or failed; run auth login to try again")}
 			})
-			http.Error(w, "GitHub authorization failed. Return to Context to retry.", http.StatusBadRequest)
+			http.Error(w, "GitHub authorization failed. Return to MyContextCLI to retry.", http.StatusBadRequest)
 			return
 		}
 		if len(q["auth_token"]) != 1 || q.Get("auth_token") == "" {
@@ -62,7 +62,7 @@ func browserLogin(ctx context.Context, client *Client, noBrowser bool, diagnosti
 			http.Error(w, "Login already received", http.StatusConflict)
 			return
 		}
-		fmt.Fprintln(w, "Authorization received. You can return to Context.")
+		fmt.Fprintln(w, "Authorization received. You can return to MyContextCLI.")
 	})
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 5 * time.Second}
 	defer server.Close()

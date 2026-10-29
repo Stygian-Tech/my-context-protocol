@@ -45,7 +45,7 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 		return nil, nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Context CLI")
+	req.Header.Set("User-Agent", "MyContextCLI")
 	if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}

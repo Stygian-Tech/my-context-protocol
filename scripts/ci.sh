@@ -45,7 +45,7 @@ header "Go CLI format, vet, test, and build"
   test -z "$(gofmt -l cmd internal)"
   go vet ./...
   go test -race -cover ./...
-  go build -trimpath -o bin/context ./cmd/context
+  go build -trimpath -o bin/myctx ./cmd/myctx
 )
 
 header "Bun workspace install"

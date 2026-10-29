@@ -119,7 +119,7 @@ func emit(out io.Writer, b []byte, compact bool) error {
 }
 func encode(out io.Writer, v any) error { return json.NewEncoder(out).Encode(v) }
 func help(out io.Writer, words []string) error {
-	fmt.Fprintln(out, "Context — agent-friendly MyContextProtocol CLI\n\nUsage: context <group> <command> [flags]\n\nAuthentication: auth login [--no-browser] | auth login --session-stdin | auth status | auth logout\nConfiguration: config show | config set --url ORIGIN [--project ID]\nDiscovery: commands (JSON) | api operations (JSON) | help\nRaw API: api METHOD /path [--data JSON|@file|-] [--query key=value]\n\nGlobal flags: --url ORIGIN --web-url ORIGIN --profile NAME --config FILE --project ID --timeout 30s --compact\nRequest flags: --id ID --release-id ID --compiled-skill-id ID --key-id ID\n               --data JSON|@file|- --set field=JSON --query key=value (repeatable)\nEnvironment: CONTEXT_URL, CONTEXT_SESSION, CONTEXT_PROFILE, CONTEXT_CONFIG, CONTEXT_PROJECT\n\nCommands:")
+	fmt.Fprintln(out, "MyContextCLI — agent-friendly MyContextProtocol CLI\n\nUsage: myctx <group> <command> [flags]\n\nAuthentication: auth login [--no-browser] | auth login --session-stdin | auth status | auth logout\nConfiguration: config show | config set --url ORIGIN [--project ID]\nDiscovery: commands (JSON) | api operations (JSON) | help\nRaw API: api METHOD /path [--data JSON|@file|-] [--query key=value]\n\nGlobal flags: --url ORIGIN --web-url ORIGIN --profile NAME --config FILE --project ID --timeout 30s --compact\nRequest flags: --id ID --release-id ID --compiled-skill-id ID --key-id ID\n               --data JSON|@file|- --set field=JSON --query key=value (repeatable)\nEnvironment: MYCTX_URL, MYCTX_WEB_URL, MYCTX_SESSION, MYCTX_PROFILE, MYCTX_CONFIG, MYCTX_PROJECT (legacy CONTEXT_* also supported)\n\nCommands:")
 	prefix := strings.Join(words, " ")
 	for _, op := range Operations {
 		if prefix == "" || strings.HasPrefix(op.Name, prefix) {
@@ -135,7 +135,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	}
 	name := strings.Join(words, " ")
 	if o.get("version") != "" || name == "version" {
-		return encode(out, map[string]string{"name": "Context", "version": version})
+		return encode(out, map[string]string{"name": "MyContextCLI", "version": version})
 	}
 	if o.get("help") != "" || name == "" || name == "help" {
 		return help(out, words)
@@ -163,7 +163,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	}
 	profileName := o.get("profile")
 	if profileName == "" {
-		profileName = os.Getenv("CONTEXT_PROFILE")
+		profileName = environment("PROFILE")
 	}
 	if profileName == "" {
 		profileName = "default"
@@ -171,16 +171,16 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	p := c.Profiles[profileName]
 	origin := o.get("url")
 	if origin == "" {
-		origin = os.Getenv("CONTEXT_URL")
+		origin = environment("URL")
 	}
 	if origin == "" {
 		origin = p.URL
 	}
 	if name == "config show" {
-		return encode(out, map[string]any{"profile": profileName, "url": origin, "web_url": p.WebURL, "project": p.Project, "authenticated": p.Session != "" || os.Getenv("CONTEXT_SESSION") != "", "config": path})
+		return encode(out, map[string]any{"profile": profileName, "url": origin, "web_url": p.WebURL, "project": p.Project, "authenticated": p.Session != "" || environment("SESSION") != "", "config": path})
 	}
 	if origin == "" {
-		return usage("set the gateway origin with --url, CONTEXT_URL, or config set --url")
+		return usage("set the gateway origin with --url, MYCTX_URL, or config set --url")
 	}
 	origin, err = validateURL(origin)
 	if err != nil {
@@ -208,14 +208,14 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		}
 		return encode(out, map[string]bool{"ok": true})
 	}
-	session := os.Getenv("CONTEXT_SESSION")
+	session := environment("SESSION")
 	if session == "" && p.URL == origin {
 		session = p.Session
 	}
 	client := newClient(origin, session, timeout)
 	webURL := o.get("web-url")
 	if webURL == "" {
-		webURL = os.Getenv("CONTEXT_WEB_URL")
+		webURL = environment("WEB_URL")
 	}
 	if webURL == "" && p.URL == origin {
 		webURL = p.WebURL
@@ -283,7 +283,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	var method, route string
 	if len(words) >= 1 && words[0] == "api" {
 		if len(words) != 3 {
-			return usage("usage: context api METHOD /path")
+			return usage("usage: myctx api METHOD /path")
 		}
 		method = strings.ToUpper(words[1])
 		route = words[2]
@@ -299,7 +299,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 			}
 		}
 		if route == "" {
-			return usage("unknown command %q; run context help", name)
+			return usage("unknown command %q; run myctx help", name)
 		}
 	}
 	project := o.get("id")
@@ -307,7 +307,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		project = o.get("project")
 	}
 	if project == "" {
-		project = os.Getenv("CONTEXT_PROJECT")
+		project = environment("PROJECT")
 	}
 	if project == "" && p.URL == origin {
 		project = p.Project
@@ -318,7 +318,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 			key := segment[1:]
 			v := replacements[key]
 			if v == "" {
-				return usage("missing path parameter %s; see context help", key)
+				return usage("missing path parameter %s; see myctx help", key)
 			}
 			if v == "." || v == ".." || strings.ContainsAny(v, "/\\?#%") {
 				return usage("invalid path parameter %s", key)

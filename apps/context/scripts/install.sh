@@ -20,11 +20,11 @@ case ":$PATH:" in
 esac
 
 mkdir -p "$task_install_dir"
-task_install_tmp=$(mktemp -d "$task_install_dir/.context-install.XXXXXX")
+task_install_tmp=$(mktemp -d "$task_install_dir/.myctx-install.XXXXXX")
 trap 'rm -rf "$task_install_tmp"' EXIT HUP INT TERM
 # Build for this machine; a cross-compiled executable would not satisfy installation.
-GOOS= GOARCH= go build -trimpath -ldflags "-X main.version=$task_install_version" -o "$task_install_tmp/context" ./cmd/context
-chmod 755 "$task_install_tmp/context"
-mv -f "$task_install_tmp/context" "$task_install_dir/context"
-printf 'Installed Context at %s/context\n' "$task_install_dir"
-printf '%s\n' 'Run context help from any directory.'
+GOOS= GOARCH= go build -trimpath -ldflags "-X main.version=$task_install_version" -o "$task_install_tmp/myctx" ./cmd/myctx
+chmod 755 "$task_install_tmp/myctx"
+mv -f "$task_install_tmp/myctx" "$task_install_dir/myctx"
+printf 'Installed MyContextCLI at %s/myctx\n' "$task_install_dir"
+printf '%s\n' 'Run myctx help from any directory.'

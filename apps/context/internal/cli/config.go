@@ -21,14 +21,28 @@ type Config struct {
 }
 
 func configPath() (string, error) {
-	if p := os.Getenv("CONTEXT_CONFIG"); p != "" {
+	if p := environment("CONFIG"); p != "" {
 		return p, nil
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "context", "config.json"), nil
+	primary := filepath.Join(dir, "myctx", "config.json")
+	if _, err := os.Stat(primary); err == nil {
+		return primary, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	// Keep the existing file authoritative so account profiles and logout remain shared
+	// with prior installations instead of copying credentials into divergent stores.
+	legacy := filepath.Join(dir, "context", "config.json")
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	return primary, nil
 }
 func loadConfig(path string) (Config, error) {
 	c := Config{Profiles: map[string]Profile{}}
@@ -55,7 +69,7 @@ func saveConfig(path string, c Config) error {
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".context-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".myctx-*")
 	if err != nil {
 		return err
 	}
@@ -82,4 +96,12 @@ func validateURL(raw string) (string, error) {
 		return "", fmt.Errorf("HTTPS required except for loopback development")
 	}
 	return strings.TrimSuffix(u.String(), "/"), nil
+}
+
+// environment prefers branded settings while retaining existing agent automation.
+func environment(key string) string {
+	if value := os.Getenv("MYCTX_" + key); value != "" {
+		return value
+	}
+	return os.Getenv("CONTEXT_" + key)
 }
