@@ -68,3 +68,18 @@ func TestConfigRenamePreservesExistingProfiles(t *testing.T) {
 		t.Fatalf("primary priority: %s %v", actual, err)
 	}
 }
+
+func TestHelpCommandListsAndFiltersCommandsWithoutConfiguration(t *testing.T) {
+	for _, args := range [][]string{nil, {"help"}, {"--help"}} {
+		code, out, errs := invoke(t, "", args...)
+		if code != 0 || !strings.Contains(out, "projects list") || !strings.Contains(out, "keys revoke") {
+			t.Fatalf("help %v omitted commands: code=%d out=%s errors=%s", args, code, out, errs)
+		}
+	}
+	for _, args := range [][]string{{"help", "projects"}, {"projects", "--help"}} {
+		code, out, errs := invoke(t, "", args...)
+		if code != 0 || !strings.Contains(out, "projects list") || !strings.Contains(out, "projects sync") || strings.Contains(out, "keys revoke") {
+			t.Fatalf("focused help %v: code=%d out=%s errors=%s", args, code, out, errs)
+		}
+	}
+}

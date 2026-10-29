@@ -120,10 +120,28 @@ func emit(out io.Writer, b []byte, compact bool) error {
 func encode(out io.Writer, v any) error { return json.NewEncoder(out).Encode(v) }
 func help(out io.Writer, words []string) error {
 	fmt.Fprintln(out, "MyContextCLI — agent-friendly MyContextProtocol CLI\n\nUsage: myctx <group> <command> [flags]\n\nAuthentication: auth login [--no-browser] | auth login --session-stdin | auth status | auth logout\nConfiguration: config show | config set --url ORIGIN [--project ID]\nDiscovery: commands (JSON) | api operations (JSON) | help\nRaw API: api METHOD /path [--data JSON|@file|-] [--query key=value]\n\nGlobal flags: --url ORIGIN --web-url ORIGIN --profile NAME --config FILE --project ID --timeout 30s --compact\nRequest flags: --id ID --release-id ID --compiled-skill-id ID --key-id ID\n               --data JSON|@file|- --set field=JSON --query key=value (repeatable)\nEnvironment: MYCTX_URL, MYCTX_WEB_URL, MYCTX_SESSION, MYCTX_PROFILE, MYCTX_CONFIG, MYCTX_PROJECT (legacy CONTEXT_* also supported)\n\nCommands:")
+	if len(words) > 0 && words[0] == "help" {
+		words = words[1:]
+	}
 	prefix := strings.Join(words, " ")
+	groups := make(map[string][]Operation)
+	var groupOrder []string
 	for _, op := range Operations {
-		if prefix == "" || strings.HasPrefix(op.Name, prefix) {
-			fmt.Fprintf(out, "  %-28s %-6s %s\n      %s\n", op.Name, op.Method, op.Path, op.Description)
+		if prefix != "" && op.Name != prefix && !strings.HasPrefix(op.Name, prefix+" ") {
+			continue
+		}
+		group, _, _ := strings.Cut(op.Name, " ")
+		if len(groups[group]) == 0 {
+			groupOrder = append(groupOrder, group)
+		}
+		groups[group] = append(groups[group], op)
+	}
+	for i, group := range groupOrder {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
+		for _, op := range groups[group] {
+			fmt.Fprintf(out, "  %-28s %s\n", op.Name, op.Description)
 		}
 	}
 	return nil
@@ -137,7 +155,7 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	if o.get("version") != "" || name == "version" {
 		return encode(out, map[string]string{"name": "MyContextCLI", "version": version})
 	}
-	if o.get("help") != "" || name == "" || name == "help" {
+	if o.get("help") != "" || name == "" || (len(words) > 0 && words[0] == "help") {
 		return help(out, words)
 	}
 	if name == "commands" || name == "api operations" {
