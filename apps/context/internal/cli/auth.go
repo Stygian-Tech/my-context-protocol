@@ -29,7 +29,11 @@ func browserLogin(ctx context.Context, client *Client, noBrowser bool, diagnosti
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
 	callback := "http://" + listener.Addr().String() + "/callback?state=" + nonce
 	loginURL := client.Origin + "/auth/cli/github?" + url.Values{"return_to": {callback}}.Encode()
-	tokens := make(chan string, 1)
+	type loginResult struct {
+		token string
+		err   error
+	}
+	results := make(chan loginResult, 1)
 	var once sync.Once
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
@@ -41,12 +45,19 @@ func browserLogin(ctx context.Context, client *Client, noBrowser bool, diagnosti
 			http.Error(w, "Invalid login state", http.StatusBadRequest)
 			return
 		}
+		if len(q["error"]) == 1 && q.Get("error") != "" {
+			once.Do(func() {
+				results <- loginResult{err: fmt.Errorf("GitHub authorization was declined or failed; run auth login to try again")}
+			})
+			http.Error(w, "GitHub authorization failed. Return to Context to retry.", http.StatusBadRequest)
+			return
+		}
 		if len(q["auth_token"]) != 1 || q.Get("auth_token") == "" {
 			http.Error(w, "Missing authorization token", http.StatusBadRequest)
 			return
 		}
 		accepted := false
-		once.Do(func() { tokens <- q.Get("auth_token"); accepted = true })
+		once.Do(func() { results <- loginResult{token: q.Get("auth_token")}; accepted = true })
 		if !accepted {
 			http.Error(w, "Login already received", http.StatusConflict)
 			return
@@ -67,7 +78,11 @@ func browserLogin(ctx context.Context, client *Client, noBrowser bool, diagnosti
 	defer timer.Stop()
 	var token string
 	select {
-	case token = <-tokens:
+	case result := <-results:
+		if result.err != nil {
+			return "", result.err
+		}
+		token = result.token
 	case <-ctx.Done():
 		return "", ctx.Err()
 	case <-timer.C:

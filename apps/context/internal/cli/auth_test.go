@@ -123,3 +123,27 @@ func TestOperationsJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBrowserLoginDenial(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	urls := make(chan string, 1)
+	result := make(chan error, 1)
+	go func() {
+		_, err := browserLogin(ctx, newClient("https://api.example", "", time.Second), true, loginWriter{urls})
+		result <- err
+	}()
+	login, _ := url.Parse(<-urls)
+	callback, _ := url.Parse(login.Query().Get("return_to"))
+	q := callback.Query()
+	q.Set("error", "access_denied")
+	callback.RawQuery = q.Encode()
+	resp, err := http.Get(callback.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if err = <-result; err == nil || !strings.Contains(err.Error(), "declined") {
+		t.Fatalf("expected immediate denial, got %v", err)
+	}
+}

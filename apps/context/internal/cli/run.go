@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -107,7 +108,7 @@ func emit(out io.Writer, b []byte, compact bool) error {
 		b, _ = json.Marshal(map[string]string{"result": string(b)})
 	}
 	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
+	if err := decodeJSON(b, &v); err != nil {
 		return err
 	}
 	enc := json.NewEncoder(out)
@@ -379,7 +380,7 @@ func requestBody(o options, in io.Reader) ([]byte, error) {
 	if len(o["set"]) > 0 {
 		obj := map[string]any{}
 		if len(b) > 0 {
-			if err = json.Unmarshal(b, &obj); err != nil || obj == nil {
+			if err = decodeJSON(b, &obj); err != nil || obj == nil {
 				return nil, fmt.Errorf("--set requires an object body")
 			}
 		}
@@ -390,7 +391,7 @@ func requestBody(o options, in io.Reader) ([]byte, error) {
 				return nil, fmt.Errorf("--set requires field=JSON")
 			}
 			var value any
-			if err = json.Unmarshal([]byte(v), &value); err != nil {
+			if err = decodeJSON([]byte(v), &value); err != nil {
 				return nil, fmt.Errorf("--set %s must be valid JSON (quote strings)", k)
 			}
 			obj[k] = value
@@ -408,4 +409,13 @@ func SortedOperationNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func decodeJSON(b []byte, target any) error {
+	if !json.Valid(b) {
+		return fmt.Errorf("invalid JSON")
+	}
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.UseNumber()
+	return d.Decode(target)
 }
