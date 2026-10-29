@@ -18,9 +18,11 @@ func isolatedConfig(t *testing.T) string {
 	t.Helper()
 	for _, name := range []string{"CONTEXT_URL", "CONTEXT_WEB_URL", "CONTEXT_PROFILE", "CONTEXT_SESSION", "CONTEXT_PROJECT"} {
 		t.Setenv(name, "")
+		t.Setenv(strings.Replace(name, "CONTEXT_", "MYCTX_", 1), "")
 	}
 	path := filepath.Join(t.TempDir(), "context", "config.json")
 	t.Setenv("CONTEXT_CONFIG", path)
+	t.Setenv("MYCTX_CONFIG", "")
 	return path
 }
 

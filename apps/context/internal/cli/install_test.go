@@ -43,7 +43,7 @@ func TestInstallMakesCommandAvailableOutsideCheckout(t *testing.T) {
 set -eu
 while [ "$1" != "-o" ]; do shift; done
 shift
-printf '#!/bin/sh\nprintf "context-install-test\\n"\n' > "$1"
+printf '#!/bin/sh\nprintf "myctx-install-test\\n"\n' > "$1"
 `
 			if err = os.WriteFile(filepath.Join(tools, "go"), []byte(fakeGo), 0755); err != nil {
 				t.Fatal(err)
@@ -80,11 +80,11 @@ printf '#!/bin/sh\nprintf "context-install-test\\n"\n' > "$1"
 			if err != nil {
 				t.Fatalf("make install: %v %s", err, output)
 			}
-			run := exec.Command("/bin/sh", "-c", "context help")
+			run := exec.Command("/bin/sh", "-c", "myctx help")
 			run.Dir = root
 			run.Env = cmd.Env
 			output, err = run.CombinedOutput()
-			if err != nil || string(output) != "context-install-test\n" {
+			if err != nil || string(output) != "myctx-install-test\n" {
 				t.Fatalf("outside-checkout invocation: %v %q", err, output)
 			}
 		})

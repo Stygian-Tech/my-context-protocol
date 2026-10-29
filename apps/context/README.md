@@ -1,6 +1,6 @@
-# Context
+# MyContextCLI
 
-Context is the Go CLI for MyContextProtocol. It exposes every current account,
+MyContextCLI (`myctx`) is the Go CLI for MyContextProtocol. It exposes every current account,
 project, and administrator management route to people and agents. Success output
 is JSON on stdout; errors are JSON on stderr. It uses only the Go standard library.
 
@@ -10,12 +10,12 @@ Requires Go 1.23 or newer. From this repository:
 
 ```sh
 cd apps/context
-make install                     # installs ~/.local/bin/context (must be on PATH)
-# Or: make build                 # produces bin/context
-context version
+make install                     # installs ~/.local/bin/myctx (must be on PATH)
+# Or: make build                 # produces bin/myctx
+myctx version
 ```
 
-After a successful install, `context` is available from any working directory.
+After a successful install, `myctx` is available from any working directory.
 The installer checks that its destination is on `PATH` before building. If needed,
 run `export PATH="$HOME/.local/bin:$PATH"`, add that line to `~/.zshrc` (or your
 shell's startup file), and rerun `make install`. No shell configuration is edited
@@ -23,11 +23,11 @@ automatically. A custom destination is supported with `make install BINDIR=/path
 or `PREFIX=/prefix` (installs into `/prefix/bin`); use an absolute destination
 whose exact spelling appears as a `PATH` entry.
 
-`go install ./cmd/context` remains available for Go users who already have
+`go install ./cmd/myctx` remains available for Go users who already have
 `GOBIN` or `GOPATH/bin` on their `PATH`.
 
 Build a versioned binary with `make build VERSION=0.1.0`. Cross compilation uses
-normal Go tooling, for example `GOOS=linux GOARCH=amd64 go build -o bin/context-linux-amd64 ./cmd/context`.
+normal Go tooling, for example `GOOS=linux GOARCH=amd64 go build -o bin/myctx-linux-amd64 ./cmd/myctx`.
 No Node or Swift runtime is needed to run the CLI.
 
 ## Authenticate
@@ -35,12 +35,12 @@ No Node or Swift runtime is needed to run the CLI.
 Use the gateway/API origin, not a tenant MCP endpoint or the dashboard origin:
 
 ```sh
-context config set --url https://YOUR_GATEWAY_ORIGIN
-context auth login
-context auth status
+myctx config set --url https://YOUR_GATEWAY_ORIGIN
+myctx auth login
+myctx auth status
 ```
 
-Login opens GitHub in your browser. Context binds an ephemeral port on
+Login opens GitHub in your browser. MyContextCLI binds an ephemeral port on
 `127.0.0.1`, validates a random callback nonce, exchanges the single-use handoff,
 and stores the account session in your local config file. `--no-browser` prints
 the login URL for manual opening on the same machine. Login expires after five
@@ -50,42 +50,53 @@ session import instead.
 
 The gateway supplies its configured frontend origin during login so subsequent
 mutations satisfy the existing CSRF policy. Older gateways/session imports need
-`--web-url https://YOUR_DASHBOARD_ORIGIN` or `CONTEXT_WEB_URL`.
+`--web-url https://YOUR_DASHBOARD_ORIGIN` or `MYCTX_WEB_URL`.
 
 For an existing account session:
 
 ```sh
 # Pipe the raw vapor-session cookie value from a secure credential source:
-credential-source | context auth login --session-stdin --web-url https://YOUR_DASHBOARD_ORIGIN
+credential-source | myctx auth login --session-stdin --web-url https://YOUR_DASHBOARD_ORIGIN
 ```
 
-For ephemeral agent/CI authentication, inject `CONTEXT_SESSION`, `CONTEXT_URL`,
-and `CONTEXT_WEB_URL` from a secret manager. A project MCP API key is not an
-account administration credential. Context does not read stdin unless explicitly
+For ephemeral agent/CI authentication, inject `MYCTX_SESSION`, `MYCTX_URL`,
+and `MYCTX_WEB_URL` from a secret manager. A project MCP API key is not an
+account administration credential. MyContextCLI does not read stdin unless explicitly
 requested with `--session-stdin` or `--data -`. It never asks interactive questions.
 `auth logout` revokes the active session and removes the stored credential;
-unset `CONTEXT_SESSION` separately if you provided it through the environment.
+unset `MYCTX_SESSION` (and legacy `CONTEXT_SESSION`, if set) separately if you
+provided it through the environment.
 
-Config lives at the platform user-config directory under `context/config.json`
-(macOS: `~/Library/Application Support/context/config.json`). `--config FILE` or
-`CONTEXT_CONFIG` overrides it. New directories use mode 0700 and files mode 0600
-on Unix. Sessions are plaintext in this private file; use environment injection
+Config lives at the platform user-config directory under `myctx/config.json`
+(macOS: `~/Library/Application Support/myctx/config.json`). `--config FILE` or
+`MYCTX_CONFIG` overrides it (the flag takes precedence). New directories use mode 0700 and files mode 0600
+on Unix. If the new default file does not exist and the old
+`context/config.json` file does, MyContextCLI transparently continues using the old
+file, preserving saved sessions and profiles. Explicit config paths bypass this
+default-path fallback. Sessions are plaintext in this private file; use environment injection
 when persistence is undesirable. Config writes are atomic. Concurrent writes to
 the same config file are not supported.
+
+Environment variables use the `MYCTX_*` prefix: `MYCTX_URL`, `MYCTX_WEB_URL`,
+`MYCTX_SESSION`, `MYCTX_PROFILE`, `MYCTX_PROJECT`, and `MYCTX_CONFIG`. The previous
+`CONTEXT_*` names remain supported as fallbacks when their corresponding
+`MYCTX_*` variable is unset or empty. In particular, `MYCTX_CONFIG` takes priority
+over `CONTEXT_CONFIG`. The repository folder and Go module remain `apps/context`;
+the executable and command package are now `myctx` and `cmd/myctx`.
 
 ## Profiles and defaults
 
 ```sh
-context --profile development config set --url http://localhost:8080 --web-url http://localhost:3000
-context --profile development auth login
-context --profile development config set --project PROJECT_UUID
-context --profile development projects get
-context config show
+myctx --profile development config set --url http://localhost:8080 --web-url http://localhost:3000
+myctx --profile development auth login
+myctx --profile development config set --project PROJECT_UUID
+myctx --profile development projects get
+myctx config show
 ```
 
 Flags take precedence over environment variables, which take precedence over the
-selected profile. Profile defaults to `default` (`CONTEXT_PROFILE` overrides it).
-`--id` overrides `--project`, then `CONTEXT_PROJECT`, then the stored project.
+selected profile. Profile defaults to `default` (`MYCTX_PROFILE` overrides it).
+`--id` overrides `--project`, then `MYCTX_PROJECT`, then the stored project.
 Credentials and project defaults are scoped to the API origin. Changing a
 profile's URL clears its stored session and project. `config show` reports whether
 a credential is present without exposing its value.
@@ -93,22 +104,22 @@ a credential is present without exposing its value.
 ## Agent discovery and requests
 
 ```sh
-context help
-context projects --help
-context commands                  # JSON operation name/method/path/description registry
-context api operations            # same registry
-context projects list --compact
-context projects create --data '{"name":"My Skills","slug":"my-skills"}'
-context projects update --id PROJECT_UUID --set 'name="Shared Skills"'
-context repos connect --id PROJECT_UUID --data '{"owner":"example","repo":"skills","branch":"main"}'
-context projects sync --id PROJECT_UUID
-context releases list --id PROJECT_UUID
-context releases validation --id PROJECT_UUID --release-id RELEASE_UUID
-context releases activate --id PROJECT_UUID --release-id RELEASE_UUID
-context skills list --id PROJECT_UUID --release-id RELEASE_UUID
-context runtime update --id PROJECT_UUID --data @runtime-settings.json
-context logs list --id PROJECT_UUID --query limit=100 --query offset=0
-context skills usage --id PROJECT_UUID --query page=1 --query page_size=100
+myctx help
+myctx projects --help
+myctx commands                  # JSON operation name/method/path/description registry
+myctx api operations            # same registry
+myctx projects list --compact
+myctx projects create --data '{"name":"My Skills","slug":"my-skills"}'
+myctx projects update --id PROJECT_UUID --set 'name="Shared Skills"'
+myctx repos connect --id PROJECT_UUID --data '{"owner":"example","repo":"skills","branch":"main"}'
+myctx projects sync --id PROJECT_UUID
+myctx releases list --id PROJECT_UUID
+myctx releases validation --id PROJECT_UUID --release-id RELEASE_UUID
+myctx releases activate --id PROJECT_UUID --release-id RELEASE_UUID
+myctx skills list --id PROJECT_UUID --release-id RELEASE_UUID
+myctx runtime update --id PROJECT_UUID --data @runtime-settings.json
+myctx logs list --id PROJECT_UUID --query limit=100 --query offset=0
+myctx skills usage --id PROJECT_UUID --query page=1 --query page_size=100
 ```
 
 Flags can appear before or after command words. All response fields and server
@@ -170,8 +181,8 @@ redirects are never followed with account credentials.
 For API operations beyond the named registry:
 
 ```sh
-context api GET /projects
-context api PATCH /projects/PROJECT_UUID --data @project.json
+myctx api GET /projects
+myctx api PATCH /projects/PROJECT_UUID --data @project.json
 ```
 
 Raw requests stay on the configured API origin. This is an application control

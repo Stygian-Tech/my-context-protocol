@@ -7,7 +7,7 @@ Stygian-style monorepo for MyContextProtocol: a hosted MCP gateway that ingests 
 ```text
 .
 ├── apps/
-│   ├── context/                     # Go CLI for agents and account management
+│   ├── context/                     # MyContextCLI (myctx) for agents and account management
 │   └── web/                         # Next.js 16 / Bun dashboard
 ├── packages/
 │   ├── mycontext-api-contract/      # Backend API contract docs
@@ -43,19 +43,24 @@ bun dev
 
 Set the frontend `NEXT_PUBLIC_API_URL` to the backend origin, usually `http://localhost:8080`.
 
-## Context CLI
+## MyContextCLI
 
-The Go CLI exposes the complete account, project, release, skill, runtime, billing,
+MyContextCLI (`myctx`), written in Go, exposes the complete account, project, release, skill, runtime, billing,
 and administrator API with JSON output for agents. Requires Go 1.23+.
 
 ```bash
 cd apps/context
 make install
-context config set --url https://YOUR_GATEWAY_ORIGIN
-context auth login
-context projects list
-context commands
+myctx config set --url https://YOUR_GATEWAY_ORIGIN
+myctx auth login
+myctx projects list
+myctx commands
 ```
+
+Install produces `~/.local/bin/myctx`; `make build` produces `bin/myctx`.
+Environment variables use `MYCTX_*`, with legacy `CONTEXT_*` fallbacks. Existing
+default `context/config.json` profiles remain usable automatically when the new
+`myctx/config.json` file does not exist.
 
 See [the CLI guide](apps/context/README.md) for profiles, automation, all command
 groups, request payloads, and installation. Browser login requires the accompanying
