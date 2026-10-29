@@ -1,5 +1,7 @@
 .PHONY: build test check install
 VERSION ?= dev
+PREFIX ?= $(HOME)/.local
+BINDIR ?= $(PREFIX)/bin
 build:
 	go build -trimpath -ldflags "-X main.version=$(VERSION)" -o bin/context ./cmd/context
 test:
@@ -9,4 +11,4 @@ check:
 	go vet ./...
 	go test -race ./...
 install:
-	go install -trimpath -ldflags "-X main.version=$(VERSION)" ./cmd/context
+	sh scripts/install.sh "$(BINDIR)" "$(VERSION)"
