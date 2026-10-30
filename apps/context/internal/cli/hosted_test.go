@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 type transportFunc func(*http.Request) (*http.Response, error)
@@ -62,5 +63,25 @@ func TestDefaultAuthenticationNeedsNoURLArgument(t *testing.T) {
 	code := Main(context.Background(), []string{"auth", "login", "--session-stdin"}, strings.NewReader("account-session"), &out, &errs, "test")
 	if code != 0 {
 		t.Fatalf("default login: %d %s", code, errs.String())
+	}
+}
+
+func TestDefaultBrowserLoginChecksHostedGateway(t *testing.T) {
+	isolatedConfig(t)
+	oldTransport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = oldTransport })
+	http.DefaultTransport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Scheme+"://"+r.URL.Host != hostedAPIOrigin || r.URL.Path != "/auth/cli/github" || r.Header.Get("Cookie") != "" {
+			t.Fatalf("unexpected preflight %s", r.URL)
+		}
+		return &http.Response{StatusCode: 404, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"error":"Not Found"}`))}, nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var out, errs strings.Builder
+	code := Main(ctx, []string{"auth", "login", "--no-browser"}, strings.NewReader(""), &out, &errs, "test")
+	var payload map[string]any
+	if code != 1 || json.Unmarshal([]byte(errs.String()), &payload) != nil || payload["status"] != float64(404) || !strings.Contains(errs.String(), "does not support CLI login") {
+		t.Fatalf("hosted browser login: %d %s", code, errs.String())
 	}
 }
