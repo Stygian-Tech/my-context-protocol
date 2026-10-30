@@ -27,5 +27,10 @@ jobs:
         with:
           bun-version: 1.3.7
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/context/go.mod
+          cache: false
+
       - name: Run CI script
         run: bash scripts/ci.sh

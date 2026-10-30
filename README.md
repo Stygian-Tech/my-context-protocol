@@ -7,6 +7,7 @@ Stygian-style monorepo for MyContextProtocol: a hosted MCP gateway that ingests 
 ```text
 .
 ├── apps/
+│   ├── context/                     # MyContextCLI (myctx) for agents and account management
 │   └── web/                         # Next.js 16 / Bun dashboard
 ├── packages/
 │   ├── mycontext-api-contract/      # Backend API contract docs
@@ -42,6 +43,35 @@ bun dev
 
 Set the frontend `NEXT_PUBLIC_API_URL` to the backend origin, usually `http://localhost:8080`.
 
+## MyContextCLI
+
+MyContextCLI (`myctx`), written in Go, exposes the complete account, project, release, skill, runtime, billing,
+and administrator API with JSON output for agents. Requires Go 1.23+.
+
+```bash
+cd apps/context
+make install
+myctx auth login
+myctx projects list
+myctx commands
+```
+
+The CLI defaults to the hosted account API at `https://api.mycontextprotocol.dev`.
+For self-hosting or an explicit Development environment, override it with `--url`,
+`MYCTX_URL`, or a saved profile URL. Precedence is flags, environment, profile,
+then hosted default; existing profiles retain their explicit URL. A personal
+tenant MCP endpoint is separate from the account API.
+
+Install produces `~/.local/bin/myctx`; `make build` produces `bin/myctx`.
+Environment variables use `MYCTX_*`, with legacy `CONTEXT_*` fallbacks. Existing
+default `context/config.json` profiles remain usable automatically when the new
+`myctx/config.json` file does not exist.
+
+See [the CLI guide](apps/context/README.md) for profiles, automation, all command
+groups, request payloads, and installation. Browser login requires the accompanying
+gateway changes to be deployed; the CLI detects missing authentication support
+before opening a browser.
+
 ## CI / CD
 
 GitHub Actions is the source of truth for CI. The single workflow at `.github/workflows/ci.yml` calls local scripts so checks can be reproduced outside Actions:
@@ -50,7 +80,7 @@ GitHub Actions is the source of truth for CI. The single workflow at `.github/wo
 bash scripts/ci.sh
 ```
 
-The workflow runs the Bun/Turbo workspace checks and the Swift tests/builds for `services/mcp-gateway`. Railway's GitHub integration deploys `dev` to Development and `main` to Production once those checks pass.
+The workflow runs Go CLI format, vet, tests, and build, the Bun/Turbo workspace checks, and the Swift tests/builds for `services/mcp-gateway`. Railway's GitHub integration deploys `dev` to Development and `main` to Production once those checks pass.
 
 ### Deployment
 
