@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -32,6 +36,12 @@ func TestBrowserLogin(t *testing.T) {
 		t.Run(fmt.Sprint(wrongCookie, tc.web), func(t *testing.T) {
 			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
+				case "/auth/cli/github":
+					if r.Header.Get("Cookie") != "" || r.Header.Get("Authorization") != "" {
+						t.Error("preflight leaked credentials")
+					}
+					w.Header().Set("Location", mockAuthorizationURL(r.URL.Query().Get("return_to")))
+					w.WriteHeader(http.StatusSeeOther)
 				case "/auth/confirm":
 					if r.URL.Query().Get("token") != "handoff" {
 						t.Error("wrong handoff")
@@ -56,7 +66,7 @@ func TestBrowserLogin(t *testing.T) {
 			defer cancel()
 			urls := make(chan string, 1)
 			result := make(chan error, 1)
-			client := newClient(gateway.URL, "", time.Second)
+			client := newClient(gateway.URL, "old-session", time.Second)
 			client.WebOrigin = tc.web
 			expectedOrigin := tc.web
 			if expectedOrigin == "" {
@@ -75,10 +85,10 @@ func TestBrowserLogin(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if u.Path != "/auth/cli/github" {
+			if u.Host != "github.com" || u.Path != "/login/oauth/authorize" {
 				t.Fatal(u.Path)
 			}
-			callback, _ := url.Parse(u.Query().Get("return_to"))
+			callback := callbackFromAuthorization(t, u)
 			q := callback.Query()
 			nonce := q.Get("state")
 			q.Set("state", "invalid")
@@ -134,16 +144,21 @@ func TestOperationsJSON(t *testing.T) {
 }
 
 func TestBrowserLoginDenial(t *testing.T) {
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", mockAuthorizationURL(r.URL.Query().Get("return_to")))
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer gateway.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	urls := make(chan string, 1)
 	result := make(chan error, 1)
 	go func() {
-		_, err := browserLogin(ctx, newClient("https://api.example", "", time.Second), true, loginWriter{urls})
+		_, err := browserLogin(ctx, newClient(gateway.URL, "", time.Second), true, loginWriter{urls})
 		result <- err
 	}()
 	login, _ := url.Parse(<-urls)
-	callback, _ := url.Parse(login.Query().Get("return_to"))
+	callback := callbackFromAuthorization(t, login)
 	q := callback.Query()
 	q.Set("error", "access_denied")
 	callback.RawQuery = q.Encode()
@@ -154,5 +169,119 @@ func TestBrowserLoginDenial(t *testing.T) {
 	resp.Body.Close()
 	if err = <-result; err == nil || !strings.Contains(err.Error(), "declined") {
 		t.Fatalf("expected immediate denial, got %v", err)
+	}
+}
+
+// The production server signs this callback inside opaque OAuth state. A mock may
+// carry it directly so tests can simulate GitHub returning to the bound listener.
+func mockAuthorizationURL(callback string) string {
+	return "https://github.com/login/oauth/authorize?" + url.Values{"client_id": {"test"}, "state": {callback}}.Encode()
+}
+
+func callbackFromAuthorization(t *testing.T, authorization *url.URL) *url.URL {
+	t.Helper()
+	callback, err := url.Parse(authorization.Query().Get("state"))
+	if err != nil || callback.Host == "" {
+		t.Fatalf("missing callback in mock OAuth state: %v", err)
+	}
+	return callback
+}
+
+func TestLoginPreflightFailures(t *testing.T) {
+	cases := []struct {
+		name     string
+		status   int
+		location string
+		message  string
+	}{
+		{"missing route", 404, "", "deploy the accompanying Gateway"},
+		{"unauthorized", 401, "", "HTTP 401"},
+		{"forbidden", 403, "", "HTTP 403"},
+		{"server error", 500, "", "HTTP 500"},
+		{"HTML success", 200, "", "expected a GitHub authorization redirect"},
+		{"missing location", 303, "", "invalid GitHub authorization redirect"},
+		{"missing state", 303, "https://github.com/login/oauth/authorize?client_id=test", "invalid GitHub authorization redirect"},
+		{"missing client ID", 303, "https://github.com/login/oauth/authorize?state=test", "invalid GitHub authorization redirect"},
+		{"duplicate state", 303, "https://github.com/login/oauth/authorize?client_id=test&state=a&state=b", "invalid GitHub authorization redirect"},
+		{"wrong host", 303, "https://evil.test/login/oauth/authorize", "invalid GitHub authorization redirect"},
+		{"userinfo", 303, "https://user:password@github.com/login/oauth/authorize", "invalid GitHub authorization redirect"},
+		{"alternate port", 303, "https://github.com:443/login/oauth/authorize", "invalid GitHub authorization redirect"},
+		{"HTTP", 303, "http://github.com/login/oauth/authorize", "invalid GitHub authorization redirect"},
+		{"wrong path", 303, "https://github.com/login", "invalid GitHub authorization redirect"},
+		{"fragment", 303, "https://github.com/login/oauth/authorize#secret", "invalid GitHub authorization redirect"},
+		{"relative", 303, "/login/oauth/authorize", "invalid GitHub authorization redirect"},
+		{"malformed", 303, "https://github.com/%zz", "invalid GitHub authorization redirect"},
+		{"unexpected permanent redirect", 301, "https://github.com/login/oauth/authorize", "HTTP 301"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var callback string
+			gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				callback = r.URL.Query().Get("return_to")
+				if r.URL.Path != "/auth/cli/github" || r.Header.Get("Cookie") != "" {
+					t.Error("incorrect or authenticated preflight")
+				}
+				if tc.location != "" {
+					w.Header().Set("Location", tc.location)
+				}
+				w.WriteHeader(tc.status)
+				fmt.Fprint(w, `{"error":"gateway detail"}`)
+			}))
+			defer gateway.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			client := newClient(gateway.URL, "saved-secret", time.Second)
+			// Cookie jars must not reintroduce credentials into the anonymous request.
+			client.HTTP.Jar, _ = cookiejar.New(nil)
+			gatewayURL, _ := url.Parse(gateway.URL)
+			client.HTTP.Jar.SetCookies(gatewayURL, []*http.Cookie{{Name: "vapor-session", Value: "jar-secret"}})
+			var diagnostics bytes.Buffer
+			_, err := browserLogin(ctx, client, true, &diagnostics)
+			if err == nil || !strings.Contains(err.Error(), tc.message) {
+				t.Fatalf("got %v, expected %q", err, tc.message)
+			}
+			if diagnostics.Len() != 0 {
+				t.Fatalf("browser URL emitted before preflight success: %s", diagnostics.String())
+			}
+			if tc.status >= 400 {
+				var api *APIError
+				if !errors.As(err, &api) || api.Status != tc.status {
+					t.Fatalf("lost structured status: %v", err)
+				}
+			}
+			if client.Session != "saved-secret" {
+				t.Fatal("preflight mutated saved session")
+			}
+			callbackURL, parseErr := url.Parse(callback)
+			if parseErr != nil || callbackURL.Host == "" {
+				t.Fatalf("missing preflight callback: %q", callback)
+			}
+			listener, listenErr := net.Listen("tcp4", callbackURL.Host)
+			if listenErr != nil {
+				t.Fatalf("failed login leaked callback listener: %v", listenErr)
+			}
+			listener.Close()
+		})
+	}
+}
+
+func TestLoginPreflightCancellation(t *testing.T) {
+	started := make(chan struct{})
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer gateway.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := browserLogin(ctx, newClient(gateway.URL, "", time.Second), true, io.Discard)
+		result <- err
+	}()
+	<-started
+	cancel()
+	if err := <-result; err != context.Canceled {
+		t.Fatalf("got %v", err)
 	}
 }

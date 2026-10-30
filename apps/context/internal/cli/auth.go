@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,23 +13,33 @@ import (
 	"net/url"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
 
 func browserLogin(ctx context.Context, client *Client, noBrowser bool, diagnostics io.Writer) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return "", err
 	}
+	defer listener.Close()
 	nonceBytes := make([]byte, 32)
 	if _, err = rand.Read(nonceBytes); err != nil {
-		listener.Close()
 		return "", err
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
 	callback := "http://" + listener.Addr().String() + "/callback?state=" + nonce
-	loginURL := client.Origin + "/auth/cli/github?" + url.Values{"return_to": {callback}}.Encode()
+	loginURL, err := cliAuthorizationURL(ctx, client, callback)
+	if err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	type loginResult struct {
 		token string
 		err   error
@@ -114,6 +125,49 @@ func browserLogin(ctx context.Context, client *Client, noBrowser bool, diagnosti
 	}
 	return session, nil
 }
+
+// Fetch authorization metadata without sending a stored session or following redirects.
+// The server signs the callback into OAuth state; no browser initiation cookie is needed.
+func cliAuthorizationURL(ctx context.Context, client *Client, callback string) (string, error) {
+	anonymous := *client
+	anonymous.Session = ""
+	httpClient := *client.HTTP
+	httpClient.Jar = nil
+	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	anonymous.HTTP = &httpClient
+	_, response, err := anonymous.request(ctx, "GET", "/auth/cli/github", url.Values{"return_to": {callback}}, nil)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		// net/http parses Location before CheckRedirect, even when redirects are
+		// disabled. Do not print an untrusted malformed redirect URL in errors.
+		if strings.Contains(err.Error(), "failed to parse Location header") {
+			return "", fmt.Errorf("CLI login returned an invalid GitHub authorization redirect")
+		}
+		var api *APIError
+		if errors.As(err, &api) && api.Status == http.StatusNotFound {
+			return "", fmt.Errorf("server does not support CLI login; deploy the accompanying Gateway version or verify the API origin: %w", err)
+		}
+		if !errors.As(err, &api) || response == nil || (response.StatusCode != http.StatusFound && response.StatusCode != http.StatusSeeOther) {
+			return "", err
+		}
+	}
+	if response.StatusCode != http.StatusFound && response.StatusCode != http.StatusSeeOther {
+		return "", fmt.Errorf("CLI login expected a GitHub authorization redirect; verify the API origin and Gateway version")
+	}
+	location := response.Header.Get("Location")
+	target, parseErr := url.Parse(location)
+	if parseErr != nil || target.Scheme != "https" || target.Host != "github.com" || target.User != nil || target.EscapedPath() != "/login/oauth/authorize" || target.Fragment != "" {
+		return "", fmt.Errorf("CLI login returned an invalid GitHub authorization redirect")
+	}
+	query, queryErr := url.ParseQuery(target.RawQuery)
+	if queryErr != nil || len(query["client_id"]) != 1 || query.Get("client_id") == "" || len(query["state"]) != 1 || query.Get("state") == "" {
+		return "", fmt.Errorf("CLI login returned an invalid GitHub authorization redirect")
+	}
+	return target.String(), nil
+}
+
 func openBrowser(raw string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
