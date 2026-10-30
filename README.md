@@ -51,11 +51,16 @@ and administrator API with JSON output for agents. Requires Go 1.23+.
 ```bash
 cd apps/context
 make install
-myctx config set --url https://YOUR_GATEWAY_ORIGIN
 myctx auth login
 myctx projects list
 myctx commands
 ```
+
+The CLI defaults to the hosted account API at `https://api.mycontextprotocol.dev`.
+For self-hosting or an explicit Development environment, override it with `--url`,
+`MYCTX_URL`, or a saved profile URL. Precedence is flags, environment, profile,
+then hosted default; existing profiles retain their explicit URL. A personal
+tenant MCP endpoint is separate from the account API.
 
 Install produces `~/.local/bin/myctx`; `make build` produces `bin/myctx`.
 Environment variables use `MYCTX_*`, with legacy `CONTEXT_*` fallbacks. Existing
@@ -64,7 +69,8 @@ default `context/config.json` profiles remain usable automatically when the new
 
 See [the CLI guide](apps/context/README.md) for profiles, automation, all command
 groups, request payloads, and installation. Browser login requires the accompanying
-gateway changes to be deployed.
+gateway changes to be deployed; the CLI detects missing authentication support
+before opening a browser.
 
 ## CI / CD
 

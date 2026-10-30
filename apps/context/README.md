@@ -32,21 +32,27 @@ No Node or Swift runtime is needed to run the CLI.
 
 ## Authenticate
 
-Use the gateway/API origin, not a tenant MCP endpoint or the dashboard origin:
+MyContextCLI uses the hosted account API at `https://api.mycontextprotocol.dev`
+by default. Start with:
 
 ```sh
-myctx config set --url https://YOUR_GATEWAY_ORIGIN
 myctx auth login
 myctx auth status
 ```
+
+For self-hosting or an explicit Development environment, set `--url`, `MYCTX_URL`,
+or a saved profile URL. Use the account gateway/API origin; your personal tenant
+MCP endpoint and the dashboard origin do not provide the account management API.
 
 Login opens GitHub in your browser. MyContextCLI binds an ephemeral port on
 `127.0.0.1`, validates a random callback nonce, exchanges the single-use handoff,
 and stores the account session in your local config file. `--no-browser` prints
 the login URL for manual opening on the same machine. Login expires after five
 minutes; Ctrl-C cancels. Browser login requires the gateway's `/auth/cli/github`
-route included in this change. Until that gateway version is deployed, use
-session import instead.
+route included in this change. The CLI checks that the gateway supports CLI
+authentication before opening a browser, so a missing route produces an immediate
+error. Hosted browser login still requires deployment of the accompanying gateway
+changes. Until those changes are deployed, use session import instead.
 
 The gateway supplies its configured frontend origin during login so subsequent
 mutations satisfy the existing CSRF policy. Older gateways/session imports need
@@ -59,8 +65,9 @@ For an existing account session:
 credential-source | myctx auth login --session-stdin --web-url https://YOUR_DASHBOARD_ORIGIN
 ```
 
-For ephemeral agent/CI authentication, inject `MYCTX_SESSION`, `MYCTX_URL`,
-and `MYCTX_WEB_URL` from a secret manager. A project MCP API key is not an
+For ephemeral agent/CI authentication, inject `MYCTX_SESSION` and, when required,
+`MYCTX_WEB_URL` from a secret manager. Set `MYCTX_URL` when overriding the hosted
+account API. A project MCP API key is not an
 account administration credential. MyContextCLI does not read stdin unless explicitly
 requested with `--session-stdin` or `--data -`. It never asks interactive questions.
 `auth logout` revokes the active session and removes the stored credential;
@@ -95,7 +102,9 @@ myctx config show
 ```
 
 Flags take precedence over environment variables, which take precedence over the
-selected profile. Profile defaults to `default` (`MYCTX_PROFILE` overrides it).
+selected profile, then the hosted API default `https://api.mycontextprotocol.dev`.
+An existing profile with an explicit URL keeps that URL. Profile defaults to
+`default` (`MYCTX_PROFILE` overrides it).
 `--id` overrides `--project`, then `MYCTX_PROJECT`, then the stored project.
 Credentials and project defaults are scoped to the API origin. Changing a
 profile's URL clears its stored session and project. `config show` reports whether

@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+const hostedAPIOrigin = "https://api.mycontextprotocol.dev"
+
 type Profile struct {
 	URL     string `json:"url"`
 	WebURL  string `json:"web_url,omitempty"`

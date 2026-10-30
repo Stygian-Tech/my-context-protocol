@@ -119,7 +119,7 @@ func emit(out io.Writer, b []byte, compact bool) error {
 }
 func encode(out io.Writer, v any) error { return json.NewEncoder(out).Encode(v) }
 func help(out io.Writer, words []string) error {
-	fmt.Fprintln(out, "MyContextCLI — agent-friendly MyContextProtocol CLI\n\nUsage: myctx <group> <command> [flags]\n\nAuthentication: auth login [--no-browser] | auth login --session-stdin | auth status | auth logout\nConfiguration: config show | config set --url ORIGIN [--project ID]\nDiscovery: commands (JSON) | api operations (JSON) | help\nRaw API: api METHOD /path [--data JSON|@file|-] [--query key=value]\n\nGlobal flags: --url ORIGIN --web-url ORIGIN --profile NAME --config FILE --project ID --timeout 30s --compact\nRequest flags: --id ID --release-id ID --compiled-skill-id ID --key-id ID\n               --data JSON|@file|- --set field=JSON --query key=value (repeatable)\nEnvironment: MYCTX_URL, MYCTX_WEB_URL, MYCTX_SESSION, MYCTX_PROFILE, MYCTX_CONFIG, MYCTX_PROJECT (legacy CONTEXT_* also supported)\n\nCommands:")
+	fmt.Fprintln(out, "MyContextCLI — agent-friendly MyContextProtocol CLI\n\nUsage: myctx <group> <command> [flags]\nHosted service: api.mycontextprotocol.dev (override with --url for self-hosting)\n\nAuthentication: auth login [--no-browser] | auth login --session-stdin | auth status | auth logout\nConfiguration: config show | config set --url ORIGIN [--project ID]\nDiscovery: commands (JSON) | api operations (JSON) | help\nRaw API: api METHOD /path [--data JSON|@file|-] [--query key=value]\n\nGlobal flags: --url ORIGIN --web-url ORIGIN --profile NAME --config FILE --project ID --timeout 30s --compact\nRequest flags: --id ID --release-id ID --compiled-skill-id ID --key-id ID\n               --data JSON|@file|- --set field=JSON --query key=value (repeatable)\nEnvironment: MYCTX_URL, MYCTX_WEB_URL, MYCTX_SESSION, MYCTX_PROFILE, MYCTX_CONFIG, MYCTX_PROJECT (legacy CONTEXT_* also supported)\n\nCommands:")
 	if len(words) > 0 && words[0] == "help" {
 		words = words[1:]
 	}
@@ -194,11 +194,11 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	if origin == "" {
 		origin = p.URL
 	}
+	if origin == "" {
+		origin = hostedAPIOrigin
+	}
 	if name == "config show" {
 		return encode(out, map[string]any{"profile": profileName, "url": origin, "web_url": p.WebURL, "project": p.Project, "authenticated": p.Session != "" || environment("SESSION") != "", "config": path})
-	}
-	if origin == "" {
-		return usage("set the gateway origin with --url, MYCTX_URL, or config set --url")
 	}
 	origin, err = validateURL(origin)
 	if err != nil {
