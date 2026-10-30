@@ -79,7 +79,7 @@ func TestDefaultBrowserLoginChecksHostedGateway(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var out, errs strings.Builder
-	code := Main(ctx, []string{"auth", "login", "--no-browser"}, strings.NewReader(""), &out, &errs, "test")
+	code := Main(ctx, []string{"auth", "login", "--no-browser", "--json"}, strings.NewReader(""), &out, &errs, "test")
 	var payload map[string]any
 	if code != 1 || json.Unmarshal([]byte(errs.String()), &payload) != nil || payload["status"] != float64(404) || !strings.Contains(errs.String(), "does not support CLI login") {
 		t.Fatalf("hosted browser login: %d %s", code, errs.String())

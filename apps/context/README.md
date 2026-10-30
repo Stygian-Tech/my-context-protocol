@@ -2,7 +2,8 @@
 
 MyContextCLI (`myctx`) is the Go CLI for MyContextProtocol. It exposes every current account,
 project, and administrator management route to people and agents. Success output
-is JSON on stdout; errors are JSON on stderr. It uses only the Go standard library.
+is JSON on stdout; errors are readable text on stderr by default. Add `--json`
+for structured errors in agent scripts. It uses only the Go standard library.
 
 ## Install
 
@@ -132,7 +133,7 @@ myctx skills usage --id PROJECT_UUID --query page=1 --query page_size=100
 ```
 
 Flags can appear before or after command words. All response fields and server
-validation errors are preserved, including exact JSON integers. Empty successful
+validation error details are available with `--json`, including exact JSON integers. Empty successful
 responses emit `{"ok":true}`. Non-JSON responses become `{"result":"..."}`.
 There are no automatic retries: mutations run once. Set `--timeout 60s` to override
 the default 30-second HTTP timeout. Responses are bounded to 32 MiB and request
@@ -200,8 +201,15 @@ and browser callback endpoints are not named management commands. Agent shells
 can run this CLI directly; it does not require a model-provider account.
 
 Exit codes: `0` success, `1` transport/server error, `2` invalid arguments,
-`3` HTTP 401, `4` HTTP 403, `130` interrupted. Error JSON includes `code`, `error`,
-and, for HTTP errors, `status` and original JSON `details`.
+`3` HTTP 401, `4` HTTP 403, `130` interrupted. Default errors include a message,
+HTTP status when available, useful server detail, and a next-step hint. Use the
+global `--json` flag anywhere among command arguments to retain machine-readable
+errors with `code`, `error`, and, for HTTP errors, `status` and original JSON
+`details`. Successful output stays JSON with either format. For example:
+
+```sh
+myctx --json projects list
+```
 
 ## Development
 

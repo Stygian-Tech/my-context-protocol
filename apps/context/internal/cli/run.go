@@ -17,6 +17,24 @@ import (
 
 type options map[string][]string
 
+var booleanFlags = map[string]bool{"help": true, "version": true, "no-browser": true, "session-stdin": true, "compact": true, "json": true}
+var valueFlags = map[string]bool{"url": true, "web-url": true, "profile": true, "config": true, "project": true, "id": true, "release-id": true, "compiled-skill-id": true, "key-id": true, "data": true, "query": true, "set": true, "timeout": true}
+
+// Scan independently of parse so an argument error before --json still uses the
+// requested format. Values of known flags must never be mistaken for flags.
+func jsonErrorsRequested(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		key, _, hasValue := strings.Cut(strings.TrimPrefix(args[i], "--"), "=")
+		if args[i] == "--json" {
+			return true
+		}
+		if strings.HasPrefix(args[i], "--") && valueFlags[key] && !hasValue {
+			i++
+		}
+	}
+	return false
+}
+
 func (o options) get(k string) string {
 	v := o[k]
 	if len(v) > 0 {
@@ -27,8 +45,6 @@ func (o options) get(k string) string {
 func parse(args []string) ([]string, options, error) {
 	var words []string
 	o := options{}
-	bools := map[string]bool{"help": true, "version": true, "no-browser": true, "session-stdin": true, "compact": true}
-	allowed := map[string]bool{"url": true, "web-url": true, "profile": true, "config": true, "project": true, "id": true, "release-id": true, "compiled-skill-id": true, "key-id": true, "data": true, "query": true, "set": true, "timeout": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "-h" {
@@ -39,14 +55,14 @@ func parse(args []string) ([]string, options, error) {
 			continue
 		}
 		k, v, has := strings.Cut(strings.TrimPrefix(a, "--"), "=")
-		if bools[k] {
+		if booleanFlags[k] {
 			if has {
 				return nil, nil, fmt.Errorf("--%s does not take a value", k)
 			}
 			o[k] = []string{"true"}
 			continue
 		}
-		if !allowed[k] {
+		if !valueFlags[k] {
 			return nil, nil, fmt.Errorf("unknown flag --%s", k)
 		}
 		if !has {
@@ -64,7 +80,8 @@ func parse(args []string) ([]string, options, error) {
 	return words, o, nil
 }
 
-// Main writes JSON results to stdout and JSON errors to stderr. It never prompts on stdin.
+// Main writes JSON results to stdout and readable errors to stderr. --json opts
+// into structured errors for agents. It never prompts on stdin.
 func Main(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer, version string) int {
 	err := run(ctx, args, in, out, errOut, version)
 	if err == nil {
@@ -93,8 +110,67 @@ func Main(ctx context.Context, args []string, in io.Reader, out, errOut io.Write
 		code = 130
 		payload["code"] = "canceled"
 	}
-	_ = json.NewEncoder(errOut).Encode(payload)
+	if jsonErrorsRequested(args) {
+		_ = json.NewEncoder(errOut).Encode(payload)
+	} else {
+		writeHumanError(errOut, err, code)
+	}
 	return code
+}
+
+func writeHumanError(out io.Writer, err error, code int) {
+	fmt.Fprintf(out, "Error: %s\n", readableErrorText(err.Error()))
+	hint := "Check your connection and the selected API origin, then try again."
+	var api *APIError
+	if errors.As(err, &api) {
+		fmt.Fprintf(out, "HTTP %d %s\n", api.Status, http.StatusText(api.Status))
+		var details map[string]json.RawMessage
+		if json.Unmarshal(api.Body, &details) == nil {
+			for _, key := range []string{"error", "reason", "message"} {
+				var detail string
+				if json.Unmarshal(details[key], &detail) == nil && detail != "" {
+					fmt.Fprintln(out, readableErrorText(detail))
+					break
+				}
+			}
+		}
+		switch api.Status {
+		case 401:
+			hint = "Run myctx auth login for the selected profile and API origin, then try again."
+		case 403:
+			hint = "Check your account permissions. For session imports, set --web-url to the dashboard origin."
+		case 404:
+			hint = "Check the resource ID and selected API origin."
+		case 429:
+			hint = "Wait before retrying; the API rate limit was reached."
+		default:
+			if api.Status >= 400 && api.Status < 500 {
+				hint = "Check the command arguments and request data with myctx help."
+			}
+		}
+	}
+	if code == 2 {
+		hint = "Run myctx help or myctx help <group> for usage."
+	} else if code == 130 {
+		hint = "Run the command again when ready."
+	} else if strings.Contains(err.Error(), "does not support CLI login") {
+		hint = "Deploy the accompanying Gateway version, or select a Gateway that supports CLI login."
+	}
+	fmt.Fprintf(out, "Hint: %s\n", hint)
+}
+
+// Keep terminal control sequences and multiline server text out of error output.
+func readableErrorText(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return ' '
+		}
+		return r
+	}, s)
+	if len(s) > 2000 {
+		s = s[:2000] + "…"
+	}
+	return s
 }
 
 type usageError struct{ error }
@@ -119,7 +195,7 @@ func emit(out io.Writer, b []byte, compact bool) error {
 }
 func encode(out io.Writer, v any) error { return json.NewEncoder(out).Encode(v) }
 func help(out io.Writer, words []string) error {
-	fmt.Fprintln(out, "MyContextCLI — agent-friendly MyContextProtocol CLI\n\nUsage: myctx <group> <command> [flags]\nHosted service: api.mycontextprotocol.dev (override with --url for self-hosting)\n\nAuthentication: auth login [--no-browser] | auth login --session-stdin | auth status | auth logout\nConfiguration: config show | config set --url ORIGIN [--project ID]\nDiscovery: commands (JSON) | api operations (JSON) | help\nRaw API: api METHOD /path [--data JSON|@file|-] [--query key=value]\n\nGlobal flags: --url ORIGIN --web-url ORIGIN --profile NAME --config FILE --project ID --timeout 30s --compact\nRequest flags: --id ID --release-id ID --compiled-skill-id ID --key-id ID\n               --data JSON|@file|- --set field=JSON --query key=value (repeatable)\nEnvironment: MYCTX_URL, MYCTX_WEB_URL, MYCTX_SESSION, MYCTX_PROFILE, MYCTX_CONFIG, MYCTX_PROJECT (legacy CONTEXT_* also supported)\n\nCommands:")
+	fmt.Fprintln(out, "MyContextCLI — agent-friendly MyContextProtocol CLI\n\nUsage: myctx <group> <command> [flags]\nHosted service: api.mycontextprotocol.dev (override with --url for self-hosting)\n\nAuthentication: auth login [--no-browser] | auth login --session-stdin | auth status | auth logout\nConfiguration: config show | config set --url ORIGIN [--project ID]\nDiscovery: commands (JSON) | api operations (JSON) | help\nRaw API: api METHOD /path [--data JSON|@file|-] [--query key=value]\n\nGlobal flags: --url ORIGIN --web-url ORIGIN --profile NAME --config FILE --project ID --timeout 30s --compact --json\nRequest flags: --id ID --release-id ID --compiled-skill-id ID --key-id ID\n               --data JSON|@file|- --set field=JSON --query key=value (repeatable)\nEnvironment: MYCTX_URL, MYCTX_WEB_URL, MYCTX_SESSION, MYCTX_PROFILE, MYCTX_CONFIG, MYCTX_PROJECT (legacy CONTEXT_* also supported)\n\nCommands:")
 	if len(words) > 0 && words[0] == "help" {
 		words = words[1:]
 	}
