@@ -29,6 +29,7 @@ func isolatedConfig(t *testing.T) string {
 func invoke(t *testing.T, input string, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errs bytes.Buffer
+	args = append(append([]string{}, args...), "--json")
 	code := Main(context.Background(), args, strings.NewReader(input), &out, &errs, "test-version")
 	return code, out.String(), errs.String()
 }
